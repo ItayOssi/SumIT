@@ -1,0 +1,130 @@
+const {chromium} = require('../build/test-tools/node_modules/playwright-core');
+const {pathToFileURL} = require('url');
+const path = require('path');
+const assert = require('assert/strict');
+(async () => {
+ const browser = await chromium.launch({channel:'msedge',headless:true});
+ const page = await browser.newPage({viewport:{width:1440,height:1100}});
+ const errors=[]; page.on('pageerror',e=>errors.push(e.message + ' @ ' + String(e.stack).split(String.fromCharCode(10)).slice(1,3).join(' | ')));
+ await page.goto(pathToFileURL(path.resolve(__dirname,'../src/web/ui.html')).href+'?demo=1');
+ await page.waitForFunction(()=>typeof S!=='undefined' && S.courses && S.ai && S.ready.settings);
+ await page.evaluate(()=>{
+  window.sent=[]; host.postMessage=m=>window.sent.push(m);
+  $('splash').remove(); $('wizard').hidden=true;
+  S.course=S.courses[0]; $('courseName').textContent=S.course.name; $('courseBand').innerHTML=ART.band(S.course.id); S.local={dir:'test',lectures:[],setupDone:true}; S.sections=[]; S.notability={};
+  show('course'); applySetupMode(); setTab('lessons'); renderLectures();
+ });
+ await page.locator('button[data-new]').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'saveLecture');
+ assert.equal(await page.evaluate(()=>sent.at(-1).num),1);
+ await page.locator('button[data-more]').click();
+ await page.locator('form.lecture-editor input[name=title]').fill('נגזרות ואינטגרלים');
+ await page.locator('form.lecture-editor button').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'saveLecture');
+ await page.evaluate(()=>onMessage({type:'courseLocal',course:S.course.name,local:{dir:'test',setupDone:true,lectures:[{num:1,title:'נגזרות ואינטגרלים',date:'2026-10-25',due:'',items:[],local:{exists:true,files:2,videos:0,dir:'test'}}]},notability:{}}));
+ assert.equal(await page.locator('.lecture').count(),1);
+ // Homework from Moodle: the bar above the site shows the course and the lecture's homework folder.
+ await page.getByRole('button',{name:'שיעורי בית ופתרונות מה-Moodle',exact:true}).click();
+ assert.equal(await page.evaluate(()=>sent.findLast(m=>m.type==='setDownloadTarget').folder),'הרצאות\\הרצאה 1\\תרגילים');
+ assert.equal(await page.evaluate(()=>$('dlCourse').value===S.course.name && $('dlFolder').selectedOptions[0].textContent.includes('שיעורי בית')),true);
+ assert.equal(await page.locator('#siteBackCourse').isVisible(),true);
+ await page.evaluate(()=>show('course'));
+ // The recording is named after the lecture by default.
+ await page.getByRole('button',{name:'הוסף הקלטה',exact:true}).first().click();
+ assert.equal(await page.locator('.rec-row [data-name]').inputValue(),'הרצאה מספר 1');
+ await page.locator('.rec-row [data-name]').fill('אינטגרלים חלק א');
+ await page.locator('.rec-row input.ltr').fill('https://hit-ac-il.zoom.us/rec/play/test');
+ await page.locator('.rec-row button.soft').click();
+ assert.deepEqual(await page.evaluate(()=>({num:sent.at(-1).num,name:sent.at(-1).name})),{num:1,name:'אינטגרלים חלק א'});
+ // The lecture editor opens once, however many times the button is pressed.
+ await page.getByRole('button',{name:'ערוך תאריכים וכותרת',exact:true}).click();
+ await page.getByRole('button',{name:'ערוך תאריכים וכותרת',exact:true}).click();
+ await page.getByRole('button',{name:'ערוך תאריכים וכותרת',exact:true}).click();
+ assert.equal(await page.locator('.lecture .lecture-editor').count(),1);
+ // Slides from Moodle go to the lecture; the site bar has the big "save as PDF".
+ await page.getByRole('button',{name:'מצגות וחומר מה-Moodle',exact:true}).click();
+ assert.equal(await page.evaluate(()=>sent.findLast(m=>m.type==='setDownloadTarget').folder),'הרצאות\\הרצאה 1');
+ assert.equal(await page.locator('#siteBarMain').isVisible(),true);
+ assert.equal(await page.locator('#sitePrint').isVisible(),true);
+ await page.locator('#sitePrint').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).action),'savepdf');
+ // A file being saved shows a percentage.
+ await page.evaluate(()=>onMessage({type:'siteDownload',state:'progress',name:'a.pdf',pct:42,where:'קורס › הרצאה 1'}));
+ assert.equal(await page.locator('#dlPct').textContent(),'42%');
+ await page.evaluate(()=>onMessage({type:'siteDownload',state:'done',name:'a.pdf',where:'קורס › הרצאה 1',dir:'x',path:'x'}));
+ assert.equal(await page.locator('#dlStrip').isVisible(),false);
+ // Leaving the course and coming back keeps a summary's progress.
+ await page.evaluate(()=>{ onMessage({type:'courseLocal',course:S.course.name,local:{dir:'test',setupDone:true,lectures:[{num:1,title:'x',date:'',due:'',items:[],running:true,progress:{pct:57,eta:120,text:'כותב'},local:{exists:true,files:2,dir:'test'}}]},notability:{}}); show('course'); });
+ assert.equal(await page.locator('.sum-progress b').textContent(),'57%');
+ assert.equal(await page.evaluate(()=>suggestedLectureDate(2,{first:'2026-10-25',holidays:['2026-11-01']})),'2026-11-08');
+ // Two meetings a week (Sunday + Wednesday) from the timetable, with one day off.
+ assert.deepEqual(await page.evaluate(()=>[1,2,3,4].map(n=>suggestedLectureDate(n,{first:'2026-10-25',holidays:['2026-10-28']},[0,3]))),['2026-10-25','2026-11-01','2026-11-04','2026-11-08']);
+ await page.evaluate(()=>{
+  show('course'); setTab('lessons'); setChatScope('lesson:1');
+  addMsg('assistant',String.raw`בעברית: חשב $x^2+2x=3$ ואז English עם 123.\n\n$$\int_0^1 x^2\,dx=\frac{1}{3}$$\n\n<script>alert(1)</script>`);
+ });
+ assert.equal(await page.locator('.msg.assistant .katex').count(),2);
+ assert.equal(await page.locator('.msg.assistant script').count(),0);
+ assert.equal(await page.locator('.katex-error').count(),0);
+ await page.screenshot({path:path.resolve(__dirname,'../build/lecture-ui.png'),fullPage:true,animations:'disabled'});
+ await page.evaluate(()=>{
+  S.timetable={classes:[{day:'ראשון',start:'09:00',end:'11:00',course:'אלגברה'},{day:'רביעי',start:'14:00',end:'16:00',course:'פיזיקה'}],exams:Array.from({length:8},(_,i)=>({course:'מבחן '+i,date:'2099-01-'+String(i+1).padStart(2,'0')}))};
+  show('home');renderTimetable();
+  S.update={version:'99.0',canAuto:true};renderBanners();
+ });
+ assert.equal(await page.locator('.week-table tbody tr').count(),2);
+ assert.equal(await page.locator('#timetable .info-grid > div:last-child .deadline').count(),8);
+ await page.getByRole('button',{name:'לא עכשיו',exact:true}).click();
+ assert.equal(await page.evaluate(()=>sent.some(m=>m.type==='installUpdate')),false);
+ await page.evaluate(()=>{S.dismissedUpdate=null;renderBanners();});
+ await page.getByRole('button',{name:'הורד והתקן בסגירה',exact:true}).click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'installUpdate');
+ // The student's own name and bio replace "SumIT" at the top; ChatGPT and Gemini connect with a key.
+ await page.evaluate(()=>onMessage(Object.assign({},S.settings,{type:'settings',displayName:'נועה לוי',bio:'סטודנטית להנדסת חשמל',hasGeminiKey:true,hasOpenAiKey:false,helperPref:'auto',profileImage:''})));
+ assert.equal(await page.locator('#brandName').textContent(),'נועה לוי');
+ assert.equal(await page.locator('#brandSub').textContent(),'סטודנטית להנדסת חשמל');
+ await page.evaluate(()=>show('settings'));
+ // Gemini is signed in with the Google account; ChatGPT offers the account sign-in first, the key only as small print.
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});renderProviders();});
+ assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-logout]').isVisible(),true);
+ assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-key]').count(),0);
+ assert.equal(await page.locator('#providers .provider[data-kind=openai] input[data-key]').isVisible(),false);
+ await page.locator('#providers .provider[data-kind=openai] [data-login]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['connectBrain','chatgpt']);
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{setup:'login-chatgpt'});renderProviders();});
+ assert.equal((await page.locator('#providers .provider[data-kind=openai] .state').textContent()).includes('ChatGPT'),true);
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{setup:''});renderProviders();});
+ await page.locator('#providers .provider[data-kind=openai] summary').click();
+ assert.equal(await page.locator('#providers .provider[data-kind=openai] input[data-key]').isVisible(),true);
+ await page.locator('#providers .provider[data-kind=openai] input[data-key]').fill('sk-'+'x'.repeat(30));
+ await page.locator('#providers .provider[data-kind=openai] [data-save]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.provider];}),['setHelperKey','openai']);
+ await page.locator('#helperPref').selectOption('claude');
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.name,m.value];}),['helperPref','claude']);
+ // The background picker opens fully inside the window (it used to be cut off by the course banner).
+ await page.evaluate(()=>{show('course');});
+ await page.locator('#changeBg').click();
+ const popRect=await page.evaluate(()=>{const r=document.querySelector('.bg-pop').getBoundingClientRect();return [Math.round(r.top),Math.round(r.bottom),Math.round(r.left),Math.round(r.right),innerHeight,innerWidth];});
+ assert.ok(popRect[1]<=popRect[4]&&popRect[0]>=0&&popRect[1]-popRect[0]>120&&popRect[3]<=popRect[5],'popover rect '+popRect.join(','));
+ // Exams and the syllabus come from Moodle with one click.
+ await page.evaluate(()=>{document.body.click();S.local={dir:'t',lectures:[],exams:0};S.sections=[];renderLectures();});
+ await page.getByRole('button',{name:'הורד את כל המבחנים מה-Moodle',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.what];}),['downloadMoodle','exams']);
+ await page.evaluate(()=>{S.local={dir:'t',lectures:[]};setTab('info');});
+ await page.getByRole('button',{name:'הורד את הסילבוס מה-Moodle ונתח',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.what];}),['downloadMoodle','syllabus']);
+ assert.equal(await page.getByText('הסיכום המלא').count(),0);
+ // With another AI connected: a "check with another AI" button under the last chat answer and on a ready summary.
+ await page.evaluate(()=>{show('course');setTab('lessons');setChatScope('lesson:1');S.chatBusy=false;addMsg('assistant','תשובה לבדיקה');addCheckButton();});
+ await page.getByRole('button',{name:'בדוק עם AI נוסף',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.scope];}),['chatCheck','lesson:1']);
+ await page.evaluate(()=>{onMessage({type:'chatDone',course:S.course.name,scope:'lesson:1'});S.local={dir:'t',lectures:[]};onMessage({type:'courseLocal',course:S.course.name,local:{dir:'test',setupDone:true,lectures:[{num:1,title:'x',date:'',due:'',items:[],local:{exists:true,files:2,studyPage:'a.html',lecturePdf:'a.pdf',dir:'test'}}]},notability:{}});show('course');setTab('lessons');});
+ await page.getByRole('button',{name:'בדיקה שנייה עם AI נוסף',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.num];}),['secondOpinion',1]);
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'',openai:'',order:[]}});renderLectures();});
+ assert.equal(await page.getByRole('button',{name:'בדיקה שנייה עם AI נוסף',exact:true}).count(),0);
+ await page.screenshot({path:path.resolve(__dirname,'../build/timetable-ui.png'),fullPage:true,animations:'disabled'});
+ assert.deepEqual(errors,[]);
+ console.log('PASS: lecture creation, homework import, recording name/scope, browser target, holidays, RTL math, XSS escaping, full timetable, all exams, optional updates; no browser errors.');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -1,0 +1,858 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using System.Web.Script.Serialization;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+
+partial class HitStudent : Form
+{
+    public const string Version = "1.0.0";
+    const string Repo = "Pinkel-Kinkel/SumIT";
+    // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
+    static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
+
+    static readonly string AppDir = AppDomain.CurrentDomain.BaseDirectory;
+    static readonly string WebDir = Path.Combine(AppDir, "web");
+    static readonly string DataDir = Path.Combine(AppDir, "browser-data");
+    static readonly string SettingsFile = Path.Combine(AppDir, "settings.json");
+    static readonly string Home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    static readonly Dictionary<string, string> Sites = new Dictionary<string, string>
+    {
+        { "moodle", "https://md.hit.ac.il/my/" },
+        { "portal", "https://portal.hit.ac.il/" },
+        { "cs24", "https://cs24.co.il/drive?d=e47d12" },
+        { "notability", "https://notability.com/" },
+        { "notebooklm", "https://notebooklm.google.com/" },
+        { "calendar", "https://webrashim.hit.ac.il/Portals/student/schedule" }
+    };
+
+    // "ui" is the app itself. "zoom" and "moodle" are hidden browsers that share one sign-in profile and only
+    // come to the front when HIT asks the user to sign in. "site" shows Moodle / the portal / CS24 inside the app.
+    WebView2 ui, zoom, moodle, site, printView;
+    Panel zoomPanel, moodlePanel, sitePanel;
+    CoreWebView2Environment env;
+
+    readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+    readonly Dictionary<string, object> settings = new Dictionary<string, object>();
+    readonly bool demo, selfTest;
+    readonly string selfTestOut;
+    string lastClipboard;
+    string siteDownloadCourse, siteDownloadFolder;
+    readonly Timer statusTimer = new Timer { Interval = 45000 };
+
+    [STAThread]
+    static void Main(string[] args)
+    {
+        ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        Application.Run(new HitStudent(args));
+    }
+
+    HitStudent(string[] args)
+    {
+        demo = args.Contains("--demo");
+        selfTest = args.Contains("--selftest");
+        int i = Array.IndexOf(args, "--selftest");
+        selfTestOut = selfTest && i + 1 < args.Length ? args[i + 1] : Path.Combine(AppDir, "selftest.json");
+
+        Text = "SumIT";
+        ClientSize = new Size(1240, 820);
+        MinimumSize = new Size(820, 620);
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Color.FromArgb(14, 16, 22);
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        LoadSettings();
+
+        zoom = new WebView2 { Dock = DockStyle.Fill };
+        zoomPanel = LoginPanel(zoom, "\u05D4\u05EA\u05D7\u05D1\u05E8 \u05DC-Zoom \u05E2\u05DD \u05D4\u05DE\u05E9\u05EA\u05DE\u05E9 \u05E9\u05DC HIT. \u05D6\u05D4 \u05E7\u05D5\u05E8\u05D4 \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA, \u05D5\u05D4\u05D4\u05D5\u05E8\u05D3\u05D4 \u05EA\u05DE\u05E9\u05D9\u05DA \u05DC\u05D1\u05D3.",
+            delegate { if (working) zoomCancelled = true; ui.BringToFront(); });
+        moodle = new WebView2 { Dock = DockStyle.Fill };
+        moodlePanel = LoginPanel(moodle, "\u05D4\u05EA\u05D7\u05D1\u05E8 \u05E2\u05DD \u05E9\u05DD \u05D4\u05DE\u05E9\u05EA\u05DE\u05E9 \u05D5\u05D4\u05E1\u05D9\u05E1\u05DE\u05D4 \u05E9\u05DC HIT. \u05D6\u05D4 \u05E7\u05D5\u05E8\u05D4 \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA \u05D1\u05DC\u05D1\u05D3.",
+            delegate { moodleCancelled = true; ui.BringToFront(); });
+        site = new WebView2 { Dock = DockStyle.Fill };
+        sitePanel = new Panel { Visible = false };
+        sitePanel.Controls.Add(site);
+        // Hidden browser that walks a course's CS24 folder; it always stays behind the app.
+        cs24View = new WebView2 { Dock = DockStyle.Fill };
+        var cs24Panel = new Panel { Dock = DockStyle.Fill };
+        cs24Panel.Controls.Add(cs24View);
+
+        // Hidden browser that prints a lecture summary to PDF.
+        printView = new WebView2 { Dock = DockStyle.Fill };
+        var printPanel = new Panel { Dock = DockStyle.Fill };
+        printPanel.Controls.Add(printView);
+
+        ui = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = BackColor };
+        Controls.Add(printPanel);
+        Controls.Add(cs24Panel);
+        Controls.Add(zoomPanel);
+        Controls.Add(moodlePanel);
+        Controls.Add(ui);
+        Controls.Add(sitePanel);
+        ui.BringToFront();
+
+        if (selfTest) { WindowState = FormWindowState.Minimized; ShowInTaskbar = false; }
+        HandleCreated += delegate { ApplyTitleBarTheme(); };
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += delegate { if (IsHandleCreated) BeginInvoke((MethodInvoker)ApplyTitleBarTheme); };
+        CleanUpOldFiles();
+        Load += async delegate { await InitAsync(); };
+        Activated += delegate { CheckClipboard(false); };
+        FormClosing += delegate
+        {
+            foreach (var p in aiRuns.Values.ToList()) KillTree(p);
+            // A downloaded update is put in place on the way out, so the next start is the new version.
+            if (stagedUpdateDir != null && !restartingForUpdate) ApplyUpdate(false);
+        };
+        statusTimer.Tick += async delegate
+        {
+            await PollStatus(false);
+            // The app often stays open for days: look for a new version every few hours, not only at start.
+            if (DateTime.Now - lastUpdateCheck > TimeSpan.FromHours(4)) CheckForUpdate();
+        };
+    }
+
+    Panel LoginPanel(WebView2 view, string hint, EventHandler back)
+    {
+        var panel = new Panel { Dock = DockStyle.Fill };
+        var bar = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(79, 70, 229) };
+        var label = new Label
+        {
+            Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f), Text = hint,
+            TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 18, 0), RightToLeft = RightToLeft.Yes
+        };
+        var button = new Button
+        {
+            Dock = DockStyle.Left, Width = 170, Text = "\u05D7\u05D6\u05E8\u05D4 \u05DC\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4", FlatStyle = FlatStyle.Flat,
+            ForeColor = Color.White, BackColor = Color.FromArgb(67, 56, 202), Font = new Font("Segoe UI", 10f, FontStyle.Bold), Cursor = Cursors.Hand
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.Click += back;
+        bar.Controls.Add(label);
+        bar.Controls.Add(button);
+        panel.Controls.Add(view);
+        panel.Controls.Add(bar);
+        return panel;
+    }
+
+    async Task InitAsync()
+    {
+        try
+        {
+            var options = new CoreWebView2EnvironmentOptions { AllowSingleSignOnUsingOSPrimaryAccount = false };
+            env = await CoreWebView2Environment.CreateAsync(null, DataDir, options);
+            await ui.EnsureCoreWebView2Async(env);
+            await zoom.EnsureCoreWebView2Async(env);
+            await moodle.EnsureCoreWebView2Async(env);
+            await site.EnsureCoreWebView2Async(env);
+            await cs24View.EnsureCoreWebView2Async(env);
+            await printView.EnsureCoreWebView2Async(env);
+            printView.CoreWebView2.IsMuted = true;
+            printView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            printView.CoreWebView2.NewWindowRequested += (s, e) => { e.Handled = true; };
+            cs24View.CoreWebView2.IsMuted = true;
+            cs24View.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            cs24View.CoreWebView2.WebMessageReceived += OnEvalMessage;
+            cs24View.CoreWebView2.NewWindowRequested += OpenSitePopup;
+            cs24View.CoreWebView2.DownloadStarting += OnSiteDownload;
+            cs24View.CoreWebView2.PermissionRequested += OnDownloadPermission;
+        }
+        catch (Exception ex)
+        {
+            if (!selfTest) MessageBox.Show(this, "Couldn't start the built-in browser (Microsoft Edge WebView2).\n\n" + ex.Message, Text);
+            Close();
+            return;
+        }
+
+        // The app page only ever shows files from the "web" folder and can't be navigated anywhere else.
+        var u = ui.CoreWebView2;
+        u.Settings.AreDefaultContextMenusEnabled = false;
+        u.Settings.IsZoomControlEnabled = false;
+        u.Settings.AreDevToolsEnabled = demo;
+        u.Settings.IsStatusBarEnabled = false;
+        u.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        u.SetVirtualHostNameToFolderMapping("app.local", WebDir, CoreWebView2HostResourceAccessKind.DenyCors);
+        u.WebMessageReceived += OnUiMessage;
+        u.NavigationStarting += (s, e) => { if (!e.Uri.StartsWith("https://app.local/", StringComparison.OrdinalIgnoreCase)) { e.Cancel = true; OpenExternal(e.Uri); } };
+        u.NewWindowRequested += (s, e) => { e.Handled = true; OpenExternal(e.Uri); };
+        string demoArgs = "";
+        foreach (string a in Environment.GetCommandLineArgs())
+            if (a.StartsWith("--demo-")) demoArgs += "&" + Uri.EscapeDataString(a.Substring(7).Split('=')[0]) + "=" + Uri.EscapeDataString(a.Contains("=") ? a.Split('=')[1] : "1");
+        u.Navigate("https://app.local/ui.html" + (demo ? "?demo=1" + demoArgs : ""));
+
+        foreach (var view in new[] { zoom, moodle })
+        {
+            var core = view.CoreWebView2;
+            core.IsMuted = true;
+            core.Settings.AreDevToolsEnabled = false;
+            // The built-in browser offers to save the HIT username and password (in its own encrypted store)
+            // and fills them in next time; the app itself never sees them.
+            core.Settings.IsPasswordAutosaveEnabled = true;
+            core.Settings.IsGeneralAutofillEnabled = true;
+            core.WebMessageReceived += OnEvalMessage;
+            core.NewWindowRequested += OpenSitePopup;
+            core.DownloadStarting += OnSiteDownload;
+            core.PermissionRequested += OnDownloadPermission;
+        }
+        zoom.CoreWebView2.WebResourceResponseReceived += OnZoomResponse;
+
+        var sc = site.CoreWebView2;
+        sc.Settings.AreDevToolsEnabled = false;
+        sc.Settings.IsPasswordAutosaveEnabled = true;
+        sc.Settings.IsGeneralAutofillEnabled = true;
+        sc.NewWindowRequested += OpenSitePopup;
+        sc.DownloadStarting += OnSiteDownload;
+        sc.PermissionRequested += OnDownloadPermission;
+        sc.SourceChanged += delegate
+        {
+            Send(new { type = "siteNav", url = sc.Source, canBack = sc.CanGoBack, canForward = sc.CanGoForward });
+            // A Zoom recording page: the page offers to download it into the lecture the student is working on.
+            if (IsZoomUrl(sc.Source)) Send(new { type = "zoomRecording", url = sc.Source });
+        };
+        sc.NavigationStarting += delegate { Send(new { type = "siteLoading", loading = true }); };
+        sc.NavigationCompleted += delegate { Send(new { type = "siteLoading", loading = false }); };
+
+        InstallSkill();
+        if (demo) return;
+        if (selfTest) { await RunSelfTest(); return; }
+        statusTimer.Start();
+        CheckForUpdate();
+    }
+
+    // ---------- Settings ----------
+
+    void LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(SettingsFile))
+                foreach (var kv in json.Deserialize<Dictionary<string, object>>(File.ReadAllText(SettingsFile, Encoding.UTF8)))
+                    settings[kv.Key] = kv.Value;
+        }
+        catch { }
+        bool hasD = Directory.Exists(@"D:\");
+        string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (Str(settings, "studyRoot").Length == 0)
+            settings["studyRoot"] = DefaultStudyRoot(hasD, docs);
+        if (Str(settings, "recordingsDir").Length == 0)
+        {
+            // Carry over the folder chosen in the old HIT Recordings app.
+            string old = Path.Combine(AppDir, "save-folder.txt");
+            string dir = File.Exists(old) ? File.ReadAllText(old, Encoding.UTF8).Trim() : "";
+            settings["recordingsDir"] = dir.Length > 0 ? dir : Path.Combine(Path.GetDirectoryName(Str(settings, "studyRoot").TrimEnd('\\')) ?? docs, "הקלטות");
+        }
+        if (Str(settings, "aiProvider").Length == 0) settings["aiProvider"] = "claude";
+        foreach (string opt in new[] { "autoSync", "autoRecordings", "autoUpdate", "autoFallback" })
+            if (!settings.ContainsKey(opt)) settings[opt] = opt == "autoFallback";
+        settings["autoRecordings"] = false; settings["autoUpdate"] = false; settings["autoSync"] = false;
+    }
+
+    // "HIT\קורסים" inside the student's HIT OneDrive when there is one ("OneDrive - Holon Institute of Technology"), so the
+    // courses are backed up and follow them; otherwise in Documents.
+    static string DefaultStudyRoot(bool hasD, string docs)
+    {
+        try
+        {
+            var candidates = new List<string>();
+            string commercial = Environment.GetEnvironmentVariable("OneDriveCommercial");
+            if (!string.IsNullOrEmpty(commercial)) candidates.Add(commercial);
+            candidates.AddRange(Directory.GetDirectories(Home, "OneDrive*"));
+            foreach (string od in candidates)
+                if (Directory.Exists(od) && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(od.TrimEnd('\\')), "holon|\\bHIT\\b|institute of technology|הולון", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    return Path.Combine(od, "HIT", "קורסים");
+        }
+        catch { }
+        return Path.Combine(docs, "HIT", "קורסים");
+    }
+
+    internal static string DefaultStudyRootForTest() { return DefaultStudyRoot(true, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)); }
+
+    // The courses live in "<HIT>\קורסים"; the timetable and general downloads sit next to them, in "<HIT>".
+    string AppRoot { get { string r = StudyRoot.TrimEnd('\\'); return Path.GetFileName(r) == "קורסים" ? Path.GetDirectoryName(r) : r; } }
+
+    bool Option(string name) { return Bool(settings, name); }
+
+    // ---------- Title bar in the app's colours (Windows 11 draws it for us) ----------
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    static bool SystemUsesLightTheme()
+    {
+        try
+        {
+            object v = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1);
+            return v is int && (int)v != 0;
+        }
+        catch { return false; }
+    }
+
+    // "system" (default), "light" or "dark", chosen in the app.
+    bool LightTheme
+    {
+        get
+        {
+            string t = Str(settings, "theme");
+            return t == "light" || (t != "dark" && SystemUsesLightTheme());
+        }
+    }
+
+    void ApplyTitleBarTheme()
+    {
+        bool light = LightTheme;
+        Color bg = light ? Color.FromArgb(244, 245, 251) : Color.FromArgb(13, 15, 23);
+        Color fg = light ? Color.FromArgb(21, 24, 38) : Color.FromArgb(238, 240, 248);
+        BackColor = bg;
+        if (ui != null) ui.DefaultBackgroundColor = bg;
+        try
+        {
+            int dark = light ? 0 : 1;
+            DwmSetWindowAttribute(Handle, 20, ref dark, 4);                          // DWMWA_USE_IMMERSIVE_DARK_MODE
+            int caption = bg.R | (bg.G << 8) | (bg.B << 16);
+            DwmSetWindowAttribute(Handle, 35, ref caption, 4);                       // DWMWA_CAPTION_COLOR
+            int text = fg.R | (fg.G << 8) | (fg.B << 16);
+            DwmSetWindowAttribute(Handle, 36, ref text, 4);                          // DWMWA_TEXT_COLOR
+            int border = caption;
+            DwmSetWindowAttribute(Handle, 34, ref border, 4);                        // DWMWA_BORDER_COLOR
+        }
+        catch { }
+    }
+
+    void SaveSettings()
+    {
+        try { File.WriteAllText(SettingsFile, json.Serialize(settings), Encoding.UTF8); } catch { }
+    }
+
+    string StudyRoot { get { return Str(settings, "studyRoot"); } }
+    string RecordingsDir { get { return Str(settings, "recordingsDir"); } }
+    string NotabilityDir { get { return Str(settings, "notabilityDir"); } }
+    // Gemini isn't reliable yet, so it is shown as "coming soon" and everything runs on Claude until it is.
+    static readonly bool GeminiEnabled = false;
+    string Provider { get { return GeminiEnabled && Str(settings, "aiProvider") == "gemini" ? "gemini" : "claude"; } }
+
+    void SendSettings()
+    {
+        Send(new
+        {
+            type = "settings", studyRoot = StudyRoot, recordingsDir = RecordingsDir, notabilityDir = NotabilityDir,
+            aiProvider = Provider, hasGeminiKey = Str(settings, "geminiKey").Length > 0, hasOpenAiKey = Str(settings, "openaiKey").Length > 0,
+            helperPref = Str(settings, "helperPref").Length > 0 ? Str(settings, "helperPref") : "auto", displayName = Str(settings, "displayName"), bio = Str(settings, "bio"),
+            onboarded = Bool(settings, "onboarded"), userName = Str(settings, "userName"), version = Version,
+            autoSync = Option("autoSync"), autoRecordings = Option("autoRecordings"), autoUpdate = Option("autoUpdate"), autoFallback = Option("autoFallback"),
+            profileImage = ProfileImage(),
+            theme = Str(settings, "theme").Length > 0 ? Str(settings, "theme") : "system", systemLight = SystemUsesLightTheme()
+        });
+    }
+
+    // ---------- UI messages ----------
+
+    void Send(object message)
+    {
+        if (ui.CoreWebView2 != null) ui.CoreWebView2.PostWebMessageAsJson(json.Serialize(message));
+    }
+
+    void Toast(string text, bool error) { Send(new { type = "toast", text = text, error = error }); }
+
+    void OnUiMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        if (!e.Source.StartsWith("https://app.local/", StringComparison.OrdinalIgnoreCase)) return;
+        Dictionary<string, object> m;
+        try { m = json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson); }
+        catch { return; }
+        if (demo) return;
+        try { HandleUiMessage(m); }
+        catch (Exception ex) { Toast(ex.Message, true); }
+    }
+
+    void HandleUiMessage(Dictionary<string, object> m)
+    {
+        string type = Str(m, "type");
+        string course = Str(m, "course");
+        switch (type)
+        {
+            case "ready":
+                SendSettings();
+                foreach (var j in jobs) SendJob(j);
+                CheckClipboard(false);
+                SendTimetable(); SendAcademic();
+                var ignored = PollStatus(true);
+                break;
+            case "finishOnboarding":
+                settings["onboarded"] = true;
+                SaveSettings();
+                SendSettings();
+                break;
+            case "checkStatus": var ignored2 = PollStatus(true); break;
+            case "setOption":
+                string opt = Str(m, "name");
+                if (opt == "autoSync" || opt == "autoRecordings" || opt == "autoUpdate" || opt == "autoFallback") { settings[opt] = Bool(m, "value"); SaveSettings(); SendSettings(); }
+                if (opt == "helperPref") { string pv = Str(m, "value"); settings[opt] = pv == "gemini" || pv == "openai" || pv == "claude" ? pv : "auto"; SaveSettings(); SendSettings(); }
+                if (opt == "theme")
+                {
+                    string t = Str(m, "value");
+                    settings["theme"] = t == "light" || t == "dark" ? t : "system";
+                    SaveSettings();
+                    ApplyTitleBarTheme();
+                    SendSettings();
+                }
+                break;
+            case "installUpdate": InstallUpdate(); break;
+            case "restartForUpdate": RestartIntoUpdate(); break;
+            case "addRecording":
+                string rec = Str(m, "url").Trim();
+                if (!IsZoomUrl(rec)) { Toast("זה לא קישור להקלטת Zoom", true); return; }
+                if (!QueueRecording(course, Int(m, "num"), rec, true, Str(m, "name"))) Toast("ההקלטה הזו כבר בהורדה או הורדה", false);
+                break;
+            case "addLectureRecording":
+                string lrec = Str(m, "url").Trim();
+                if (!IsZoomUrl(lrec)) { Toast("זה לא קישור להקלטת Zoom", true); return; }
+                QueueLectureRecording(course, Int(m, "num"), lrec, Str(m, "name"));
+                break;
+            case "homework": Homework(course, Int(m, "num"), Str(m, "title")); break;
+            case "learnCourse": LearnCourse(course, m["sections"] as System.Collections.ArrayList); break;
+
+            // AI
+            case "setProvider":
+                settings["aiProvider"] = Str(m, "provider") == "gemini" ? "gemini" : "claude";
+                SaveSettings();
+                SendSettings();
+                var ignored3 = PollStatus(true);
+                break;
+            case "setupClaude": SetupClaude(); break;
+            case "setupGemini": SetupGemini(); break;
+            case "loginGemini": LoginGemini(); break;
+            case "geminiCode": GeminiCode(Str(m, "code")); break;
+            case "setupDone":
+                var sm = LoadMeta(course);
+                sm["setupDone"] = true;
+                SaveMeta(course, sm);
+                break;
+            case "cancelGeminiLogin": CancelGeminiLogin(); break;
+            case "setGeminiKey": SetHelperKey("gemini", Str(m, "key")); break;
+            case "setHelperKey": SetHelperKey(Str(m, "provider"), Str(m, "key")); break;
+            case "removeHelperKey": RemoveHelperKey(Str(m, "provider")); break;
+            case "connectBrain": ConnectBrain(Str(m, "kind")); break;
+            case "disconnectBrain": DisconnectBrain(Str(m, "kind")); break;
+            case "chatCheck": ChatCheck(course, ChatScope(m)); break;
+            case "secondOpinion": SecondOpinionAndPdf(course, Int(m, "num")); break;
+            case "downloadMoodle": DownloadFromMoodle(course, Int(m, "id"), Str(m, "what")); break;
+            case "setProfile":
+                settings["displayName"] = Trunc(Str(m, "name").Trim(), 40);
+                settings["bio"] = Trunc(Str(m, "bio").Trim(), 80);
+                SaveSettings(); SendSettings();
+                break;
+            case "openGeminiKeyPage": OpenExternal("https://aistudio.google.com/apikey"); break;
+            case "openOpenAiKeyPage": OpenExternal("https://platform.openai.com/api-keys"); break;
+
+            // Moodle
+            case "connectMoodle": ConnectMoodle(); break;
+            case "loadCourses": LoadCourses(); break;
+            case "loadHome": LoadHome(); break;
+            case "openCourse": OpenCourse(Int(m, "id"), course); break;
+            case "setLecturer":
+                var meta = LoadMeta(course);
+                meta["lecturer"] = Str(m, "name").Trim();
+                SaveMeta(course, meta);
+                break;
+            case "syncSection": SyncSection(course, m["section"] as Dictionary<string, object>); break;
+            case "syncCourse": SyncCourse(course, m["sections"] as System.Collections.ArrayList); break;
+            case "saveLectureCalendar": SaveLectureCalendar(course, m); break;
+            case "saveLecture": SaveLecture(course, m); break;
+            case "addFiles": AddFiles(course, Str(m, "folder"), Str(m, "kind")); break;
+
+            // AI tasks
+            case "getNewMaterial": GetNewMaterial(course, m["sections"] as System.Collections.ArrayList, m["nums"] as System.Collections.ArrayList); break;
+            case "lecturePdf": LecturePdf(course, Int(m, "num"), Str(m, "title"), Bool(m, "force")); break;
+            case "summarize": Summarize(course, Int(m, "num"), Str(m, "title")); break;
+            case "analyzeCourse": AnalyzeCourse(course); break;
+            case "examPrep": ExamPrep(course); break;
+            case "chat": Chat(course, Str(m, "text"), ChatScope(m)); break;
+            case "chatReset":
+                var meta2 = LoadMeta(course);
+                var sessions = Dict(meta2, "lectureChatSessions") ?? new Dictionary<string, object>();
+                sessions.Remove(ChatScope(m));
+                meta2["lectureChatSessions"] = sessions;
+                var histories = Dict(meta2, "lectureChatHistories") ?? new Dictionary<string, object>();
+                histories.Remove(ChatScope(m));
+                meta2["lectureChatHistories"] = histories;
+                SaveMeta(course, meta2);
+                break;
+            case "cancelAi":
+                System.Diagnostics.Process run;
+                if (aiRuns.TryGetValue(Str(m, "key"), out run)) KillTree(run);
+                break;
+
+            // Recordings
+            case "paste": CheckClipboard(true); break;
+            case "add":
+                string url = Str(m, "url").Trim();
+                if (url.Length == 0) return;
+                AddJob(new Job { Url = url, Name = Str(m, "name").Trim(), Transcript = Bool(m, "transcript") });
+                break;
+            case "retry": RetryJob(FindJob(m)); break;
+            case "remove":
+                var rj = FindJob(m);
+                if (rj != null && (rj.State == "done" || rj.State == "failed")) jobs.Remove(rj);
+                break;
+            case "openFile":
+                var oj = FindJob(m);
+                string jp = oj == null ? null : (Str(m, "which") == "transcript" ? oj.TranscriptPath : oj.VideoPath);
+                if (jp != null) OpenLocal(jp);
+                break;
+            case "showFile":
+                var sj = FindJob(m);
+                string sp = sj == null ? null : (sj.VideoPath ?? sj.TranscriptPath);
+                if (sp != null && File.Exists(sp)) Process.Start("explorer.exe", "/select," + Q(sp));
+                break;
+
+            // Folders
+            case "chooseFolder": ChooseFolder(Str(m, "which")); break;
+            case "openFolder":
+                string which = Str(m, "which");
+                string folder = which == "study" ? StudyRoot : which == "notability" ? NotabilityDir : RecordingsDir;
+                if (folder.Length == 0) return;
+                Directory.CreateDirectory(folder);
+                Process.Start("explorer.exe", Q(folder));
+                break;
+            case "openPath": OpenLocal(Str(m, "path")); break;
+            case "openLink": OpenExternal(Str(m, "url")); break;
+
+            // Notability
+            case "linkNotability": LinkNotability(course, Str(m, "folder")); break;
+            case "openNotability": OpenNotability(); break;
+            case "importTimetable": ImportTimetable(); break;
+            case "readCalendarPage": ReadCalendarPage(); break;
+            case "skipExams": SkipExams(course); break;
+            case "viewFile": ShowFile(m); break;
+            case "pickProfileImage": SetProfileImage(false); break;
+            case "clearProfileImage": SetProfileImage(true); break;
+            case "setCourseBackground": SetCourseBackground(course, Str(m, "mode"), Str(m, "colors")); break;
+            case "pasteTimetable":
+                if (!Clipboard.ContainsImage()) { Toast("העתק תמונה של מערכת השעות ואז הדבק כאן", true); break; }
+                string clipboardPath = Path.Combine(Path.GetTempPath(), "timetable-" + Guid.NewGuid().ToString("N") + ".png");
+                using (var clipboardImage = Clipboard.GetImage()) clipboardImage.Save(clipboardPath, System.Drawing.Imaging.ImageFormat.Png);
+                ImportTimetable(new[] { clipboardPath });
+                break;
+            case "cs24Sync": Cs24Sync(course); break;
+            case "setupRun": SetupRun(course, m["sections"] as System.Collections.ArrayList, Bool(m, "cs24")); break;
+            case "prepareCourses": PrepareCourses(m["courses"] as System.Collections.ArrayList); break;
+
+            // Sites inside the app
+            case "showSite": ShowSite(m); break;
+            case "placeSite": PlaceSite(m); break;
+            case "hideSite": sitePanel.Visible = false; break;
+            case "siteAction": SiteAction(Str(m, "action")); break;
+            case "setDownloadTarget":
+                siteDownloadCourse = course.Length > 0 ? course : null;
+                siteDownloadFolder = Str(m, "folder");
+                break;
+        }
+    }
+
+    void CheckClipboard(bool force)
+    {
+        try
+        {
+            if (!Clipboard.ContainsText()) return;
+            string t = Clipboard.GetText().Trim();
+            if (t.IndexOf("zoom.us/rec/", StringComparison.OrdinalIgnoreCase) < 0 || t.Length > 2000) return;
+            if (!force && t == lastClipboard) return;
+            lastClipboard = t;
+            Send(new { type = "clipboard", url = t, force = force });
+        }
+        catch { }
+    }
+
+    void ChooseFolder(string which)
+    {
+        string key = which == "study" ? "studyRoot" : which == "notability" ? "notabilityDir" : "recordingsDir";
+        using (var dlg = new FolderBrowserDialog())
+        {
+            dlg.Description = which == "study" ? "\u05D1\u05D7\u05E8 \u05D0\u05EA \u05EA\u05D9\u05E7\u05D9\u05D9\u05EA \u05D4\u05E7\u05D5\u05E8\u05E1\u05D9\u05DD"
+                : which == "notability" ? "\u05D1\u05D7\u05E8 \u05D0\u05EA \u05EA\u05D9\u05E7\u05D9\u05D9\u05EA \u05D4\u05D2\u05D9\u05D1\u05D5\u05D9 \u05E9\u05DC Notability"
+                : "\u05D1\u05D7\u05E8 \u05D0\u05D9\u05E4\u05D4 \u05DC\u05E9\u05DE\u05D5\u05E8 \u05D4\u05E7\u05DC\u05D8\u05D5\u05EA";
+            string current = Str(settings, key);
+            if (Directory.Exists(current)) dlg.SelectedPath = current;
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            settings[key] = dlg.SelectedPath;
+            SaveSettings();
+            SendSettings();
+            if (which == "notability") SendNotabilityFolders();
+        }
+    }
+
+    static readonly HashSet<string> SafeToOpen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".html", ".htm", ".txt", ".md", ".mp4", ".m4a", ".mp3", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+        ".png", ".jpg", ".jpeg", ".gif", ".csv", ".ipynb", ".py", ".c", ".cpp", ".h", ".java", ".m", ".zip", ".url"
+    };
+
+    void OpenLocal(string path)
+    {
+        // Only things inside the app's own folders. Anything that could run (an .exe from Moodle, a script)
+        // is shown in Explorer instead of being opened.
+        if (string.IsNullOrEmpty(path)) return;
+        string full = Path.GetFullPath(path);
+        bool inside = IsInside(full, AppRoot) || IsInside(full, StudyRoot) || IsInside(full, RecordingsDir) || (NotabilityDir.Length > 0 && IsInside(full, NotabilityDir));
+        if (!inside) return;
+        if (Directory.Exists(full)) Process.Start("explorer.exe", Q(full));
+        else if (File.Exists(full))
+        {
+            if (SafeToOpen.Contains(Path.GetExtension(full))) Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });
+            else Process.Start("explorer.exe", "/select," + Q(full));
+        }
+    }
+
+    static void OpenExternal(string url)
+    {
+        Uri u;
+        if (Uri.TryCreate(url, UriKind.Absolute, out u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp))
+            Process.Start(new ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true });
+    }
+
+    // ---------- Status ----------
+
+    bool polling;
+
+    async Task PollStatus(bool full)
+    {
+        if (polling) return;
+        polling = true;
+        try
+        {
+            var ai = await AiStatus();
+            Send(new { type = "aiStatus", status = ai });
+            string ms = await MoodleHeartbeat();
+            Send(new { type = "moodle", state = ms, message = "" });
+            if (full && ms == "ready") LoadHome();
+            ImportAllNotability();
+            // Every few hours: anything new on Moodle in the courses that are set up? (Not while a course is downloading.)
+            if (ms == "ready" && Option("autoSync") && syncingCourses.Count == 0 && progressRange.Count == 0) { var check = BackgroundNewMaterialCheck(); }
+        }
+        catch { }
+        finally { polling = false; }
+    }
+
+    // ---------- Updates ----------
+    // Each GitHub release carries SumIT.zip and SumIT.zip.sha256. The app downloads both, checks the hash,
+    // swaps its own files (a running .exe/.dll can be renamed, so the old ones become *.old) and restarts.
+
+    string updateVersion, updateZipUrl, updateShaUrl, updatePage, stagedUpdateDir;
+    bool updating, restartingForUpdate;
+    DateTime lastUpdateCheck = DateTime.MinValue;
+
+    async void CheckForUpdate()
+    {
+        lastUpdateCheck = DateTime.Now;
+        if (stagedUpdateDir != null || updating) return;
+        try
+        {
+            using (var http = new HttpClient())
+            {
+                http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SumIT/" + Version);
+                string body = await http.GetStringAsync("https://api.github.com/repos/" + Repo + "/releases/latest");
+                var rel = json.Deserialize<Dictionary<string, object>>(body);
+                string tag = Str(rel, "tag_name").TrimStart('v');
+                System.Version latest, mine;
+                if (!System.Version.TryParse(tag, out latest) || !System.Version.TryParse(Version, out mine) || latest <= mine) return;
+                updateVersion = tag;
+                updatePage = Str(rel, "html_url");
+                updateZipUrl = updateShaUrl = null;
+                foreach (Dictionary<string, object> a in (rel["assets"] as System.Collections.ArrayList ?? new System.Collections.ArrayList()))
+                {
+                    string url = Str(a, "browser_download_url");
+                    if (!RepoNames.Any(r => url.StartsWith("https://github.com/" + r + "/releases/download/", StringComparison.OrdinalIgnoreCase))) continue;
+                    if (Str(a, "name") == "SumIT.zip") updateZipUrl = url;
+                    if (Str(a, "name") == "SumIT.zip.sha256") updateShaUrl = url;
+                }
+                bool canAuto = updateZipUrl != null && updateShaUrl != null;
+                Send(new { type = "update", version = tag, url = updatePage, canAuto = canAuto, notes = Trunc(Str(rel, "body"), 600) });
+                // Download only after the student clicks the update button.
+            }
+        }
+        catch { }
+    }
+
+    async void InstallUpdate()
+    {
+        if (updating || updateZipUrl == null || updateShaUrl == null) { if (updatePage != null) OpenExternal(updatePage); return; }
+        if (stagedUpdateDir != null) { Send(new { type = "updateReady", version = updateVersion }); return; }
+        updating = true;
+        Send(new { type = "updateProgress", version = updateVersion, text = "מוריד את העדכון..." });
+        try
+        {
+            string work = Path.Combine(Path.GetTempPath(), "hit-student-update-" + updateVersion);
+            if (Directory.Exists(work)) Directory.Delete(work, true);
+            Directory.CreateDirectory(work);
+            string zip = Path.Combine(work, "SumIT.zip");
+            string expected;
+            using (var http = new HttpClient())
+            {
+                http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SumIT/" + Version);
+                http.Timeout = TimeSpan.FromMinutes(10);
+                expected = (await http.GetStringAsync(updateShaUrl)).Trim().Split(' ', '\t')[0].ToLowerInvariant();
+                using (var resp = await http.GetAsync(updateZipUrl, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    resp.EnsureSuccessStatusCode();
+                    using (var fs = File.Create(zip)) await resp.Content.CopyToAsync(fs);
+                }
+            }
+            string actual;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var fs = File.OpenRead(zip))
+                actual = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+            if (actual != expected) throw new Exception("הקובץ שהורד לא תקין (בדיקת חתימה נכשלה)");
+
+            string extracted = Path.Combine(work, "x");
+            System.IO.Compression.ZipFile.ExtractToDirectory(zip, extracted);
+            string root = File.Exists(Path.Combine(extracted, "SumIT.exe")) ? extracted : Path.Combine(extracted, "SumIT");
+            if (!File.Exists(Path.Combine(root, "SumIT.exe"))) throw new Exception("העדכון לא מכיל את האפליקציה");
+            // Make sure nothing in the package escapes the app folder.
+            foreach (string f in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
+                if (!IsInside(f, root)) throw new Exception("bad package");
+            stagedUpdateDir = root;
+            Send(new { type = "updateReady", version = updateVersion });
+        }
+        catch (Exception ex) { Send(new { type = "updateProgress", version = updateVersion, text = ex.Message, error = true }); }
+        updating = false;
+    }
+
+    void RestartIntoUpdate() { ApplyUpdate(true); }
+
+    // Copies the staged version over the app's files (the running exe and dlls are renamed to .old first,
+    // which Windows allows), then restarts, or just leaves it for the next start.
+    void ApplyUpdate(bool restart)
+    {
+        if (stagedUpdateDir == null) return;
+        try
+        {
+            foreach (string f in Directory.GetFiles(stagedUpdateDir, "*", SearchOption.AllDirectories))
+            {
+                string rel = f.Substring(stagedUpdateDir.Length).TrimStart('\\');
+                if (rel.StartsWith("browser-data", StringComparison.OrdinalIgnoreCase) || rel.Equals("settings.json", StringComparison.OrdinalIgnoreCase)) continue;
+                // The package's exe is SumIT.exe; an install whose exe has another name gets the new one under its own name.
+                string target = rel.Equals("SumIT.exe", StringComparison.OrdinalIgnoreCase) ? Application.ExecutablePath : Path.Combine(AppDir, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                if (File.Exists(target))
+                {
+                    string old = target + ".old";
+                    if (File.Exists(old)) File.Delete(old);
+                    File.Move(target, old);   // works even for the running exe and loaded dlls
+                }
+                File.Copy(f, target);
+            }
+            stagedUpdateDir = null;
+            if (!restart) return;
+            restartingForUpdate = true;
+            Process.Start(new ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = false, WorkingDirectory = AppDir });
+            Close();
+        }
+        catch (Exception ex) { if (restart) Toast("העדכון נכשל: " + ex.Message, true); }
+    }
+
+    static void CleanUpOldFiles()
+    {
+        // Only the app's own files; browser-data has Chromium's own "LOG.old" files.
+        try
+        {
+            foreach (string f in Directory.GetFiles(AppDir, "*.old", SearchOption.AllDirectories))
+                if (!IsInside(f, DataDir)) try { File.Delete(f); } catch { }
+        }
+        catch { }
+    }
+
+    // ---------- Sites inside the app ----------
+
+    double siteScale = 1;
+
+    void ShowSite(Dictionary<string, object> m)
+    {
+        string key = Str(m, "site");
+        string url;
+        if (!Sites.TryGetValue(key, out url)) return;
+        PlaceSite(m);
+        string current = site.Source == null ? "" : site.Source.ToString();
+        string host = new Uri(url).Host;
+        string deep = Str(m, "url");
+        if (key == "moodle" && IsMoodleUrl(deep)) site.CoreWebView2.Navigate(deep);   // e.g. a deadline from the home page
+        else if (current.IndexOf(host, StringComparison.OrdinalIgnoreCase) < 0) site.CoreWebView2.Navigate(url);
+        sitePanel.Visible = true;
+        sitePanel.BringToFront();
+    }
+
+    void PlaceSite(Dictionary<string, object> m)
+    {
+        // The page reports the box (in CSS pixels) where the site should appear; scale it to window pixels.
+        double vw = Convert.ToDouble(m["vw"]);
+        if (vw > 0) siteScale = ui.ClientSize.Width / vw;
+        int x = (int)Math.Round(Convert.ToDouble(m["x"]) * siteScale);
+        int y = (int)Math.Round(Convert.ToDouble(m["y"]) * siteScale);
+        int w = (int)Math.Round(Convert.ToDouble(m["w"]) * siteScale);
+        int h = (int)Math.Round(Convert.ToDouble(m["h"]) * siteScale);
+        sitePanel.Bounds = new Rectangle(x, y, Math.Max(10, w), Math.Max(10, h));
+    }
+
+    void SiteAction(string action)
+    {
+        var c = site.CoreWebView2;
+        if (c == null) return;
+        if (action == "back" && c.CanGoBack) c.GoBack();
+        else if (action == "forward" && c.CanGoForward) c.GoForward();
+        else if (action == "reload") c.Reload();
+        else if (action == "print") c.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
+        else if (action == "savepdf") SavePageAsPdf();
+        else if (action == "copylink" && site.Source != null) { try { Clipboard.SetText(site.Source.ToString()); Toast("הקישור הועתק", false); } catch { } }
+        else if (action == "downloads") c.OpenDefaultDownloadDialog();
+        else if (action == "external" && site.Source != null) OpenExternal(site.Source.ToString());
+    }
+
+    void OnSiteDownload(object sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        try
+        {
+            string downloadCourse = siteDownloadCourse;
+            // Files saved from Moodle / CS24 / the portal go straight into the course and lecture chosen above the site.
+            string name = SafeName(Path.GetFileName(e.ResultFilePath));
+            string where;
+            string dir = SiteSaveDir(name, out where);
+            Directory.CreateDirectory(dir);
+            string path = UniquePathIn(dir, name);
+            e.ResultFilePath = path;
+            e.Handled = false; // Keep native download progress, cancellation and failure details visible.
+            var op = e.DownloadOperation;
+            string shown = Path.GetFileName(path);
+            Send(new { type = "siteDownload", name = shown, dir = dir, state = "started", where = where });
+            int lastPct = -1;
+            op.BytesReceivedChanged += delegate
+            {
+                long total = op.TotalBytesToReceive.HasValue ? (long)op.TotalBytesToReceive.Value : 0;
+                if (total <= 0) return;
+                int pct = (int)Math.Min(99, (long)op.BytesReceived * 100 / total);
+                if (pct == lastPct) return;
+                lastPct = pct;
+                Send(new { type = "siteDownload", name = shown, state = "progress", pct = pct, where = where });
+            };
+            op.StateChanged += delegate
+            {
+                if (op.State == CoreWebView2DownloadState.Completed)
+                {
+                    Send(new { type = "siteDownload", name = shown, dir = dir, path = path, state = "done", where = where });
+                    if (downloadCourse != null) SendCourseLocal(downloadCourse);
+                }
+                else if (op.State == CoreWebView2DownloadState.Interrupted)
+                    Send(new { type = "siteDownload", name = shown, dir = dir, state = "failed" });
+            };
+        }
+        catch (Exception ex) { e.Cancel = true; Toast("לא ניתן לשמור את ההורדה: " + ex.Message, true); }
+    }
+}
