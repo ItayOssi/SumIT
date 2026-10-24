@@ -19,7 +19,7 @@ partial class HitStudent
     // The addresses can be pointed at a local test server.
     static string GeminiBase { get { return Environment.GetEnvironmentVariable("SUMIT_GEMINI_URL") ?? "https://generativelanguage.googleapis.com"; } }
     static string OpenAiBase { get { return Environment.GetEnvironmentVariable("SUMIT_OPENAI_URL") ?? "https://api.openai.com"; } }
-    string GeminiModel { get { return Str(settings, "geminiModel").Length > 0 ? Str(settings, "geminiModel") : "gemini-2.5-flash"; } }
+    string GeminiModel { get { return Str(settings, "geminiModel").Length > 0 ? Str(settings, "geminiModel") : "gemini-flash-latest"; } }
     string OpenAiModel { get { return Str(settings, "openaiModel").Length > 0 ? Str(settings, "openaiModel") : "gpt-4o-mini"; } }
 
     class HelperReply { public string Text = "", Provider = ""; public bool Error, Limit; }

@@ -30,7 +30,9 @@ partial class HitStudent
         return File.Exists(global) ? global : FindOnPath("codex.cmd", "codex.exe");
     }
 
-    bool GeminiAccountReady() { return FindGemini() != null && (geminiSignedOverride ?? GeminiGoogleSignedIn()); }
+    // Google ended Gemini CLI for personal accounts on 2026-06-18 (the sign-in still works, but every answer is refused), so the account
+    // path counts only for a stand-in tool (tests) or a tool that is not Google's own. Gemini is reached with an API key instead.
+    bool GeminiAccountReady() { return FindGemini() != null && (geminiSignedOverride ?? (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SUMIT_GEMINI")) && GeminiGoogleSignedIn())); }
     bool ChatGptAccountReady() { return FindCodex() != null && codexSignedIn; }
 
     // "account" (the subscription), "key" (an API key), or "" (not connected).
@@ -96,6 +98,9 @@ partial class HitStudent
                 string exe = FindGemini();
                 r = await RunCli(exe, "-p " + Q("ענה לפי ההנחיות והחומר שבקלט.") + " -o text", prompt, dir, 240000);
                 text = r.Item2.Trim();
+                // Since June 2026 Google no longer serves Gemini CLI to personal accounts (it moved to Antigravity): the sign-in works, the answers don't.
+                if (r.Item3.IndexOf("IneligibleTier", StringComparison.OrdinalIgnoreCase) >= 0 || r.Item3.IndexOf("no longer supported", StringComparison.OrdinalIgnoreCase) >= 0)
+                { reply.Error = true; reply.Text = "Google הפסיקה לתת ל-Gemini CLI לעבוד עם חשבון אישי. אפשר לחבר Gemini עם מפתח חינמי מ-Google AI Studio"; return reply; }
                 if (r.Item2.IndexOf("Opening authentication page", StringComparison.OrdinalIgnoreCase) >= 0 || r.Item3.IndexOf("auth", StringComparison.OrdinalIgnoreCase) >= 0 && text.Length == 0)
                 { reply.Error = true; reply.Text = "ההתחברות ל-Google נגמרה. התחבר שוב בהגדרות"; return reply; }
             }

@@ -110,6 +110,7 @@ partial class HitStudent
         Environment.SetEnvironmentVariable("SUMIT_OPENAI_URL", baseUrl.TrimEnd('/'));
         try
         {
+            app.geminiSignedOverride = false; app.codexSignedIn = false;   // whatever this PC is signed in to, the key tests start from nothing
             check("no helper without a key", app.HelperOrder().Count == 0);
             app.settings["geminiKey"] = Protect(new string('g', 30)); app.settings["openaiKey"] = Protect(new string('o', 30));
             check("auto: Gemini first, then ChatGPT", string.Join(",", app.HelperOrder()) == "gemini,openai");

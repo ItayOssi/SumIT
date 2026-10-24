@@ -229,14 +229,15 @@ function helperCard(kind) {
   const mode = helperMode(kind);
   const setup = (S.ai && S.ai.setup) || '';
   const busy = gem ? /gemini/.test(setup) : /codex|chatgpt/.test(setup) || (/node/.test(setup) && S.brainBusy === brain);
-  const desc = gem ? 'מתחברים עם חשבון Google שלך, כמו באתר. חינמי, או לפי המנוי שלך (Google AI Pro). בודק את Claude, עונה בצ\'אט וקורא דפים.'
+  const desc = gem ? 'מפתח חינמי מ-Google, בלי כרטיס אשראי. עונה בצ\'אט, בודק את Claude וקורא דפים. החיבור עם חשבון Google הפסיק לעבוד אצל Google.'
     : 'מתחברים עם חשבון ChatGPT שלך, כמו באתר. צריך מנוי ChatGPT (Plus ומעלה). בודק את Claude, עונה בצ\'אט וקורא דפים.';
   let state = '', act = '';
   if (busy) state = `<span class="spinner"></span>${setupText(setup)}`;
   else if (mode === 'account') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם החשבון שלך</span>'; act = '<button class="ghost small" data-logout>התנתק</button>'; }
-  else if (mode === 'key') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם מפתח</span>'; act = `<button class="soft small" data-login>עבור לחשבון ${gem ? 'Google' : 'ChatGPT'}</button><button class="ghost small" data-rm>הסר מפתח</button>`; }
-  else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
-  const keyBox = mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`;
+  else if (mode === 'key') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם מפתח</span>'; act = `${gem ? '' : '<button class="soft small" data-login>עבור לחשבון ChatGPT</button>'}<button class="ghost small" data-rm>הסר מפתח</button>`; }
+  else if (!gem) act = '<button class="primary small" data-login>התחבר עם חשבון ChatGPT</button>';
+  // Google stopped Gemini CLI for personal accounts (June 2026), so Gemini connects with a free key from Google AI Studio.
+  const keyBox = mode || busy ? '' : `<details class="adv"${gem ? ' open' : ''}><summary>${gem ? 'חבר עם מפתח חינמי מ-Google AI Studio (דקה אחת)' : 'יש לי מפתח API'}</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`;
   const el = h(`<div class="provider${mode ? ' selected' : ''}" data-kind="${kind}"><span class="chip ${mode ? 'ok' : ''} tag">${mode ? 'מחובר' : 'עוזר · לא חובה'}</span>
     <div class="ph"><span class="pl ${kind}" data-ic="${gem ? 'gemini' : 'sparkles'}"></span><div><h3>${name}</h3></div></div>
     <p>${desc}</p>
