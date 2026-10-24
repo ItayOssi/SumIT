@@ -259,6 +259,36 @@ partial class HitStudent
         catch { return false; }
     }
 
+    // Has Antigravity started the Google sign-in since `since`? (Its log says so.)
+    static bool AgyOAuthStarted(DateTime sinceUtc)
+    {
+        try
+        {
+            string dir = Path.Combine(Home, @".gemini\antigravity-cli\log");
+            if (!Directory.Exists(dir)) return false;
+            foreach (string f in Directory.GetFiles(dir, "cli-*.log").Where(f => File.GetLastWriteTimeUtc(f) > sinceUtc))
+                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs))
+                    if (sr.ReadToEnd().Contains("consumerOAuth: starting OAuth flow")) return true;
+        }
+        catch { }
+        return false;
+    }
+
+    // Presses Enter in the hidden sign-in screen, again and again, until the Google sign-in has started: the screen may first ask
+    // other things (such as whether to trust the folder), and each of them is answered by Enter.
+    async Task<bool> PushToSignIn(Process p, DateTime sinceUtc)
+    {
+        int pid = p.Id;
+        await Task.Delay(2500);
+        for (int i = 0; i < 12 && !p.HasExited; i++)
+        {
+            await Task.Run<bool>(() => PressEnterIn(pid));
+            for (int w = 0; w < 4; w++) { await Task.Delay(500); if (AgyOAuthStarted(sinceUtc)) return true; }
+        }
+        return AgyOAuthStarted(sinceUtc);
+    }
+
     // Antigravity keeps the signed-in Google account in the Windows credential store, under this name.
     async Task<bool> AgyCredentialPresent()
     {
@@ -276,7 +306,6 @@ partial class HitStudent
     {
         string dir = Path.Combine(Path.GetTempPath(), "SumIT-agy-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        Send(new { type = "authCode", kind = "gemini", state = "wait" });
         try
         {
             bool fake = Environment.GetEnvironmentVariable("SUMIT_AGY") != null;
@@ -286,13 +315,12 @@ partial class HitStudent
             using (var p = Process.Start(psi))
             {
                 var started = DateTime.UtcNow;
-                bool pressed = false;
+                var sinceLogs = started.AddSeconds(-2);
+                bool pushing = false;
                 while (!p.HasExited && (DateTime.UtcNow - started).TotalMinutes < 5)
                 {
                     await Task.Delay(1500);
-                    double secs = (DateTime.UtcNow - started).TotalSeconds;
-                    if (!pressed && secs > 3) { pressed = true; if (!fake) await Task.Run(() => PressEnterIn(p.Id)); }
-                    else if (pressed && !fake && secs > 8 && secs < 9.6) await Task.Run(() => PressEnterIn(p.Id));   // once more, in case the first screen was not ready yet
+                    if (!pushing && !fake) { pushing = true; if (!await PushToSignIn(p, sinceLogs)) { Toast("לא הצלחתי לפתוח את ההתחברות ל-Google. נסה שוב", true); break; } Send(new { type = "authCode", kind = "gemini", state = "wait" }); } else if (fake && !pushing) { pushing = true; Send(new { type = "authCode", kind = "gemini", state = "wait" }); }
                     if (await AgyCredentialPresent()) { signed = true; break; }
                 }
                 if (!p.HasExited) { await Task.Delay(1500); KillTree(p); }

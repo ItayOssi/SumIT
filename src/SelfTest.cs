@@ -201,28 +201,26 @@ partial class HitStudent
             }
 
             // Antigravity's sign-in screen runs in a hidden console and the app can press Enter in it (it then starts the Google sign-in).
+            // (With SUMIT_SELFTEST_AGYFRESH=1 the tool is deleted and installed again by the app first, like for a new student.)
+            if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGYFRESH") == "1")
+            {
+                try { string agyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy"); if (Directory.Exists(agyDir)) Directory.Delete(agyDir, true); } catch { }
+                try { await InstallAgy(); } catch (Exception ex) { check("Antigravity is installed by the app", false, ex.Message); }
+                check("Antigravity is installed by the app", FindAgy() != null, FindAgy());
+            }
             if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGYLOGIN") == "1" && FindAgy() != null)
             {
                 string logDir = Path.Combine(Home, @".gemini\antigravity-cli\log");
                 var before = DateTime.UtcNow;
-                var psi = new System.Diagnostics.ProcessStartInfo(FindAgy()) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetTempPath() };
-                bool started = false;
+                var psi = new System.Diagnostics.ProcessStartInfo(FindAgy()) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "SumIT-agy-selftest-" + Guid.NewGuid().ToString("N"))).FullName };   // a folder it has never seen
+                bool started;
                 using (var p = System.Diagnostics.Process.Start(psi))
                 {
-                    await Task.Delay(3500);
-                    int pid = p.Id; bool pressed = await Task.Run<bool>(() => PressEnterIn(pid));
-                    for (int i = 0; i < 12 && !started; i++)
-                    {
-                        await Task.Delay(1000);
-                        if (Directory.Exists(logDir))
-                            foreach (string f in Directory.GetFiles(logDir, "cli-*.log").Where(f => File.GetLastWriteTimeUtc(f) > before))
-                                try { using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) using (var sr = new StreamReader(fs)) if (sr.ReadToEnd().Contains("consumerOAuth: starting OAuth flow")) started = true; } catch { }
-                    }
-                    check("Antigravity: Enter pressed in its hidden console starts the Google sign-in", pressed && started, "pressed=" + pressed);
+                    started = await PushToSignIn(p, before);
                     KillTree(p);
                 }
+                check("Antigravity: Enter in its hidden console (a new folder too) starts the Google sign-in", started, "");
             }
-
             // Gemini on the student's Google account (Antigravity), when asked for: it reads a course file and writes a file in the course folder.
             if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGY") == "1" && FindAgy() != null)
             {
