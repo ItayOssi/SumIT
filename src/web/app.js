@@ -454,7 +454,7 @@ function semesterOf(c) {
   return `${y.slice(0, -1)}״${y.slice(-1)} · סמסטר ${m[2]}`;
 }
 function renderHome() {
-  renderStats(); renderNextUp(); renderTasks($('homeTasks'), true);
+  renderStats(); renderNextUp();
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
   $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
@@ -493,9 +493,9 @@ $('heroArt').innerHTML = ART.hero();
 $('heroCourses').innerHTML = IC.book + 'לקורסים שלי';
 $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
-$('heroPaste').onclick = () => { const f = document.querySelector('#homeTasks [data-t-title]'); if (f) { f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.focus(); } };
+$('heroPaste').onclick = () => { show('tasks'); setTimeout(() => { const f = document.querySelector('#tasksPage [data-t-title]'); if (f) f.focus(); }, 80); };
 $('allCourses').onclick = () => show('courses');
-$('allTasks').onclick = () => show('tasks');
+$('replayStones').onclick = () => window.playStones && window.playStones(true);
 (function quick() {
   const items = [
     ['c3', 'user', 'פורטל מידע אישי', 'ציונים, מערכת שעות ובחינות', () => openSite('portal')],
@@ -1331,6 +1331,7 @@ $('viewerPdf').onclick = () => S.viewer && S.viewer.pdf && send({ type: 'openPat
 $('siteBackCourse').onclick = () => { S.viewer = null; show('course'); };
 
 function openSite(site, url) {
+  if (window.stonesHook) window.stonesHook({ type: 'openSite', site });
   S.viewer = null;
   S.site = site;
   document.querySelectorAll('#siteTabs button').forEach(b => b.classList.toggle('active', b.dataset.site === site));
@@ -1520,10 +1521,11 @@ function renderWizardMoodle() {
 
 // ---------- Messages from the app ----------
 function onMessage(m) {
+  if (window.stonesHook) window.stonesHook(m);
   switch (m.type) {
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
-      renderTasks($('homeTasks'), true); if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderStats();
+      if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderStats();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
       if (!m.onboarded && $('wizard').hidden) openWizard(0);
@@ -1656,6 +1658,12 @@ function onMessage(m) {
       addMsg(m.role, m.text);
       if (S.chatBusy && m.role === 'assistant') setThinking('ממשיך...');
       break;
+    case 'chatVia': {
+      if (!S.course || S.course.name !== m.course || (m.scope || 'course') !== S.chatScope) break;
+      const last = [...document.querySelectorAll('#msgs .msg.assistant')].pop();
+      if (last) last.append(h('<div class="msg-via">נענה על ידי ' + esc(m.who) + '</div>'));
+      break;
+    }
     case 'chatTool': if (S.course && S.course.name === m.course && (m.scope || 'course') === S.chatScope) setThinking(m.text); break;
     case 'chatDone': if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
     case 'loginUrl':
@@ -1909,34 +1917,38 @@ function lectureCalendarEditor() {
   return box;
 }
 
+
 // ---------- My tasks ----------
 // The student's own to-do list (not from Moodle): a title, an optional course and date. Kept in the app's settings.
 S.tasks = S.tasks || [];
-function saveTasks() { send({ type: 'saveTasks', tasks: S.tasks }); renderStats(); renderTasks($('homeTasks'), true); if (S.view === 'tasks') renderTasks($('tasksPage'), false); }
-function renderTasks(box, compact) {
+function saveTasks() { send({ type: 'saveTasks', tasks: S.tasks }); renderStats(); if (S.view === 'tasks') renderTasks($('tasksPage')); }
+function renderTasks(box) {
   if (!box) return;
   const keep = box.querySelector('[data-t-title]'); const draft = keep ? keep.value : '';
   const focused = keep && document.activeElement === keep;
   box.innerHTML = '';
-  const open = S.tasks.filter(t => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  const open = S.tasks.filter(t => !t.done);
   const done = S.tasks.filter(t => t.done);
-  const n = $('homeTaskCount'); if (n) n.textContent = open.length ? open.length + ' פתוחות' : '';
   const nav = $('taskCount'); if (nav) { nav.textContent = open.length; nav.hidden = !open.length; }
   const courses = (S.courses || []).filter(c => c.current).map(c => c.name);
-  const form = h(`<form class="task-add"><input data-t-title placeholder="מטלה חדשה: למשל להגיש תרגיל 3" maxlength="200" autocomplete="off">
-    <select data-t-course><option value="">כללי</option>${courses.map(c => `<option>${esc(c)}</option>`).join('')}</select>
-    <input type="date" data-t-due class="ltr" title="תאריך הגשה (לא חובה)"><button class="primary" type="submit"><span data-ic="plus"></span>הוסף</button></form>`);
+  const total = S.tasks.length, pct = total ? Math.round(done.length / total * 100) : 0;
+  box.append(h(`<div class="task-summary"><div class="ring" style="--p:${pct}"><b>${pct}%</b></div>
+    <div><b>${open.length ? open.length + (open.length === 1 ? ' מטלה פתוחה' : ' מטלות פתוחות') : 'אין מטלות פתוחות'}</b><small class="muted">${total ? done.length + ' מתוך ' + total + ' הושלמו' : 'אפשר להוסיף הגשות, הכנות למבחן וכל מה שצריך לזכור'}</small></div></div>`));
+  const form = h(`<form class="task-add"><div class="task-add-main"><span class="ic assign" data-ic="plus"></span><input data-t-title placeholder="מה צריך לעשות? למשל: להגיש תרגיל 3" maxlength="200" autocomplete="off"></div>
+    <div class="task-add-opts"><label>קורס<select data-t-course><option value="">כללי</option>${courses.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
+    <label>עד תאריך<input type="date" data-t-due class="ltr"></label><button class="primary" type="submit"><span data-ic="plus"></span>הוסף מטלה</button></div></form>`);
   form.querySelector('[data-t-title]').value = draft;
   form.onsubmit = (e) => {
     e.preventDefault();
-    const title = form.querySelector('[data-t-title]').value.trim(); if (!title) return;
+    const title = form.querySelector('[data-t-title]').value.trim(); if (!title) return form.querySelector('[data-t-title]').focus();
     S.tasks.push({ id: String(Date.now()) + Math.random().toString(36).slice(2, 6), title, course: form.querySelector('[data-t-course]').value, due: form.querySelector('[data-t-due]').value, done: false });
     saveTasks();
   };
   box.append(form);
+  const dayDiff = (t) => t.due ? Math.round((new Date(t.due + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
   const row = (t) => {
-    const days = t.due ? Math.round((new Date(t.due + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
-    const when = days == null ? '' : days < 0 ? 'עבר' : days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';
+    const days = dayDiff(t);
+    const when = days == null ? '' : days < 0 ? 'עבר המועד' : days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';
     const el = h(`<div class="task${t.done ? ' done' : ''}"><label class="task-check"><input type="checkbox"${t.done ? ' checked' : ''}><span class="box"></span></label><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div>${when ? `<span class="chip${days < 0 && !t.done ? ' bad' : days <= 2 && !t.done ? ' warn' : ''}">${when}</span>` : ''}<button class="small ghost" title="מחק" data-del><span data-ic="x"></span></button></div>`);
     el.querySelector('b').textContent = t.title;
     el.querySelector('small').textContent = [t.course, t.due ? t.due.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ');
@@ -1944,11 +1956,13 @@ function renderTasks(box, compact) {
     el.querySelector('[data-del]').onclick = () => { S.tasks = S.tasks.filter(x => x !== t); saveTasks(); };
     return el;
   };
-  const shown = compact ? open.slice(0, 5) : open;
-  if (!open.length) box.append(h('<div class="muted" style="padding:10px 4px">אין מטלות פתוחות. אפשר להוסיף כאן הגשות, הכנות למבחן וכל מה שצריך לזכור.</div>'));
-  shown.forEach(t => box.append(row(t)));
-  if (compact && open.length > shown.length) box.append(h(`<div class="muted" style="padding:6px 4px">ועוד ${open.length - shown.length} בדף "המטלות שלי"</div>`));
-  if (!compact && done.length) { box.append(h('<h3 style="margin:18px 0 6px">הושלמו</h3>')); done.forEach(t => box.append(row(t))); }
+  const group = (title, list, cls) => { if (!list.length) return; const g = h(`<div class="task-group ${cls || ''}"><h3>${title}<span class="chip">${list.length}</span></h3></div>`); list.forEach(t => g.append(row(t))); box.append(g); };
+  const byDue = (a, b) => (a.due || '9999').localeCompare(b.due || '9999');
+  group('עבר המועד', open.filter(t => dayDiff(t) != null && dayDiff(t) < 0).sort(byDue), 'late');
+  group('השבוע', open.filter(t => dayDiff(t) != null && dayDiff(t) >= 0 && dayDiff(t) <= 7).sort(byDue));
+  group('בהמשך', open.filter(t => dayDiff(t) != null && dayDiff(t) > 7).sort(byDue));
+  group('בלי תאריך', open.filter(t => dayDiff(t) == null));
+  group('הושלמו', done, 'finished');
   icons(box);
   if (focused) form.querySelector('[data-t-title]').focus();
 }

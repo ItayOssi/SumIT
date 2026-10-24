@@ -68,10 +68,6 @@
             <div class="card-head"><span class="ic assign" data-ic="clock"></span><h2>הבא בתור</h2></div>
             <div id="nextUp"></div>
           </div>
-          <div class="card full" id="homeTasksCard">
-            <div class="card-head"><span class="ic assign" data-ic="check"></span><h2>המטלות שלי</h2><span class="chip" id="homeTaskCount"></span><button class="small ghost" id="allTasks">לכל המטלות</button></div>
-            <div id="homeTasks"></div>
-          </div>
           <div class="full"><div class="shortcuts" id="quick"></div></div>
           <div class="card full">
             <div class="card-head"><span class="ic zoom" data-ic="clock"></span><h2>המערכת שלי</h2><span class="chip" id="ttStatus"></span><button class="small ghost" id="ttPaste">הדבק תמונה</button><button class="small ghost" id="ttImport">עדכן מערכת</button></div>
@@ -214,8 +210,10 @@
       <div class="page" style="max-width:880px">
         <div class="head"><div class="grow"><h1>הגדרות</h1><p>החיבורים, התיקיות והמחברת.</p></div></div>
         <section class="card pad-lg">
-          <div class="card-head"><h2>המנוע החכם</h2><span class="chip" id="aiChip"></span></div>
+          <div class="card-head"><h2>צוות ה-AI</h2><span class="chip" id="aiChip"></span></div>
+          <div class="ai-team" id="aiTeam"></div>
           <div class="provider-cards" id="providers"></div>
+          <div class="row" style="margin-top:12px"><button class="ghost small" id="replayStones"><span data-ic="sparkles"></span>הפעל שוב את אנימציית האבנים</button></div>
           <div class="setting" style="margin-top:14px">
             <div class="grow"><b>חלוקת עבודה בין ה-AI</b><small>Claude בונה את הסיכומים (העבודה הכבדה). Gemini ו-ChatGPT עונים בצ'אט וקוראים דפים וסילבוס, וכך חוסכים את המכסה של Claude. אם אחד נגמר, השני ממשיך.</small></div>
             <select id="helperPref" style="width:auto"><option value="auto">אוטומטי</option><option value="gemini">Gemini קודם</option><option value="openai">ChatGPT קודם</option><option value="claude">רק Claude</option></select>
@@ -330,6 +328,7 @@
 <script src="art.js"></script>
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <script src="vendor/katex/katex.min.js"></script>
+<script src="extras.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

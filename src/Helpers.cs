@@ -233,6 +233,7 @@ partial class HitStudent
         if (r == null || r.Error) return false;   // the helper could not answer: Claude takes it
         lastChatBrain[course + "|" + scope] = r.Provider;
         say("assistant", r.Text);
+        Send(new { type = "chatVia", course = course, scope = scope, who = BrainName(r.Provider) });
         history.Add("סטודנט: " + Trunc(text, 800));
         history.Add("עוזר: " + Trunc(r.Text, 1500));
         var m2 = LoadMeta(course);

@@ -128,14 +128,28 @@ const assert = require('assert/strict');
  // The weekly timetable comes first, the exams are a card of their own below it.
  assert.equal(await page.evaluate(()=>document.getElementById('timetable').getBoundingClientRect().top<document.getElementById('examBoard').getBoundingClientRect().top),true);
  // My tasks: added on the home page, shown on the tasks page, checked off, kept through the app's settings.
- await page.locator('#homeTasks [data-t-title]').fill('להגיש תרגיל 3');
- await page.locator('#homeTasks [data-t-due]').fill('2099-01-05');
- await page.locator('#homeTasks button[type=submit]').click();
- assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.tasks.length,m.tasks[0].title,m.tasks[0].due];}),['saveTasks',1,'להגיש תרגיל 3','2099-01-05']);
  await page.locator('.nav-item[data-view=tasks]').click();
+ await page.locator('#tasksPage [data-t-title]').fill('להגיש תרגיל 3');
+ await page.locator('#tasksPage [data-t-due]').fill('2099-01-05');
+ await page.locator('#tasksPage button[type=submit]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.tasks.length,m.tasks[0].title,m.tasks[0].due];}),['saveTasks',1,'להגיש תרגיל 3','2099-01-05']);
  assert.equal(await page.locator('#tasksPage .task').count(),1);
+ assert.equal(await page.locator('#view-home #homeTasks').count(),0);
  await page.locator('#tasksPage .task-check').click();
  assert.equal(await page.evaluate(()=>S.tasks[0].done),true);
+ // The AI team: who does what, and a button that proves each one works.
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});show('settings');renderTeam();});
+ assert.equal(await page.locator('#aiTeam .team-row').count(),3);
+ await page.locator('#aiTeam .team-row').nth(1).locator('[data-test]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['testBrain','gemini']);
+ await page.evaluate(()=>onMessage({type:'brainTest',kind:'gemini',ok:true,ms:2500,text:'מוכן'}));
+ assert.equal((await page.locator('#aiTeam .team-result.ok').textContent()).includes('2.5'),true);
+ assert.equal(await page.locator('#aiTeam .team-row').nth(2).locator('[data-test]').isDisabled(),true);
+ // The Infinity Stones animation plays on demand, shows the missing stones as empty sockets, and can be skipped.
+ await page.evaluate(()=>playStones(true));
+ assert.equal(await page.locator('.stones-overlay .stone-missing').count()>=1,true);
+ await page.locator('.stones-overlay').click({position:{x:5,y:5}});
+ await page.waitForSelector('.stones-overlay',{state:'detached'});
  // With another AI connected: a "check with another AI" button under the last chat answer and on a ready summary.
  await page.evaluate(()=>{show('course');setTab('lessons');setChatScope('lesson:1');S.chatBusy=false;addMsg('assistant','תשובה לבדיקה');addCheckButton();});
  await page.getByRole('button',{name:'בדוק עם AI נוסף',exact:true}).click();

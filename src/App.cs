@@ -459,6 +459,7 @@ partial class HitStudent : Form
             case "setGeminiKey": SetHelperKey("gemini", Str(m, "key")); break;
             case "setHelperKey": SetHelperKey(Str(m, "provider"), Str(m, "key")); break;
             case "removeHelperKey": RemoveHelperKey(Str(m, "provider")); break;
+            case "testBrain": TestBrain(Str(m, "kind")); break;
             case "connectBrain": ConnectBrain(Str(m, "kind")); break;
             case "disconnectBrain": DisconnectBrain(Str(m, "kind")); break;
             case "chatCheck": ChatCheck(course, ChatScope(m)); break;

@@ -244,6 +244,31 @@ partial class HitStudent
         SendSettings();
     }
 
+    // "Does it really work?": one tiny question to the AI, so the student sees an answer and how long it took.
+    // Claude is only asked about its sign-in (a real question would spend its quota for nothing).
+    async void TestBrain(string kind)
+    {
+        string who = kind == "gemini" ? "gemini" : kind == "chatgpt" ? "openai" : "claude";
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            if (who == "claude")
+            {
+                var st = await AiStatus();
+                var readyProp = st == null ? null : st.GetType().GetProperty("ready");
+                bool claudeReady = readyProp != null && (readyProp.GetValue(st, null) as bool? ?? false);
+                Send(new { type = "brainTest", kind = kind, ok = claudeReady, ms = (int)sw.ElapsedMilliseconds, text = claudeReady ? "מחובר" : "לא מחובר" });
+                return;
+            }
+            await RefreshBrains();
+            if (HelperMode(who).Length == 0) { Send(new { type = "brainTest", kind = kind, ok = false, ms = 0, text = "לא מחובר" }); return; }
+            var r = await HelperAsk("ענה במילה אחת בלבד.", new List<Tuple<string, string>> { Tuple.Create("user", "ענה: מוכן") }, who);
+            bool ok = r != null && !r.Error;
+            Send(new { type = "brainTest", kind = kind, ok = ok, ms = (int)sw.ElapsedMilliseconds, text = r == null ? "לא מחובר" : Trunc(r.Text.Trim(), 80), mode = HelperMode(who) });
+        }
+        catch (Exception ex) { Send(new { type = "brainTest", kind = kind, ok = false, ms = (int)sw.ElapsedMilliseconds, text = ex.Message }); }
+    }
+
     async void DisconnectBrain(string kind)
     {
         try

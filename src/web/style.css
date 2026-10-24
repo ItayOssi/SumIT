@@ -711,3 +711,60 @@ button.link:hover { text-decoration: underline; }
 .task-check .box { width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--border); display: inline-block; transition: all .15s; }
 .task-check input:checked + .box { background: var(--ok); border-color: var(--ok); box-shadow: inset 0 0 0 3px var(--surface); }
 .exam-board { border-top: 3px solid var(--accent); margin-top: 6px; }
+
+/* My tasks page */
+#view-tasks .card { background: var(--surface); }
+.task-summary { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.task-summary b { display: block; font-size: 18px; }
+.task-summary .ring { --p: 0; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--surface-2) 0); position: relative; }
+.task-summary .ring::before { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: var(--surface); }
+.task-summary .ring b { position: relative; font-size: 14px; }
+.task-add { flex-wrap: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 14px; margin-bottom: 22px; display: flex; flex-direction: column; gap: 12px; }
+.task-add-main { display: flex; align-items: center; gap: 10px; }
+.task-add-main .ic { flex: none; }
+.task-add input, .task-add select { width: 100%; height: 42px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }
+.task-add input:focus, .task-add select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.task-add-opts { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.task-add-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); flex: 1 1 160px; }
+.task-add-opts button { height: 42px; }
+.task-group { margin-top: 18px; }
+.task-group h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 700; margin: 0 0 6px; }
+.task-group.late h3 { color: var(--bad); }
+.task { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; transition: transform .15s var(--ease), box-shadow .15s; }
+.task:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.task-group.late .task { border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.task-group.finished .task { opacity: .6; }
+.task .grow b { display: block; font-size: 14px; }
+.task.done .grow b { text-decoration: line-through; color: var(--muted); }
+.task-check { display: inline-flex; cursor: pointer; position: relative; }
+.task-check input { position: absolute; opacity: 0; pointer-events: none; }
+.task-check .box { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: inline-block; transition: all .15s; }
+.task-check input:checked + .box { background: var(--ok); border-color: var(--ok); box-shadow: inset 0 0 0 4px var(--surface-2); }
+
+/* AI team in settings */
+.ai-team { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.team-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.team-row small { display: block; font-size: 12.5px; line-height: 1.5; }
+.team-stone { width: 26px; height: 26px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, #fff9, var(--c) 45%, #0008 130%); box-shadow: 0 0 14px var(--c); }
+.team-result { margin-top: 4px; font-weight: 600; }
+.team-result.ok { color: var(--ok); } .team-result.bad { color: var(--bad); }
+.team-note { font-size: 12.5px; padding: 2px 4px; }
+.msg-via { margin-top: 6px; font-size: 11px; color: var(--muted); }
+.msg-tools + .msg-via { display: none; }
+
+/* Infinity stones start-up */
+.stones-overlay { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 45%, #1b1030, #05030a 70%); display: grid; place-items: center; transition: opacity .6s; cursor: pointer; }
+.stones-overlay.out { opacity: 0; pointer-events: none; }
+.stones-stage { position: relative; width: min(92vw, 520px); aspect-ratio: 4 / 3; }
+.stones-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 30px #000a); }
+.infinity-stone, .stone-missing { position: absolute; width: 6.5%; aspect-ratio: 1; margin: -3.25% 0 0 -3.25%; border-radius: 50%; }
+.infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, #0009 140%); box-shadow: 0 0 18px 6px var(--c), 0 0 60px 14px color-mix(in srgb, var(--c) 50%, transparent); }
+.stone-missing { border: 2px dashed color-mix(in srgb, var(--c) 60%, #888); opacity: .5; }
+.stones-stage.charged .infinity-stone { animation: stonePulse .45s ease-in-out 3; }
+@keyframes stonePulse { 50% { transform: scale(1.5); box-shadow: 0 0 30px 14px var(--c), 0 0 110px 40px var(--c); } }
+.stones-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
+.stones-overlay.snap .stones-flash { opacity: 1; }
+.stones-caption { position: absolute; bottom: 14%; left: 0; right: 0; text-align: center; color: #f4eaff; font-size: 18px; font-weight: 700; letter-spacing: .3px; text-shadow: 0 0 12px #a855f7; min-height: 28px; }
+.stones-skip { position: absolute; bottom: 24px; inset-inline-end: 28px; color: #bbb; }
+@media (prefers-reduced-motion: reduce) { .stones-overlay { display: none; } }
