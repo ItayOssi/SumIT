@@ -236,12 +236,9 @@ function helperCard(kind) {
   else if (mode === 'account') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם החשבון שלך</span>'; act = '<button class="ghost small" data-logout>התנתק</button><button class="ghost small" data-test>בדוק שזה עובד</button>'; }
   else if (mode === 'key') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם מפתח</span>'; act = `<button class="soft small" data-login>עבור לחשבון ${gem ? 'Google' : 'ChatGPT'}</button><button class="ghost small" data-rm>הסר מפתח</button>`; }
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
-  // Google asks the student to copy a code after signing in: it is pasted right here.
+  // While the Google page is open: say what to do (the app carries on by itself when the account is saved).
   const codeBox = gem && S.authCode ? `<div class="auth-code" dir="rtl"><b>כמעט סיימנו</b>
-    <small>נפתח דף התחברות של <bdi>Google</bdi>. היכנס עם החשבון.</small>
-    <small>כשזה נגמר, העתק את הכתובת של הדף מסרגל הכתובת בדפדפן. האפליקציה תקלוט אותה לבד, ואם לא, לחץ "הדבק". יש בערך דקה.</small>
-    <div class="row" style="width:100%"><input type="text" class="ltr" placeholder="קישור או קוד" data-code autocomplete="off"><button class="small" data-paste-code>הדבק</button><button class="primary small" data-send-code>שלח</button></div>    <button class="link" data-reopen>פתח שוב את דף Google</button></div>` : '';
-  const keyBox = codeBox + (mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
+    <small>נפתח דף התחברות של <bdi>Google</bdi> בדפדפן. היכנס עם החשבון ואשר, והאפליקציה תמשיך לבד.</small></div>` : '';  const keyBox = codeBox + (mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
   const tr = (S.brainTests || {})[brain];
   const testLine = !mode || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
   const el = h(`<div class="provider${mode ? ' selected' : ''}" data-kind="${kind}"><span class="chip ${mode ? 'ok' : ''} tag">${mode ? 'מחובר' : 'עוזר · לא חובה'}</span>
@@ -252,12 +249,6 @@ function helperCard(kind) {
   el.onclick = (e) => e.stopPropagation();
   const login = el.querySelector('[data-login]');
   if (login) login.onclick = () => { S.brainBusy = brain; send({ type: 'connectBrain', kind: brain }); toast(gem ? 'נפתח דפדפן להתחברות עם Google. אשר שם והאפליקציה תמשיך לבד.' : 'נפתח דפדפן להתחברות עם ChatGPT. אשר שם והאפליקציה תמשיך לבד.', { ms: 7000 }); };
-  const codeIn = el.querySelector('[data-code]');
-  if (codeIn) {
-    const sendCode = () => { const v = codeIn.value.trim(); if (v) send({ type: 'submitAuthCode', code: v }); };
-    el.querySelector('[data-send-code]').onclick = sendCode; el.querySelector('[data-paste-code]').onclick = () => send({ type: 'authFromClipboard' }); codeIn.onkeydown = (e) => { if (e.key === 'Enter') sendCode(); };
-    el.querySelector('[data-reopen]').onclick = () => S.authCode.url && send({ type: 'openLink', url: S.authCode.url });
-  }
   const tst = el.querySelector('[data-test]'); if (tst) tst.onclick = () => { S.brainTests = S.brainTests || {}; S.brainTests[brain] = { busy: true }; renderProviders(); send({ type: 'testBrain', kind: brain }); };
   const out = el.querySelector('[data-logout]'); if (out) out.onclick = () => { if (confirm(`להתנתק מ-${name}?`)) send({ type: 'disconnectBrain', kind: brain }); };
   const rm = el.querySelector('[data-rm]'); if (rm) rm.onclick = () => send({ type: 'removeHelperKey', provider: kind });

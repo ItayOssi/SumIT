@@ -200,6 +200,29 @@ partial class HitStudent
                 try { Directory.Delete(tmp, true); } catch { }
             }
 
+            // Antigravity's sign-in screen runs in a hidden console and the app can press Enter in it (it then starts the Google sign-in).
+            if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGYLOGIN") == "1" && FindAgy() != null)
+            {
+                string logDir = Path.Combine(Home, @".gemini\antigravity-cli\log");
+                var before = DateTime.UtcNow;
+                var psi = new System.Diagnostics.ProcessStartInfo(FindAgy()) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetTempPath() };
+                bool started = false;
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    await Task.Delay(3500);
+                    int pid = p.Id; bool pressed = await Task.Run<bool>(() => PressEnterIn(pid));
+                    for (int i = 0; i < 12 && !started; i++)
+                    {
+                        await Task.Delay(1000);
+                        if (Directory.Exists(logDir))
+                            foreach (string f in Directory.GetFiles(logDir, "cli-*.log").Where(f => File.GetLastWriteTimeUtc(f) > before))
+                                try { using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) using (var sr = new StreamReader(fs)) if (sr.ReadToEnd().Contains("consumerOAuth: starting OAuth flow")) started = true; } catch { }
+                    }
+                    check("Antigravity: Enter pressed in its hidden console starts the Google sign-in", pressed && started, "pressed=" + pressed);
+                    KillTree(p);
+                }
+            }
+
             // Gemini on the student's Google account (Antigravity), when asked for: it reads a course file and writes a file in the course folder.
             if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGY") == "1" && FindAgy() != null)
             {

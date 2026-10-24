@@ -762,8 +762,9 @@ button.link:hover { text-decoration: underline; }
 
 /* The pen on the picture, and the profile dialog */
 .brand { position: relative; }
-.edit-pen { position: absolute; inset-block-end: 4px; inset-inline-start: 36px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.35); border: 2px solid var(--surface); }
-.edit-pen svg { width: 11px; height: 11px; }
+.logo-wrap { position: relative; display: inline-flex; flex: none; }
+.edit-pen { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.35); border: 2px solid var(--surface); z-index: 2; }
+.edit-pen svg { width: 10px; height: 10px; }
 .edit-pen:hover { transform: scale(1.12); }
 .profile-dlg { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 22px; width: min(420px, 92vw); display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow); }
 .profile-dlg label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); }

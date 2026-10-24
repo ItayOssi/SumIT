@@ -170,13 +170,8 @@ partial class HitStudent
 $argline = $env:FAKE_ARGS
 if ($argline -match 'login' -and $argline -match 'status') { 'Logged in using ChatGPT'; exit 0 }
 if ($env:FAKE_AGY_LOGIN -eq '1') {
-  [Console]::Error.WriteLine('Authentication required. Please visit the URL to log in:')
-  [Console]::Error.WriteLine('  https://accounts.google.com/o/oauth2/auth?client_id=fake&state=x')
-  [Console]::Error.WriteLine('Or, paste the authorization code here and press Enter:')
-  [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-  $line = [Console]::In.ReadLine()
-  if ($line -and $line.Trim().TrimStart([char]0xFEFF) -eq '4/0CODE-123_x') { Write-Host 'READY'; exit 0 }
-  [Console]::Error.WriteLine('error: authentication failed or timed out'); exit 1
+  if ($argline -match 'READY') { Write-Host 'READY'; exit 0 }
+  Start-Sleep 2; Set-Content -Path $env:FAKE_AGY_CRED -Value 'saved'; Start-Sleep 60; exit 0   # the sign-in screen: the account gets saved a moment later
 }
 if ($env:FAKE_LOGIN -eq '1') {
   if ($env:CI) { [Console]::Error.WriteLine('non-interactive session'); exit 41 }   # like the real Gemini CLI: with CI set it never opens a browser
@@ -226,17 +221,13 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             check("the sign-in is answered by the app", File.Exists(flag));
             Environment.SetEnvironmentVariable("FAKE_LOGIN", null);
 
-            // Gemini's sign-in (Antigravity): it prints a Google address and waits for the code the student pastes into the app.
-            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", "1");
+            // Gemini's sign-in (Antigravity): its sign-in screen runs, the account gets saved, and a tiny question proves it works.
+            string credFlag = Path.Combine(fakes, "agy-credential.txt");
+            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", "1"); Environment.SetEnvironmentVariable("FAKE_AGY_CRED", credFlag); Environment.SetEnvironmentVariable("SUMIT_AGY_CRED", credFlag);
             app.settings["agyOk"] = false; app.geminiSignedOverride = null;
-            var loginTask = System.Threading.Tasks.Task.Run(() => app.LoginAgy());
-            for (int i = 0; i < 100 && app.agyLogin == null; i++) System.Threading.Thread.Sleep(100);
-            System.Threading.Thread.Sleep(1500);
-            app.SubmitAuthCode("4/0CODE-123_x");
-            bool signedIn = loginTask.Wait(20000) && loginTask.Result;
-            check("Gemini sign-in: the pasted code finishes it and the account is remembered", signedIn && Bool(app.settings, "agyOk") && app.HelperMode("gemini") == "account");
-            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
-            check("a pasted link gives the code, a code stays a code, other text is refused", AuthCodeFrom("https://antigravity.google/oauth-callback?code=4%2F0AbC_d&scope=x&state=y") == "4/0AbC_d" && AuthCodeFrom("4/0AbC-xyz") == "4/0AbC-xyz" && AuthCodeFrom("hello world") == "");
+            bool signedIn = Run(() => app.LoginAgy());
+            check("Gemini sign-in: once the account is saved the app is connected", signedIn && Bool(app.settings, "agyOk") && app.HelperMode("gemini") == "account");
+            File.Delete(credFlag);            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
             app.codexSignedIn = true; app.geminiSignedOverride = true;
 
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.

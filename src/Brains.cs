@@ -217,101 +217,100 @@ partial class HitStudent
         finally { try { File.Delete(script); } catch { } }
     }
 
-    Process agyLogin;
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)] static extern bool AttachConsole(uint pid);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool FreeConsole();
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteConsoleInput(IntPtr h, ConsoleKeyRecord[] records, uint count, out uint written);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
 
-    // Signs in to Antigravity: it prints a Google address, the browser opens it, and the student either is signed in on its own or
-    // pastes the code Google shows (submitAuthCode). Ends when the tool answers a tiny test question, which proves the sign-in works.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit, Size = 20)]
+    struct ConsoleKeyRecord
+    {
+        [System.Runtime.InteropServices.FieldOffset(0)] public ushort EventType;      // 1 = key event
+        [System.Runtime.InteropServices.FieldOffset(4)] public int KeyDown;
+        [System.Runtime.InteropServices.FieldOffset(8)] public ushort RepeatCount;
+        [System.Runtime.InteropServices.FieldOffset(10)] public ushort VirtualKey;
+        [System.Runtime.InteropServices.FieldOffset(12)] public ushort ScanCode;
+        [System.Runtime.InteropServices.FieldOffset(14)] public char Char;
+        [System.Runtime.InteropServices.FieldOffset(16)] public uint ControlKeys;
+    }
+
+    // Presses Enter in another program's (hidden) console: Antigravity's first screen asks how to sign in, and "Google" is the first choice.
+    static bool PressEnterIn(int pid)
+    {
+        try
+        {
+            FreeConsole();
+            if (!AttachConsole((uint)pid)) return false;
+            try
+            {
+                IntPtr h = CreateFile("CONIN$", 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);   // read + write, existing
+                if (h == IntPtr.Zero || h == new IntPtr(-1)) return false;
+                var down = new ConsoleKeyRecord { EventType = 1, KeyDown = 1, RepeatCount = 1, VirtualKey = 0x0D, ScanCode = 0x1C, Char = '\r' };
+                var up = down; up.KeyDown = 0;
+                uint written;
+                bool ok = WriteConsoleInput(h, new[] { down, up }, 2, out written);
+                CloseHandle(h);
+                return ok;
+            }
+            finally { FreeConsole(); }
+        }
+        catch { return false; }
+    }
+
+    // Antigravity keeps the signed-in Google account in the Windows credential store, under this name.
+    async Task<bool> AgyCredentialPresent()
+    {
+        string fake = Environment.GetEnvironmentVariable("SUMIT_AGY_CRED");
+        if (!string.IsNullOrEmpty(fake)) return File.Exists(fake);
+        try { var r = await Exec("cmdkey", "/list", null, 15000); return r.Item2.IndexOf("gemini:antigravity", StringComparison.OrdinalIgnoreCase) >= 0; }
+        catch { return false; }
+    }
+
+    // Signs in to Antigravity the way it does for anyone at a terminal: its own sign-in screen runs in a hidden console, the app presses
+    // Enter on "Google", the browser opens, the student signs in, and the tool saves the account by itself (no code to copy).
+    // (Its one-question mode would need a code pasted within a minute, and does not take it from a program.)
+    // Ends when the account is saved and a tiny question has been answered.
     async Task<bool> LoginAgy()
     {
         string dir = Path.Combine(Path.GetTempPath(), "SumIT-agy-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var seen = new StringBuilder();
-        string urlSent = null, lastClip = null;
+        Send(new { type = "authCode", kind = "gemini", state = "wait" });
         try
         {
-            var psi = new ProcessStartInfo(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan")
-            {
-                UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = dir
-            };
-            foreach (var kv in CliEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
+            bool fake = Environment.GetEnvironmentVariable("SUMIT_AGY") != null;
+            var psi = new ProcessStartInfo(FindAgy()) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = dir };
             psi.EnvironmentVariables.Remove("CI");
+            bool signed = false;
             using (var p = Process.Start(psi))
             {
-                agyLogin = p;
-                Action<StreamReader> pump = (reader) => Task.Run(() =>
-                {
-                    var buf = new char[512]; int n;
-                    try { while ((n = reader.Read(buf, 0, buf.Length)) > 0) lock (seen) seen.Append(buf, 0, n); } catch { }
-                });
-                pump(p.StandardOutput); pump(p.StandardError);
                 var started = DateTime.UtcNow;
-                while (!p.HasExited && (DateTime.UtcNow - started).TotalSeconds < 150)
+                bool pressed = false;
+                while (!p.HasExited && (DateTime.UtcNow - started).TotalMinutes < 5)
                 {
-                    await Task.Delay(700);
-                    string text; lock (seen) text = seen.ToString();
-                    // The student copies the address Google ended on: it is taken from the clipboard by itself, no pasting needed.
-                    try
-                    {
-                        string clip = System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : "";
-                        if (clip != lastClip && urlSent != null && clip.Length > 10 && clip.Length < 3000 && clip != urlSent && (clip.Contains("oauth-callback") || Regex.IsMatch(clip.Trim(), @"^4/[A-Za-z0-9_\-]{20,}$")))
-                        { lastClip = clip; if (SubmitAuthCode(clip)) Toast("קלטתי את הקישור מההעתקה", false); }
-                    }
-                    catch { }
-                    var m = Regex.Match(text, "https://accounts\\.google\\.com/[^\\s\"']+");
-                    if (m.Success && urlSent != m.Value)
-                    {
-                        urlSent = m.Value;
-                        try { lastClip = System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : null; } catch { }   // what was copied before does not count
-                        if (Environment.GetEnvironmentVariable("SUMIT_AGY") == null) OpenExternal(m.Value);   // a stand-in tool in the tests must not open a browser
-                        Send(new { type = "authCode", kind = "gemini", state = "wait", url = m.Value });
-                    }
+                    await Task.Delay(1500);
+                    double secs = (DateTime.UtcNow - started).TotalSeconds;
+                    if (!pressed && secs > 3) { pressed = true; if (!fake) await Task.Run(() => PressEnterIn(p.Id)); }
+                    else if (pressed && !fake && secs > 8 && secs < 9.6) await Task.Run(() => PressEnterIn(p.Id));   // once more, in case the first screen was not ready yet
+                    if (await AgyCredentialPresent()) { signed = true; break; }
                 }
-                if (!p.HasExited) KillTree(p);
-                else await Task.Delay(300);
-                string all; lock (seen) all = seen.ToString();
-                bool ok = p.HasExited && p.ExitCode == 0 && all.IndexOf("READY", StringComparison.OrdinalIgnoreCase) >= 0;
-                settings["agyOk"] = ok; SaveSettings();
-                return ok;
+                if (!p.HasExited) { await Task.Delay(1500); KillTree(p); }
             }
+            if (!signed) signed = await AgyCredentialPresent();
+            if (!signed) { settings["agyOk"] = false; SaveSettings(); return false; }
+            // The proof: the tool answers a tiny question with the account just saved.
+            var r = await RunCli(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan", null, dir, 120000);
+            bool ok = r.Item1 == 0 && r.Item2.IndexOf("READY", StringComparison.OrdinalIgnoreCase) >= 0;
+            settings["agyOk"] = ok; SaveSettings();
+            return ok;
         }
         finally
         {
-            agyLogin = null;
             Send(new { type = "authCode", kind = "gemini", state = "done" });
             try { Directory.Delete(dir, true); } catch { }
         }
     }
-
-    // The code Google showed after the sign-in, typed into the app: passed on to the waiting sign-in. Only the characters of such a code.
-    // What the student pastes may be the code itself, or the whole address of the page Google ended on (it has "code=..." in it).
-    static string AuthCodeFrom(string pasted)
-    {
-        pasted = (pasted ?? "").Trim();
-        var m = Regex.Match(pasted, @"[?&]code=([^&\s#]+)");
-        if (m.Success) return System.Net.WebUtility.UrlDecode(m.Groups[1].Value);
-        if (pasted.Length > 0 && pasted.Length <= 600 && Regex.IsMatch(pasted, @"^[A-Za-z0-9/_\-\.~%+=]+$")) return pasted;
-        return "";
-    }
-
-    bool SubmitAuthCode(string pasted)
-    {
-        string code = AuthCodeFrom(pasted);
-        if (code.Length == 0 || code.Length > 600 || !Regex.IsMatch(code, @"^[A-Za-z0-9/_\-\.~%+=]+$")) { Toast("זה לא נראה כמו הקישור או הקוד של Google. העתק את הכתובת מהדפדפן אחרי ההתחברות", true); return false; }
-        try { var p = agyLogin; if (p != null && !p.HasExited) { var b = Encoding.ASCII.GetBytes(code + "\r\n"); p.StandardInput.BaseStream.Write(b, 0, b.Length); p.StandardInput.BaseStream.Flush(); return true; } }
-        catch { }
-        return false;
-    }
-
-    // The "paste" button: takes the link or code from the clipboard.
-    void SubmitAuthFromClipboard()
-    {
-        string text = "";
-        try { if (System.Windows.Forms.Clipboard.ContainsText()) text = System.Windows.Forms.Clipboard.GetText(); } catch { }
-        if (text.Length == 0) { Toast("אין כלום בלוח. העתק את הכתובת מהדפדפן ונסה שוב", true); return; }
-        SubmitAuthCode(text);
-    }
-
     // Tells Gemini's tool to sign in with a Google account (without it, a tool run without a window has no way to ask which kind of sign-in).
     // Existing settings are kept; only the sign-in type is added when it is missing.
     void EnsureGeminiGoogleAuth()
