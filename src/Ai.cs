@@ -126,6 +126,9 @@ partial class HitStudent
             }
             catch { }
         }
+        // Signed in on this PC is not enough: the AI is used only after the student connected it here (so nothing starts out "connected").
+        bool claudeSignedElsewhere = claudeIn && !Bool(settings, "claudeOk");
+        claudeIn = claudeIn && Bool(settings, "claudeOk");
         claudeLoggedIn = claudeIn;
         bool geminiInstalled = FindAgy() != null;
         bool geminiKey = Str(settings, "geminiKey").Length > 0;
@@ -136,7 +139,7 @@ partial class HitStudent
         return new
         {
             provider = provider, ready = ready, setup = setupState,
-            claude = new { installed = claude != null, loggedIn = claudeIn, email = email, plan = plan },
+            claude = new { installed = claude != null, loggedIn = claudeIn, email = email, plan = plan, signedElsewhere = claudeSignedElsewhere },
             gemini = new { installed = geminiInstalled, hasKey = geminiKey, google = geminiGoogle },
             helpers = new { gemini = HelperMode("gemini"), openai = HelperMode("openai"), order = HelperOrder() }
         };
@@ -145,6 +148,20 @@ partial class HitStudent
     async Task SendAiStatus() { Send(new { type = "aiStatus", status = await AiStatus() }); }
 
     // ---------- Background setup (no console windows) ----------
+
+    // Claude's own sign-in (it lives in Claude's tool, outside this app).
+    async Task<bool> ClaudeSignedIn()
+    {
+        string claude = FindClaude();
+        if (claude == null) return false;
+        try
+        {
+            var r = await Exec(claude, "auth status --json", null, 30000);
+            var s = json.Deserialize<Dictionary<string, object>>(r.Item2.Substring(r.Item2.IndexOf('{')));
+            return Bool(s, "loggedIn");
+        }
+        catch { return false; }
+    }
 
     async void SetupClaude()
     {
@@ -160,10 +177,15 @@ partial class HitStudent
             }
             setupState = "login-claude";
             await SendAiStatus();
-            // "claude auth login" opens the sign-in page in the user's browser and waits for it to finish.
-            var login = await Exec(FindClaude(), "auth login --claudeai", null, 600000);
-            Match url = Regex.Match(login.Item2, @"https://\S+oauth\S+");
-            if (login.Item1 != 0 && url.Success) OpenExternal(url.Value);
+            // Already signed in on this PC (Claude keeps its own sign-in): nothing to do but remember that the student linked it here.
+            if (!await ClaudeSignedIn())
+            {
+                // "claude auth login" opens the sign-in page in the user's browser and waits for it to finish.
+                var login = await Exec(FindClaude(), "auth login --claudeai", null, 600000);
+                Match url = Regex.Match(login.Item2, @"https://\S+oauth\S+");
+                if (login.Item1 != 0 && url.Success) OpenExternal(url.Value);
+            }
+            if (await ClaudeSignedIn()) { settings["claudeOk"] = true; SaveSettings(); }
         }
         catch (Exception ex) { Toast(ex.Message, true); }
         // (C# 5 can't await inside finally, so the clean-up runs after the catch.)

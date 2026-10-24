@@ -41,7 +41,7 @@ partial class HitStudent
         return File.Exists(own) ? own : FindOnPath("agy.exe");
     }
     bool GeminiAccountReady() { return FindAgy() != null && (geminiSignedOverride ?? Bool(settings, "agyOk")); }
-    bool ChatGptAccountReady() { return FindCodex() != null && codexSignedIn; }
+    bool ChatGptAccountReady() { return FindCodex() != null && codexSignedIn && (Bool(settings, "chatgptOk") || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SUMIT_CODEX"))); }
 
     // "account" (the subscription), "key" (an API key), or "" (not connected).
     string HelperMode(string provider)
@@ -317,8 +317,9 @@ partial class HitStudent
             {
                 if (FindCodex() == null) await InstallCli("@openai/codex", "installing-codex");
                 setupState = "login-chatgpt"; await SendAiStatus();
-                await RunLogin(FindCodex(), "login", kind, () => false, false);
-                await RefreshBrains();
+                await RefreshBrains();   // already signed in on this PC: no browser, the student only links it here
+                if (!codexSignedIn) { await RunLogin(FindCodex(), "login", kind, () => false, false); await RefreshBrains(); }
+                settings["chatgptOk"] = codexSignedIn; SaveSettings();
                 Toast(codexSignedIn ? "ChatGPT חובר, והוא עוזר ל-Claude" : "ההתחברות ל-ChatGPT לא הסתיימה. אפשר לנסות שוב", !codexSignedIn);
             }
             else
@@ -364,8 +365,13 @@ partial class HitStudent
     {
         try
         {
-            if (kind == "chatgpt") { if (FindCodex() != null) await Exec(FindCodex(), "logout", null, 30000, CliEnv()); codexSignedIn = false; }
-            else foreach (string f in new[] { "oauth_creds.json", "google_accounts.json" }) { string p = Path.Combine(GeminiDir, f); if (File.Exists(p)) File.Delete(p); }
+            if (kind == "chatgpt") { settings["chatgptOk"] = false; SaveSettings(); if (FindCodex() != null) await Exec(FindCodex(), "logout", null, 30000, CliEnv()); codexSignedIn = false; }
+            else
+            {
+                // Signs the Google account out of Antigravity (its token is kept in the Windows credential store) and forgets the link.
+                settings["agyOk"] = false; SaveSettings();
+                if (Environment.GetEnvironmentVariable("SUMIT_AGY") == null) await Exec("cmdkey", "/delete:gemini:antigravity", null, 15000);
+            }
         }
         catch (Exception ex) { Toast(ex.Message, true); }
         await RefreshBrains();
