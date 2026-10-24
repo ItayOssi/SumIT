@@ -1,57 +1,14 @@
-// The AI team (who does what, and a button that proves each one works) and the Infinity Stones start-up animation.
-// Loaded before app.js; it only uses app.js's globals (S, $, h, send, helperMode ...) when called.
+// The start-up screen: the Infinity Gauntlet, and one stone flying into it for each thing that is connected.
+// Loaded before app.js; it only uses app.js's globals (S, h, helperMode ...) when called.
 
-// ---------- Who does what ----------
-// The work is split so that no single AI pays for everything: the heavy, rare work goes to Claude, the everyday
-// questions to Gemini (free tier), and the checking to ChatGPT.
-const TEAM = [
-  { kind: 'claude', name: 'Claude', stone: 'אבן השכל', color: '#facc15',
-    role: 'כותב את סיכום ההרצאה ופותר את שיעורי הבית. עבודה כבדה, פעם אחת להרצאה.' },
-  { kind: 'gemini', name: 'Gemini', stone: 'אבן החלל', color: '#3b82f6',
-    role: 'עונה על שאלות בצ\'אט, קורא סילבוס ומערכת שעות. הכי הרבה שימוש, ולכן הכי זול.' },
-  { kind: 'chatgpt', name: 'ChatGPT', stone: 'אבן המציאות', color: '#ef4444',
-    role: 'בודק את הפתרונות של Claude ואת התשובות בצ\'אט, כדי שלא יישארו טעויות.' }
-];
-
-function teamState(kind) {
-  const a = S.ai || {};
-  if (kind === 'claude') return a.claude && a.claude.loggedIn ? 'account' : '';
-  return helperMode(kind === 'gemini' ? 'gemini' : 'openai');
-}
-
-function renderTeam() {
-  const box = document.getElementById('aiTeam'); if (!box) return;
-  box.innerHTML = '';
-  TEAM.forEach(t => {
-    const mode = teamState(t.kind);
-    const res = (S.brainTests || {})[t.kind];
-    const el = h(`<div class="team-row"><span class="team-stone" style="--c:${t.color}"></span>
-      <div class="grow"><b>${t.name}</b><small class="muted">${t.stone} · ${esc(t.role)}</small>
-      <small class="team-result${res ? (res.ok ? ' ok' : ' bad') : ''}" data-res></small></div>
-      <span class="chip ${mode ? 'ok' : ''}">${mode ? (mode === 'key' ? 'מחובר עם מפתח' : 'מחובר') : 'לא מחובר'}</span>
-      <button class="small ghost" data-test${mode ? '' : ' disabled'}>בדוק שזה עובד</button></div>`);
-    const out = el.querySelector('[data-res]');
-    if (res && res.busy) out.textContent = 'בודק...';
-    else if (res) out.textContent = res.ok ? `✓ ענה תוך ${(res.ms / 1000).toFixed(1)} שניות${res.text && t.kind !== 'claude' ? ' · "' + res.text + '"' : ''}` : '✗ ' + (res.text || 'לא ענה');
-    el.querySelector('[data-test]').onclick = () => {
-      S.brainTests = S.brainTests || {}; S.brainTests[t.kind] = { busy: true }; renderTeam();
-      send({ type: 'testBrain', kind: t.kind });
-    };
-    box.append(el);
-  });
-  box.append(h('<div class="team-note muted">כך נחסכים טוקנים: Claude מופעל רק על העבודה הכבדה, שאלות רגילות לא מגיעות אליו, ו-ChatGPT בודק רק אחרי שהסיכום מוכן.</div>'));
-}
-
-// ---------- Infinity stones ----------
-// Six stones, one for each thing the app connects to. They fly into the gauntlet as each one is connected; with all six
-// the gauntlet snaps (a white flash) and the app returns to normal.
+// ChatGPT, Claude, Gemini, Moodle, CS24 and Zoom: six stones, six sockets on the gauntlet.
 const STONES = [
-  { id: 'chatgpt', name: 'ChatGPT', label: 'אבן המציאות', color: '#ef4444', x: 149, y: 128, ok: () => helperMode('openai') !== '' },
-  { id: 'claude', name: 'Claude', label: 'אבן השכל', color: '#facc15', x: 181, y: 122, ok: () => !!(S.ai && S.ai.claude && S.ai.claude.loggedIn) },
-  { id: 'gemini', name: 'Gemini', label: 'אבן החלל', color: '#3b82f6', x: 213, y: 124, ok: () => helperMode('gemini') !== '' },
-  { id: 'moodle', name: 'Moodle', label: 'אבן הזמן', color: '#22c55e', x: 245, y: 130, ok: () => S.moodle === 'ready' },
-  { id: 'cs24', name: 'CS24', label: 'אבן הכוח', color: '#a855f7', x: 112, y: 166, ok: () => seen('cs24') },
-  { id: 'zoom', name: 'Zoom', label: 'אבן הנשמה', color: '#f97316', x: 200, y: 182, ok: () => seen('zoom') }
+  { id: 'chatgpt', name: 'ChatGPT', label: 'אבן המציאות', color: '#ef4444', x: 57, y: 62, ok: () => helperMode('openai') !== '' },
+  { id: 'claude', name: 'Claude', label: 'אבן השכל', color: '#facc15', x: 82, y: 62, ok: () => !!(S.ai && S.ai.claude && S.ai.claude.loggedIn) },
+  { id: 'gemini', name: 'Gemini', label: 'אבן החלל', color: '#3b82f6', x: 107, y: 62, ok: () => helperMode('gemini') !== '' },
+  { id: 'moodle', name: 'Moodle', label: 'אבן הזמן', color: '#22c55e', x: 132, y: 62, ok: () => S.moodle === 'ready' },
+  { id: 'cs24', name: 'CS24', label: 'אבן הכוח', color: '#a855f7', x: 29, y: 95, ok: () => seen('cs24') },
+  { id: 'zoom', name: 'Zoom', label: 'אבן הנשמה', color: '#f97316', x: 100, y: 92, ok: () => seen('zoom') }
 ];
 function seen(k) { try { return localStorage.getItem('sumit.seen.' + k) === '1'; } catch { return false; } }
 function markSeen(k) { try { localStorage.setItem('sumit.seen.' + k, '1'); } catch { } }
@@ -60,78 +17,73 @@ function markSeen(k) { try { localStorage.setItem('sumit.seen.' + k, '1'); } cat
 window.stonesHook = (m) => {
   if (m.type === 'openSite' && m.site === 'cs24') markSeen('cs24');
   if (m.type === 'zoomRecording' || (m.type === 'job' && m.state === 'done')) markSeen('zoom');
-  if (m.type === 'brainTest') { S.brainTests = S.brainTests || {}; S.brainTests[m.kind] = m; renderTeam(); }
-  if (m.type === 'aiStatus' || m.type === 'settings') renderTeam();
+  if (m.type === 'brainTest') { S.brainTests = S.brainTests || {}; S.brainTests[m.kind] = m; if (typeof renderProviders === 'function') renderProviders(); }
 };
 
-const GAUNTLET = `<svg viewBox="0 0 400 300" class="gauntlet" aria-hidden="true">
-  <defs><linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fde68a"/><stop offset=".5" stop-color="#d4a017"/><stop offset="1" stop-color="#8a5a00"/></linearGradient></defs>
-  <rect x="146" y="226" width="108" height="58" rx="12" fill="url(#gold)"/>
-  <rect x="134" y="104" width="132" height="136" rx="28" fill="url(#gold)"/>
-  <rect x="136" y="50" width="28" height="72" rx="14" fill="url(#gold)"/><rect x="168" y="36" width="28" height="86" rx="14" fill="url(#gold)"/>
-  <rect x="200" y="42" width="28" height="80" rx="14" fill="url(#gold)"/><rect x="232" y="58" width="28" height="64" rx="14" fill="url(#gold)"/>
-  <rect x="92" y="150" width="52" height="30" rx="15" fill="url(#gold)" transform="rotate(-24 118 165)"/>
-  ${STONES.map(s => `<circle cx="${s.x}" cy="${s.y}" r="13" fill="#1f1300" stroke="#fde68a" stroke-width="2"/>`).join('')}
-</svg>`;
+// A golden glove seen from the back (viewBox 200 x 150), with a socket for every stone.
+window.gauntletStage = () => `<div class="gauntlet-stage" id="gauntletStage">
+  <svg viewBox="0 0 200 150" class="gauntlet" aria-hidden="true">
+    <defs>
+      <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1b0"/><stop offset=".45" stop-color="#e0a912"/><stop offset="1" stop-color="#7a4b00"/></linearGradient>
+      <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b6fd8"/><stop offset="1" stop-color="#1b2f73"/></linearGradient>
+    </defs>
+    <g stroke="#5c3a00" stroke-width="1.2" stroke-linejoin="round">
+      <path d="M62 108 L138 108 L144 142 L56 142 Z" fill="url(#gBlue)"/>
+      <rect x="58" y="116" width="84" height="7" fill="url(#gGold)" stroke="none"/>
+      <rect x="66" y="96" width="14" height="38" rx="3" fill="url(#gGold)" stroke="none" opacity="0"/>
+      <path d="M44 62 Q40 108 70 112 L130 112 Q160 108 156 62 Z" fill="url(#gGold)"/>
+      <rect x="46" y="14" width="22" height="52" rx="10" fill="url(#gGold)"/>
+      <rect x="71" y="6" width="22" height="60" rx="10" fill="url(#gGold)"/>
+      <rect x="96" y="4" width="22" height="62" rx="10" fill="url(#gGold)"/>
+      <rect x="121" y="12" width="22" height="54" rx="10" fill="url(#gGold)"/>
+      <path d="M44 84 Q16 80 14 96 Q14 110 40 104 Z" fill="url(#gGold)"/>
+      <path d="M52 62 L148 62" stroke="#8a5a00" stroke-width="1.5" fill="none"/>
+    </g>
+    ${STONES.map(s => `<circle cx="${s.x}" cy="${s.y}" r="9.5" fill="#1d1200" stroke="#fde68a" stroke-width="1.6"/>`).join('')}
+  </svg>
+</div>`;
 
-let stonesShown = false;
-function playStones(force) {
-  if (stonesShown && !force) return;
-  stonesShown = true;
-  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce && !force) return;
-  const lit = STONES.filter(s => s.ok());
-  const all = lit.length === STONES.length;
-  const ov = h(`<div class="stones-overlay"><div class="stones-stage">${GAUNTLET}</div><div class="stones-flash"></div>
-    <div class="stones-caption"></div><button class="link stones-skip">דלג</button></div>`);
-  const stage = ov.querySelector('.stones-stage');
-  const cap = ov.querySelector('.stones-caption');
-  let done = false;
-  const close = () => { if (done) return; done = true; ov.classList.add('out'); setTimeout(() => ov.remove(), 600); };
-  ov.querySelector('.stones-skip').onclick = close;
-  ov.onclick = close;
-  document.body.append(ov);
-  const W = Math.max(innerWidth, 600), H = Math.max(innerHeight, 500);
-  const stones = lit.map((s, i) => {
-    const el = document.createElement('div');
-    el.className = 'infinity-stone';
-    el.style.cssText = `--c:${s.color};left:${s.x / 4}%;top:${s.y / 3}%`;
-    el.title = s.name + ' · ' + s.label;
-    stage.append(el);
-    const ang = (i / lit.length) * Math.PI * 2 + 0.6;
-    const fromX = Math.cos(ang) * W * 0.6, fromY = Math.sin(ang) * H * 0.6;
-    el.animate([
-      { transform: `translate(${fromX}px,${fromY}px) scale(2.4)`, opacity: 0 },
-      { opacity: 1, offset: 0.15 },
-      { transform: 'translate(0,0) scale(1)', opacity: 1 }
-    ], { duration: 1100, delay: 500 + i * 650, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' });
-    return { el, s, at: 500 + i * 650 + 1100 };
-  });
-  // Dim sockets for the stones that are not connected, with the reason below.
-  STONES.filter(s => !s.ok()).forEach(s => {
-    const d = document.createElement('div'); d.className = 'stone-missing'; d.style.cssText = `left:${s.x / 4}%;top:${s.y / 3}%;--c:${s.color}`; d.title = s.name + ' לא מחובר'; stage.append(d);
-  });
-  const end = lit.length ? Math.max(...stones.map(x => x.at)) : 800;
-  stones.forEach(x => setTimeout(() => { if (!done) cap.textContent = x.s.name + ' · ' + x.s.label; }, x.at - 200));
-  if (all) {
-    setTimeout(() => { if (!done) { cap.textContent = ''; stage.classList.add('charged'); } }, end + 200);
-    setTimeout(() => { if (!done) ov.classList.add('snap'); }, end + 1500);   // the white flash
-    setTimeout(close, end + 2700);
-  } else {
-    setTimeout(() => { if (!done) cap.innerHTML = `${lit.length} מתוך ${STONES.length} אבנים. אפשר לחבר עוד בהגדרות`; }, end + 150);
-    setTimeout(close, end + 2200);
-  }
-}
-window.playStones = playStones;
-
-// Waits until the app knows who is connected (or 6 seconds), then plays once per launch.
-function stonesOnStart() {
-  if (typeof DEMO !== 'undefined' && DEMO && !/stones=1/.test(location.search)) return;
+// What the start-up screen does when the app knows who is connected: the stones fly in, one after the other.
+// With all six, the gauntlet snaps (a white flash) and the app opens as usual. `done` hides the screen.
+window.splashFinale = (done) => {
+  const splash = document.getElementById('splash'), stage = document.getElementById('gauntletStage');
+  if (!stage || !splash) { done(); return; }
+  let finished = false;
+  const finish = () => { if (finished) return; finished = true; done(); };
+  splash.addEventListener('click', finish, { once: true });
   const t0 = Date.now();
   const wait = setInterval(() => {
-    const splashGone = !document.getElementById('splash') || document.getElementById('splash').classList.contains('hide');
-    const known = S.ready && S.ready.settings && S.ready.ai && S.moodle !== 'connecting' && S.moodle !== 'checking';
-    if ((splashGone && known) || Date.now() - t0 > 9000) { clearInterval(wait); if (splashGone || Date.now() - t0 > 9000) playStones(); }
-  }, 300);
-}
-window.addEventListener('load', stonesOnStart);
+    if (finished) return clearInterval(wait);
+    const known = S.moodle !== 'connecting' && S.moodle !== 'checking';
+    if (!known && Date.now() - t0 < 3500) return;
+    clearInterval(wait);
+    play();
+  }, 250);
+  function play() {
+    const lit = STONES.filter(s => s.ok());
+    const text = document.getElementById('splashText');
+    const track = splash.querySelector('.track'); if (track) track.style.visibility = 'hidden';
+    STONES.filter(s => !s.ok()).forEach(s => { const d = document.createElement('div'); d.className = 'stone-missing'; d.style.cssText = `left:${s.x / 2}%;top:${s.y / 1.5}%;--c:${s.color}`; stage.append(d); });
+    const W = Math.max(innerWidth, 700), H = Math.max(innerHeight, 500);
+    lit.forEach((s, i) => {
+      const el = document.createElement('div');
+      el.className = 'infinity-stone'; el.style.cssText = `--c:${s.color};left:${s.x / 2}%;top:${s.y / 1.5}%`;
+      stage.append(el);
+      const ang = Math.PI * 2 * (i / Math.max(lit.length, 1)) + 0.5;
+      el.animate([
+        { transform: `translate(${Math.cos(ang) * W * 0.55}px,${Math.sin(ang) * H * 0.55}px) scale(2.2)`, opacity: 0 },
+        { opacity: 1, offset: 0.2 },
+        { transform: 'translate(0,0) scale(1)', opacity: 1 }
+      ], { duration: 850, delay: 300 + i * 480, easing: 'cubic-bezier(.25,.8,.25,1)', fill: 'both' });
+      setTimeout(() => { if (!finished && text) text.textContent = s.name + ' · ' + s.label; }, 300 + i * 480 + 600);
+    });
+    const end = lit.length ? 300 + (lit.length - 1) * 480 + 900 : 300;
+    if (lit.length === STONES.length) {
+      setTimeout(() => stage.classList.add('charged'), end + 100);
+      setTimeout(() => splash.classList.add('snap'), end + 1200);   // the white flash
+      setTimeout(finish, end + 2000);
+    } else {
+      setTimeout(finish, end + 700);
+    }
+  }
+};

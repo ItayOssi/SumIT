@@ -233,7 +233,7 @@ function helperCard(kind) {
     : 'מתחברים עם חשבון ChatGPT שלך, כמו באתר. צריך מנוי ChatGPT (Plus ומעלה). בודק את Claude, עונה בצ\'אט וקורא דפים.';
   let state = '', act = '';
   if (busy) state = `<span class="spinner"></span>${setupText(setup)}`;
-  else if (mode === 'account') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם החשבון שלך</span>'; act = '<button class="ghost small" data-logout>התנתק</button>'; }
+  else if (mode === 'account') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם החשבון שלך</span>'; act = '<button class="ghost small" data-logout>התנתק</button><button class="ghost small" data-test>בדוק שזה עובד</button>'; }
   else if (mode === 'key') { state = '<span class="chip ok"><span data-ic="check"></span>מחובר עם מפתח</span>'; act = `<button class="soft small" data-login>עבור לחשבון ${gem ? 'Google' : 'ChatGPT'}</button><button class="ghost small" data-rm>הסר מפתח</button>`; }
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
   // Google asks the student to copy a code after signing in: it is pasted right here.
@@ -241,11 +241,13 @@ function helperCard(kind) {
     <div class="row" style="width:100%"><input type="text" class="ltr" placeholder="הדבק כאן את הקוד" data-code autocomplete="off"><button class="primary small" data-send-code>שלח</button></div>
     <button class="link" data-reopen>פתח שוב את דף Google</button></div>` : '';
   const keyBox = codeBox + (mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
+  const tr = (S.brainTests || {})[brain];
+  const testLine = !mode || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
   const el = h(`<div class="provider${mode ? ' selected' : ''}" data-kind="${kind}"><span class="chip ${mode ? 'ok' : ''} tag">${mode ? 'מחובר' : 'עוזר · לא חובה'}</span>
     <div class="ph"><span class="pl ${kind}" data-ic="${gem ? 'gemini' : 'sparkles'}"></span><div><h3>${name}</h3></div></div>
     <p>${desc}</p>
     <div class="state">${state}</div>
-    <div class="act">${act}</div>${keyBox}</div>`);
+    <div class="act">${act}</div>${testLine}${keyBox}</div>`);
   el.onclick = (e) => e.stopPropagation();
   const login = el.querySelector('[data-login]');
   if (login) login.onclick = () => { S.brainBusy = brain; send({ type: 'connectBrain', kind: brain }); toast(gem ? 'נפתח דפדפן להתחברות עם Google. אשר שם והאפליקציה תמשיך לבד.' : 'נפתח דפדפן להתחברות עם ChatGPT. אשר שם והאפליקציה תמשיך לבד.', { ms: 7000 }); };
@@ -255,6 +257,7 @@ function helperCard(kind) {
     el.querySelector('[data-send-code]').onclick = sendCode; codeIn.onkeydown = (e) => { if (e.key === 'Enter') sendCode(); };
     el.querySelector('[data-reopen]').onclick = () => S.authCode.url && send({ type: 'openLink', url: S.authCode.url });
   }
+  const tst = el.querySelector('[data-test]'); if (tst) tst.onclick = () => { S.brainTests = S.brainTests || {}; S.brainTests[brain] = { busy: true }; renderProviders(); send({ type: 'testBrain', kind: brain }); };
   const out = el.querySelector('[data-logout]'); if (out) out.onclick = () => { if (confirm(`להתנתק מ-${name}?`)) send({ type: 'disconnectBrain', kind: brain }); };
   const rm = el.querySelector('[data-rm]'); if (rm) rm.onclick = () => send({ type: 'removeHelperKey', provider: kind });
   const save = el.querySelector('[data-save]');
@@ -505,7 +508,6 @@ $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
 $('heroPaste').onclick = () => { show('tasks'); setTimeout(() => { const f = document.querySelector('#tasksPage [data-t-title]'); if (f) f.focus(); }, 80); };
 $('allCourses').onclick = () => show('courses');
-$('replayStones').onclick = () => window.playStones && window.playStones(true);
 (function quick() {
   const items = [
     ['c3', 'user', 'פורטל מידע אישי', 'ציונים, מערכת שעות ובחינות', () => openSite('portal')],
@@ -1760,7 +1762,10 @@ const tipTimer = setInterval(() => { $('splashText').textContent = splashTips[++
 function maybeHideSplash(force) {
   if (!force && !(S.ready.settings && S.ready.ai)) return;
   clearInterval(tipTimer);
-  if ($('splash')) $('splash').classList.add('hide');
+  const hide = () => { if ($('splash')) $('splash').classList.add('hide'); };
+  // At start-up: the stones fly into the gauntlet for everything that is connected, then the app shows.
+  if (window.splashFinale && !DEMO) { if (S.splashStarted) return; S.splashStarted = true; setTimeout(hide, 14000); window.splashFinale(hide); return; }
+  hide();
 }
 setTimeout(() => maybeHideSplash(true), 7000);
 
@@ -1769,7 +1774,7 @@ function start() {
   if (!host) return;
   host.addEventListener('message', e => onMessage(e.data));
   icons();
-  $('splashLogo').innerHTML = ART.mascot(); $('navLogo').innerHTML = ART.mascot();
+  $('splashLogo').innerHTML = window.gauntletStage ? window.gauntletStage() : ART.mascot(); $('navLogo').innerHTML = ART.mascot();
   renderHome(); renderTimetable(); refreshJobs(); renderStatus();
   send({ type: 'ready' });
 }

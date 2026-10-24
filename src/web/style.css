@@ -753,22 +753,16 @@ button.link:hover { text-decoration: underline; }
 .msg-via { margin-top: 6px; font-size: 11px; color: var(--muted); }
 .msg-tools + .msg-via { display: none; }
 
-/* Infinity stones start-up */
-.stones-overlay { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at 50% 45%, #1b1030, #05030a 70%); display: grid; place-items: center; transition: opacity .6s; cursor: pointer; }
-.stones-overlay.out { opacity: 0; pointer-events: none; }
-.stones-stage { position: relative; width: min(92vw, 520px); aspect-ratio: 4 / 3; }
-.stones-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 30px #000a); }
-.infinity-stone, .stone-missing { position: absolute; width: 6.5%; aspect-ratio: 1; margin: -3.25% 0 0 -3.25%; border-radius: 50%; }
-.infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, #0009 140%); box-shadow: 0 0 18px 6px var(--c), 0 0 60px 14px color-mix(in srgb, var(--c) 50%, transparent); }
-.stone-missing { border: 2px dashed color-mix(in srgb, var(--c) 60%, #888); opacity: .5; }
-.stones-stage.charged .infinity-stone { animation: stonePulse .45s ease-in-out 3; }
-@keyframes stonePulse { 50% { transform: scale(1.5); box-shadow: 0 0 30px 14px var(--c), 0 0 110px 40px var(--c); } }
-.stones-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
-.stones-overlay.snap .stones-flash { opacity: 1; }
-.stones-caption { position: absolute; bottom: 14%; left: 0; right: 0; text-align: center; color: #f4eaff; font-size: 18px; font-weight: 700; letter-spacing: .3px; text-shadow: 0 0 12px #a855f7; min-height: 28px; }
-.stones-skip { position: absolute; bottom: 24px; inset-inline-end: 28px; color: #bbb; }
-@media (prefers-reduced-motion: reduce) { .stones-overlay { display: none; } }
-
-.provider .auth-code { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 8px; }
-.provider .auth-code small { color: var(--muted); }
-.provider .auth-code .row { display: flex; gap: 8px; }
+/* Infinity stones on the start-up screen */
+.splash .logo.stage { width: 260px; height: 195px; border-radius: 0; box-shadow: none; margin-bottom: 8px; }
+.gauntlet-stage { position: relative; width: 260px; height: 195px; margin: 0 auto; }
+.gauntlet-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .45)); }
+.infinity-stone, .stone-missing { position: absolute; width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border-radius: 50%; }
+.infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%); box-shadow: 0 0 10px 3px var(--c), 0 0 34px 8px color-mix(in srgb, var(--c) 45%, transparent); }
+.stone-missing { border: 1.5px dashed color-mix(in srgb, var(--c) 70%, #888); opacity: .55; }
+.gauntlet-stage.charged .infinity-stone { animation: stonePulse .4s ease-in-out 3; }
+@keyframes stonePulse { 50% { transform: scale(1.6); box-shadow: 0 0 20px 8px var(--c), 0 0 70px 24px var(--c); } }
+.splash::after { content: ""; position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
+.splash.snap::after { opacity: 1; }
+.provider .test-line { font-size: 12px; margin-top: 8px; font-weight: 600; }
+.provider .test-line.ok { color: var(--ok); } .provider .test-line.bad { color: var(--bad); }.splash .logo.stage .gauntlet-stage svg { width: 100%; height: 100%; }

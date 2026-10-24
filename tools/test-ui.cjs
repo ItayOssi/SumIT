@@ -148,19 +148,19 @@ const assert = require('assert/strict');
  assert.equal(await page.locator('#view-home #homeTasks').count(),0);
  await page.locator('#tasksPage .task-check').click();
  assert.equal(await page.evaluate(()=>S.tasks[0].done),true);
- // The AI team: who does what, and a button that proves each one works.
- await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});show('settings');renderTeam();});
- assert.equal(await page.locator('#aiTeam .team-row').count(),3);
- await page.locator('#aiTeam .team-row').nth(1).locator('[data-test]').click();
+ // A connected helper shows a small test button that reports how long the answer took.
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});show('settings');renderProviders();});
+ assert.equal(await page.locator('#aiTeam').count(),0);
+ await page.locator('#providers .provider[data-kind=gemini] [data-test]').click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['testBrain','gemini']);
- await page.evaluate(()=>onMessage({type:'brainTest',kind:'gemini',ok:true,ms:2500,text:'מוכן'}));
- assert.equal((await page.locator('#aiTeam .team-result.ok').textContent()).includes('2.5'),true);
- assert.equal(await page.locator('#aiTeam .team-row').nth(2).locator('[data-test]').isDisabled(),true);
- // The Infinity Stones animation plays on demand, shows the missing stones as empty sockets, and can be skipped.
- await page.evaluate(()=>playStones(true));
- assert.equal(await page.locator('.stones-overlay .stone-missing').count()>=1,true);
- await page.locator('.stones-overlay').click({position:{x:5,y:5}});
- await page.waitForSelector('.stones-overlay',{state:'detached'});
+ await page.evaluate(()=>onMessage({type:'brainTest',kind:'gemini',ok:true,ms:2500,text:'ok'}));
+ assert.equal((await page.locator('#providers .provider[data-kind=gemini] .test-line.ok').textContent()).includes('2.5'),true);
+ // The start-up screen: the gauntlet, and a stone flies in for each thing that is connected; with all six it snaps and the screen is released.
+ await page.evaluate(()=>{document.body.insertAdjacentHTML('afterbegin','<div class="splash" id="splash"><div class="box"><div class="logo stage" id="splashLogo"></div><b>SumIT</b><small id="splashText"></small><div class="track"><i></i></div></div></div>');$('splashLogo').innerHTML=gauntletStage();S.moodle='ready';S.ai=Object.assign({},S.ai,{claude:{loggedIn:true},helpers:{gemini:'account',openai:'account',order:['gemini','openai']}});localStorage.setItem('sumit.seen.cs24','1');localStorage.setItem('sumit.seen.zoom','1');window.__fin=false;splashFinale(()=>{window.__fin=true;});});
+ await page.waitForSelector('.splash.snap',{timeout:15000});
+ assert.equal(await page.locator('.splash .infinity-stone').count(),6);
+ await page.waitForFunction(()=>window.__fin===true,null,{timeout:8000});
+ await page.evaluate(()=>{document.getElementById('splash').remove();});
  // With another AI connected: a "check with another AI" button under the last chat answer and on a ready summary.
  await page.evaluate(()=>{show('course');setTab('lessons');setChatScope('lesson:1');S.chatBusy=false;addMsg('assistant','תשובה לבדיקה');addCheckButton();});
  await page.getByRole('button',{name:'בדוק עם AI נוסף',exact:true}).click();
