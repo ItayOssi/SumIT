@@ -421,7 +421,7 @@ return out;";
         string recDir = Path.Combine(dir, RecordingFolder);
         var recordingFiles = Directory.Exists(recDir) ? Directory.GetFiles(recDir)
             .Where(f => new[] { ".mp4", ".webm", ".mkv", ".m4a" }.Contains(Path.GetExtension(f).ToLowerInvariant()))
-            .Select(f => new { name = Path.GetFileNameWithoutExtension(f), path = f,
+            .Select(f => new { name = Path.GetFileNameWithoutExtension(f), ext = Path.GetExtension(f).ToLowerInvariant(), path = f,
                 transcript = File.Exists(Path.Combine(recDir, Path.GetFileNameWithoutExtension(f) + " " + TranscriptSuffix + ".txt")) }).ToList<object>() : new List<object>();
         var materialFiles = Directory.Exists(dir) ? Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .Where(f => !IsSummaryFile(f) && !f.Contains("\\" + PointersFolder + "\\") && !f.StartsWith(recDir + "\\", StringComparison.OrdinalIgnoreCase))

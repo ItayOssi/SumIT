@@ -435,6 +435,7 @@ partial class HitStudent : Form
                 if (!IsZoomUrl(lrec)) { Toast("זה לא קישור להקלטת Zoom", true); return; }
                 QueueLectureRecording(course, Int(m, "num"), lrec, Str(m, "name"));
                 break;
+            case "addRecordingFile": AddRecordingFromPc(course, Int(m, "num"), Str(m, "name")); break;
             case "homework": Homework(course, Int(m, "num"), Str(m, "title")); break;
             case "learnCourse": LearnCourse(course, m["sections"] as System.Collections.ArrayList); break;
 

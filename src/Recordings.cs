@@ -83,6 +83,44 @@ partial class HitStudent
 
     // A lecture recording the student pasted, numbered by lecture (not by Moodle section, which in many courses
     // is "exercises" / "exams" rather than a week). Saved as "הקלטות\הרצאה N.mp4" + "הרצאה N תמלול.txt".
+    // A recording the student already has on the PC (or a transcript of it): copied into the lecture's recording folder.
+    // A transcript file (.txt / .vtt / .srt) is saved next to the video under its name, as Zoom's own transcripts are.
+    void AddRecordingFromPc(string course, int num, string customName)
+    {
+        if (num < 1 || num > 200) return;
+        string[] picked;
+        using (var dlg = new OpenFileDialog { Multiselect = true, Title = "בחר הקלטה (וגם תמלול, אם יש)", Filter = "הקלטה או תמלול|*.mp4;*.m4a;*.webm;*.mkv;*.txt;*.vtt;*.srt" })
+        {
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            picked = dlg.FileNames;
+        }
+        string dir = Path.Combine(LectureDir(course, num), RecordingFolder);
+        Directory.CreateDirectory(dir);
+        string[] videoExt = { ".mp4", ".m4a", ".webm", ".mkv" };
+        var videos = picked.Where(f => videoExt.Contains(Path.GetExtension(f).ToLowerInvariant())).ToList();
+        string baseName = SafeName(string.IsNullOrWhiteSpace(customName) ? "הרצאה מספר " + num : customName);
+        string last = null;
+        int copied = 0;
+        foreach (string f in videos)
+        {
+            string name = videos.Count == 1 ? baseName : SafeName(Path.GetFileNameWithoutExtension(f));
+            string ext = Path.GetExtension(f).ToLowerInvariant();
+            string unique = name;
+            for (int i = 2; File.Exists(Path.Combine(dir, unique + ext)); i++) unique = name + " (" + i + ")";
+            File.Copy(f, Path.Combine(dir, unique + ext), false);
+            last = unique; copied++;
+        }
+        foreach (string f in picked.Where(f => !videoExt.Contains(Path.GetExtension(f).ToLowerInvariant())))
+        {
+            string name = last != null && videos.Count == 1 ? last : SafeName(Path.GetFileNameWithoutExtension(f));
+            File.Copy(f, TranscriptFile(dir, name), true);
+            copied++;
+        }
+        SendSectionLocal(course, num);
+        SendCourseLocal(course);
+        Toast(copied == 1 ? "הקובץ נוסף להרצאה " + num : copied + " קבצים נוספו להרצאה " + num, false);
+    }
+
     void QueueLectureRecording(string course, int lecture, string url, string name = "")
     {
         QueueRecording(course, lecture, url, true, name);

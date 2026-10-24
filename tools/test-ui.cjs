@@ -36,6 +36,10 @@ const assert = require('assert/strict');
  await page.locator('.rec-row input.ltr').fill('https://hit-ac-il.zoom.us/rec/play/test');
  await page.locator('.rec-row button.soft').click();
  assert.deepEqual(await page.evaluate(()=>({num:sent.at(-1).num,name:sent.at(-1).name})),{num:1,name:'אינטגרלים חלק א'});
+ // A recording already on the PC can be added too, without a link.
+ if (!(await page.locator('.rec-row').count())) await page.getByRole('button',{name:'הוסף הקלטה',exact:true}).first().click();
+ await page.locator('.rec-row [data-pc]').click();
+ assert.deepEqual(await page.evaluate(()=>({type:sent.at(-1).type,num:sent.at(-1).num})),{type:'addRecordingFile',num:1});
  // The lecture editor opens once, however many times the button is pressed.
  await page.getByRole('button',{name:'ערוך תאריכים וכותרת',exact:true}).click();
  await page.getByRole('button',{name:'ערוך תאריכים וכותרת',exact:true}).click();

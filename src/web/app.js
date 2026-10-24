@@ -661,7 +661,8 @@ function nextLecture() {
 }
 function lectureLinkRow(onAdded, lectureNum) {
   const row = h(`<div class="row wrap"><span class="muted">הרצאה</span><input type="number" min="1" max="200" style="width:76px;height:42px;padding:0 10px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit">
-    <input type="text" data-name placeholder="שם ההקלטה (שם הקובץ)"><input type="text" class="ltr" placeholder="https://...zoom.us/rec/..." style="max-width:360px"><button class="soft">הורד</button></div>`);
+    <input type="text" data-name placeholder="שם ההקלטה (שם הקובץ)"><input type="text" class="ltr" placeholder="https://...zoom.us/rec/..." style="max-width:360px"><button class="soft" data-dl>הורד</button>
+    <span class="muted">או</span><button type="button" class="ghost" data-pc><span data-ic="plus"></span>הקלטה מהמחשב</button></div>`);
   const num = row.querySelector('input[type=number]'), link = row.querySelector('input.ltr');
   num.value = lectureNum || nextLecture(); num.disabled = !!lectureNum;
   row.querySelector('[data-name]').value = 'הרצאה מספר ' + num.value;
@@ -677,7 +678,10 @@ function lectureLinkRow(onAdded, lectureNum) {
     link.value = ''; if (!lectureNum) num.value = (+num.value || 1) + 1;
     if (onAdded) onAdded();
   };
-  row.querySelector('button').onclick = add;
+  row.querySelector('[data-dl]').onclick = add;
+  // A recording (and its transcript, if there is one) already on the PC.
+  row.querySelector('[data-pc]').onclick = () => { send({ type: 'addRecordingFile', course: S.course.name, num: +num.value || 1, name: row.querySelector('[data-name]').value.trim() }); if (onAdded) onAdded(); };
+  icons(row);
   link.onkeydown = (e) => { if (e.key === 'Enter') add(); };
   return row;
 }
@@ -969,7 +973,7 @@ function fillLecture(el, s) {
   // The recording is listed with the files, together with its transcript.
   recs.forEach(r => {
     const li = h('<li><span class="ic zoom" data-ic="play"></span><span class="nm" dir="auto"></span><span class="kind"></span><button class="small ghost">נגן</button></li>');
-    li.querySelector('.nm').textContent = 'הקלטה\\' + r.name + '.mp4';
+    li.querySelector('.nm').textContent = 'הקלטה\\' + r.name + (r.ext || '.mp4');
     li.querySelector('.kind').textContent = r.transcript ? 'עם תמלול' : '';
     li.querySelector('button').onclick = () => send({ type: 'openPath', path: r.path }); items.append(li);
   });
