@@ -93,6 +93,17 @@ const assert = require('assert/strict');
  assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-logout]').isVisible(),true);
  assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-key]').count(),0);
  assert.equal(await page.locator('#providers .provider[data-kind=openai] input[data-key]').isVisible(),false);
+ // Gemini signs in through Google's page and a pasted code, all inside the card.
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'',openai:'',order:[]}});renderProviders();});
+ await page.locator('#providers .provider[data-kind=gemini] [data-login]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['connectBrain','gemini']);
+ await page.evaluate(()=>onMessage({type:'authCode',kind:'gemini',state:'wait',url:'https://accounts.google.com/x'}));
+ await page.locator('#providers .provider[data-kind=gemini] [data-code]').fill('4/0AbC');
+ await page.locator('#providers .provider[data-kind=gemini] [data-send-code]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.code];}),['submitAuthCode','4/0AbC']);
+ await page.evaluate(()=>onMessage({type:'authCode',kind:'gemini',state:'done'}));
+ assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-code]').count(),0);
+ await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});renderProviders();});
  await page.locator('#providers .provider[data-kind=openai] [data-login]').click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['connectBrain','chatgpt']);
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{setup:'login-chatgpt'});renderProviders();});

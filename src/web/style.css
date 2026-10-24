@@ -768,3 +768,7 @@ button.link:hover { text-decoration: underline; }
 .stones-caption { position: absolute; bottom: 14%; left: 0; right: 0; text-align: center; color: #f4eaff; font-size: 18px; font-weight: 700; letter-spacing: .3px; text-shadow: 0 0 12px #a855f7; min-height: 28px; }
 .stones-skip { position: absolute; bottom: 24px; inset-inline-end: 28px; color: #bbb; }
 @media (prefers-reduced-motion: reduce) { .stones-overlay { display: none; } }
+
+.provider .auth-code { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 8px; }
+.provider .auth-code small { color: var(--muted); }
+.provider .auth-code .row { display: flex; gap: 8px; }

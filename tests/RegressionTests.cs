@@ -169,6 +169,15 @@ partial class HitStudent
         File.WriteAllText(Path.Combine(fakes, "fake.ps1"), @"[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $argline = $env:FAKE_ARGS
 if ($argline -match 'login' -and $argline -match 'status') { 'Logged in using ChatGPT'; exit 0 }
+if ($env:FAKE_AGY_LOGIN -eq '1') {
+  [Console]::Error.WriteLine('Authentication required. Please visit the URL to log in:')
+  [Console]::Error.WriteLine('  https://accounts.google.com/o/oauth2/auth?client_id=fake&state=x')
+  [Console]::Error.WriteLine('Or, paste the authorization code here and press Enter:')
+  [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
+  $line = [Console]::In.ReadLine()
+  if ($line -and $line.Trim().TrimStart([char]0xFEFF) -eq '4/0CODE-123_x') { Write-Host 'READY'; exit 0 }
+  [Console]::Error.WriteLine('error: authentication failed or timed out'); exit 1
+}
 if ($env:FAKE_LOGIN -eq '1') {
   if ($env:CI) { [Console]::Error.WriteLine('non-interactive session'); exit 41 }   # like the real Gemini CLI: with CI set it never opens a browser
   Write-Host -NoNewline 'Opening authentication page in your browser. Do you want to continue? [Y/n]: '   # no line break, like the real one
@@ -177,7 +186,7 @@ if ($env:FAKE_LOGIN -eq '1') {
   if ($line -and $line.Trim().TrimStart([char]0xFEFF) -eq 'Y') { Set-Content -Path $env:FAKE_LOGIN_FLAG -Value 'signed-in'; Write-Host 'https://accounts.example/login?x=1'; Start-Sleep 1 }
   exit 0
 }
-$text = [Console]::In.ReadToEnd()
+if ($env:FAKE_NAME -eq 'gemini') { $text = Get-Content -Raw -Encoding UTF8 -Path (Join-Path (Get-Location) 'material.txt') } else { $text = [Console]::In.ReadToEnd() }
 if ($env:FAKE_FAIL -eq '1') { [Console]::Error.WriteLine('usage limit reached'); exit 1 }
 if ($env:FAKE_REPLY) { $ans = $env:FAKE_REPLY } else { $ans = $env:FAKE_NAME + ' saw ' + $text.Length + ' chars; marker=' + ($text -match 'MARKER-Q') }
 $m = [regex]::Match($argline, '\s-o\s+(\S+)')
@@ -189,7 +198,7 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
         foreach (string name in new[] { "codex", "gemini" })
             File.WriteAllText(Path.Combine(fakes, "fake-" + name + ".cmd"), "@echo off\r\nset FAKE_NAME=" + name + "\r\nset FAKE_ARGS=%*\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fake.ps1\"\r\n");
         Environment.SetEnvironmentVariable("SUMIT_CODEX", Path.Combine(fakes, "fake-codex.cmd"));
-        Environment.SetEnvironmentVariable("SUMIT_GEMINI", Path.Combine(fakes, "fake-gemini.cmd"));
+        Environment.SetEnvironmentVariable("SUMIT_AGY", Path.Combine(fakes, "fake-gemini.cmd"));
         try
         {
             // Nothing connected by key; both signed in by account.
@@ -216,6 +225,18 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             Run(async () => { await app.RunLogin(Path.Combine(fakes, "fake-gemini.cmd"), "-p hello", "gemini", () => File.Exists(flag), true); return 0; });
             check("the sign-in is answered by the app", File.Exists(flag));
             Environment.SetEnvironmentVariable("FAKE_LOGIN", null);
+
+            // Gemini's sign-in (Antigravity): it prints a Google address and waits for the code the student pastes into the app.
+            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", "1");
+            app.settings["agyOk"] = false; app.geminiSignedOverride = null;
+            var loginTask = System.Threading.Tasks.Task.Run(() => app.LoginAgy());
+            for (int i = 0; i < 100 && app.agyLogin == null; i++) System.Threading.Thread.Sleep(100);
+            System.Threading.Thread.Sleep(1500);
+            app.SubmitAuthCode("4/0CODE-123_x");
+            bool signedIn = loginTask.Wait(20000) && loginTask.Result;
+            check("Gemini sign-in: the pasted code finishes it and the account is remembered", signedIn && Bool(app.settings, "agyOk") && app.HelperMode("gemini") == "account");
+            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
+            app.codexSignedIn = true; app.geminiSignedOverride = true;
 
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.
             string course = "review-course";
@@ -244,10 +265,17 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
                 var real = Run(() => app.HelperCallCli("openai", "Answer with one word.", new List<Tuple<string, string>> { Tuple.Create("user", "Reply with exactly one word: ok") }));
                 check("REAL: ChatGPT answers through the subscription", !real.Error && real.Text.ToLowerInvariant().Contains("ok"));
             }
+            // The same for Gemini through Antigravity, when it is signed in on this PC (SUMIT_REAL_AGY=1).
+            if (Environment.GetEnvironmentVariable("SUMIT_REAL_AGY") == "1")
+            {
+                Environment.SetEnvironmentVariable("SUMIT_AGY", null);
+                var realAgy = Run(() => app.HelperCallCli("gemini", "Answer with one word.", new List<Tuple<string, string>> { Tuple.Create("user", "Reply with exactly one word: ok") }));
+                check("REAL: Gemini answers through the Google account (Antigravity)", !realAgy.Error && realAgy.Text.ToLowerInvariant().Contains("ok"));
+            }
         }
         finally
         {
-            foreach (string v in new[] { "SUMIT_CODEX", "SUMIT_GEMINI", "FAKE_FAIL", "FAKE_REPLY", "FAKE_LOGIN", "FAKE_LOGIN_FLAG" }) Environment.SetEnvironmentVariable(v, null);
+            foreach (string v in new[] { "SUMIT_CODEX", "SUMIT_AGY", "FAKE_AGY_LOGIN", "FAKE_FAIL", "FAKE_REPLY", "FAKE_LOGIN", "FAKE_LOGIN_FLAG" }) Environment.SetEnvironmentVariable(v, null);
         }
     }
 }

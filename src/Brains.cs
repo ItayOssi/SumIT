@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -30,9 +31,16 @@ partial class HitStudent
         return File.Exists(global) ? global : FindOnPath("codex.cmd", "codex.exe");
     }
 
-    // Google ended Gemini CLI for personal accounts on 2026-06-18 (the sign-in still works, but every answer is refused), so the account
-    // path counts only for a stand-in tool (tests) or a tool that is not Google's own. Gemini is reached with an API key instead.
-    bool GeminiAccountReady() { return FindGemini() != null && (geminiSignedOverride ?? (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SUMIT_GEMINI")) && GeminiGoogleSignedIn())); }
+    // Gemini on the student's Google account goes through Google's Antigravity CLI ("agy"): Google ended Gemini CLI for personal accounts
+    // on 2026-06-18. The app can't ask agy "am I signed in" without spending a question, so it remembers that a test question was answered.
+    static string FindAgy()
+    {
+        string fake = Environment.GetEnvironmentVariable("SUMIT_AGY");
+        if (!string.IsNullOrEmpty(fake) && File.Exists(fake)) return fake;
+        string own = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"agy\bin\agy.exe");
+        return File.Exists(own) ? own : FindOnPath("agy.exe");
+    }
+    bool GeminiAccountReady() { return FindAgy() != null && (geminiSignedOverride ?? Bool(settings, "agyOk")); }
     bool ChatGptAccountReady() { return FindCodex() != null && codexSignedIn; }
 
     // "account" (the subscription), "key" (an API key), or "" (not connected).
@@ -95,14 +103,14 @@ partial class HitStudent
             string text = "";
             if (provider == "gemini")
             {
-                string exe = FindGemini();
-                r = await RunCli(exe, "-p " + Q("ענה לפי ההנחיות והחומר שבקלט.") + " -o text", prompt, dir, 240000);
+                // Antigravity can't take a long text on its input, so the conversation is a file in the empty folder, read-only ("plan") mode,
+                // and the short instruction on the command line says to read it.
+                File.WriteAllText(Path.Combine(dir, "material.txt"), prompt, new UTF8Encoding(false));
+                string exe = FindAgy();
+                r = await RunCli(exe, "-p " + Q("Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.") + " --mode plan", null, dir, 300000);
                 text = r.Item2.Trim();
-                // Since June 2026 Google no longer serves Gemini CLI to personal accounts (it moved to Antigravity): the sign-in works, the answers don't.
-                if (r.Item3.IndexOf("IneligibleTier", StringComparison.OrdinalIgnoreCase) >= 0 || r.Item3.IndexOf("no longer supported", StringComparison.OrdinalIgnoreCase) >= 0)
-                { reply.Error = true; reply.Text = "Google הפסיקה לתת ל-Gemini CLI לעבוד עם חשבון אישי. אפשר לחבר Gemini עם מפתח חינמי מ-Google AI Studio"; return reply; }
-                if (r.Item2.IndexOf("Opening authentication page", StringComparison.OrdinalIgnoreCase) >= 0 || r.Item3.IndexOf("auth", StringComparison.OrdinalIgnoreCase) >= 0 && text.Length == 0)
-                { reply.Error = true; reply.Text = "ההתחברות ל-Google נגמרה. התחבר שוב בהגדרות"; return reply; }
+                if (r.Item3.IndexOf("Authentication required", StringComparison.OrdinalIgnoreCase) >= 0 || r.Item3.IndexOf("authentication failed", StringComparison.OrdinalIgnoreCase) >= 0)
+                { settings["agyOk"] = false; SaveSettings(); reply.Error = true; reply.Text = "ההתחברות ל-Google פגה. התחבר שוב בהגדרות"; return reply; }
             }
             else
             {
@@ -195,6 +203,86 @@ partial class HitStudent
         }
     }
 
+    // Google's own installer for Antigravity CLI (it checks the download's SHA-512 itself and puts agy.exe in the user's folder).
+    async Task InstallAgy()
+    {
+        string script = Path.Combine(Path.GetTempPath(), "sumit-agy-install-" + Guid.NewGuid().ToString("N") + ".ps1");
+        try
+        {
+            using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) })
+                File.WriteAllText(script, await http.GetStringAsync("https://antigravity.google/cli/install.ps1"), new UTF8Encoding(false));
+            var r = await Exec("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File " + Q(script), null, 900000);
+            if (FindAgy() == null) throw new Exception("ההתקנה של Gemini נכשלה. " + Trunc(r.Item2, 200));
+        }
+        finally { try { File.Delete(script); } catch { } }
+    }
+
+    Process agyLogin;
+
+    // Signs in to Antigravity: it prints a Google address, the browser opens it, and the student either is signed in on its own or
+    // pastes the code Google shows (submitAuthCode). Ends when the tool answers a tiny test question, which proves the sign-in works.
+    async Task<bool> LoginAgy()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "SumIT-agy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var seen = new StringBuilder();
+        string urlSent = null;
+        try
+        {
+            var psi = new ProcessStartInfo(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan")
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = dir
+            };
+            foreach (var kv in CliEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
+            psi.EnvironmentVariables.Remove("CI");
+            using (var p = Process.Start(psi))
+            {
+                agyLogin = p;
+                Action<StreamReader> pump = (reader) => Task.Run(() =>
+                {
+                    var buf = new char[512]; int n;
+                    try { while ((n = reader.Read(buf, 0, buf.Length)) > 0) lock (seen) seen.Append(buf, 0, n); } catch { }
+                });
+                pump(p.StandardOutput); pump(p.StandardError);
+                var started = DateTime.UtcNow;
+                while (!p.HasExited && (DateTime.UtcNow - started).TotalSeconds < 150)
+                {
+                    await Task.Delay(700);
+                    string text; lock (seen) text = seen.ToString();
+                    var m = Regex.Match(text, "https://accounts\\.google\\.com/[^\\s\"']+");
+                    if (m.Success && urlSent != m.Value)
+                    {
+                        urlSent = m.Value;
+                        if (Environment.GetEnvironmentVariable("SUMIT_AGY") == null) OpenExternal(m.Value);   // a stand-in tool in the tests must not open a browser
+                        Send(new { type = "authCode", kind = "gemini", state = "wait", url = m.Value });
+                    }
+                }
+                if (!p.HasExited) KillTree(p);
+                else await Task.Delay(300);
+                string all; lock (seen) all = seen.ToString();
+                bool ok = p.HasExited && p.ExitCode == 0 && all.IndexOf("READY", StringComparison.OrdinalIgnoreCase) >= 0;
+                settings["agyOk"] = ok; SaveSettings();
+                return ok;
+            }
+        }
+        finally
+        {
+            agyLogin = null;
+            Send(new { type = "authCode", kind = "gemini", state = "done" });
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    // The code Google showed after the sign-in, typed into the app: passed on to the waiting sign-in. Only the characters of such a code.
+    void SubmitAuthCode(string code)
+    {
+        code = (code ?? "").Trim();
+        if (code.Length == 0 || code.Length > 600 || !Regex.IsMatch(code, @"^[A-Za-z0-9/_\-\.~%+=]+$")) { Toast("זה לא נראה כמו הקוד של Google", true); return; }
+        try { var p = agyLogin; if (p != null && !p.HasExited) { var b = Encoding.ASCII.GetBytes(code + "\r\n"); p.StandardInput.BaseStream.Write(b, 0, b.Length); p.StandardInput.BaseStream.Flush(); } }
+        catch { }
+    }
+
     // Tells Gemini's tool to sign in with a Google account (without it, a tool run without a window has no way to ask which kind of sign-in).
     // Existing settings are kept; only the sign-in type is added when it is missing.
     void EnsureGeminiGoogleAuth()
@@ -235,12 +323,10 @@ partial class HitStudent
             }
             else
             {
-                if (FindGemini() == null) await InstallCli("@google/gemini-cli", "installing-gemini");
+                if (FindAgy() == null) { setupState = "installing-gemini"; await SendAiStatus(); await InstallAgy(); }
                 setupState = "login-gemini"; await SendAiStatus();
-                EnsureGeminiGoogleAuth();
-                // The first run asks "open the sign-in page in your browser? [Y/n]": the app answers, the browser opens, the student signs in.
-                await RunLogin(FindGemini(), "-p " + Q("hello") + " -o text", kind, GeminiGoogleSignedIn, true);
-                Toast(GeminiGoogleSignedIn() ? "Gemini חובר, והוא עוזר ל-Claude" : "ההתחברות ל-Google לא הסתיימה. אפשר לנסות שוב", !GeminiGoogleSignedIn());
+                bool signedIn = await LoginAgy();
+                Toast(signedIn ? "Gemini חובר, והוא עוזר ל-Claude" : "ההתחברות ל-Google לא הסתיימה. אפשר לנסות שוב", !signedIn);
             }
         }
         catch (Exception ex) { Toast(ex.Message, true); }
