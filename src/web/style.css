@@ -746,23 +746,16 @@ button.link:hover { text-decoration: underline; }
 .ai-team { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
 .team-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
 .team-row small { display: block; font-size: 12.5px; line-height: 1.5; }
-.team-stone { width: 26px; height: 26px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, #fff9, var(--c) 45%, #0008 130%); box-shadow: 0 0 14px var(--c); }
 .team-result { margin-top: 4px; font-weight: 600; }
 .team-result.ok { color: var(--ok); } .team-result.bad { color: var(--bad); }
 .team-note { font-size: 12.5px; padding: 2px 4px; }
 .msg-via { margin-top: 6px; font-size: 11px; color: var(--muted); }
 .msg-tools + .msg-via { display: none; }
 
-/* Infinity stones on the start-up screen */
-.splash .logo.stage { width: 260px; height: 195px; border-radius: 0; box-shadow: none; margin-bottom: 8px; }
-.gauntlet-stage { position: relative; width: 260px; height: 195px; margin: 0 auto; }
-.gauntlet-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .45)); }
-.infinity-stone, .stone-missing { position: absolute; width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border-radius: 50%; }
-.infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%); box-shadow: 0 0 10px 3px var(--c), 0 0 34px 8px color-mix(in srgb, var(--c) 45%, transparent); }
-.stone-missing { border: 1.5px dashed color-mix(in srgb, var(--c) 70%, #888); opacity: .55; }
-.gauntlet-stage.charged .infinity-stone { animation: stonePulse .4s ease-in-out 3; }
-@keyframes stonePulse { 50% { transform: scale(1.6); box-shadow: 0 0 20px 8px var(--c), 0 0 70px 24px var(--c); } }
-.splash::after { content: ""; position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
-.splash.snap::after { opacity: 1; }
 .provider .test-line { font-size: 12px; margin-top: 8px; font-weight: 600; }
 .provider .test-line.ok { color: var(--ok); } .provider .test-line.bad { color: var(--bad); }.splash .logo.stage .gauntlet-stage svg { width: 100%; height: 100%; }
+
+/* Hint under the site bar while the portal is open */
+.portal-hint { display: flex; gap: 14px; align-items: center; padding: 10px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--border); font-size: 13px; }
+.portal-hint[hidden] { display: none; }
+.portal-hint ol { margin: 4px 0; padding-inline-start: 20px; line-height: 1.7; }

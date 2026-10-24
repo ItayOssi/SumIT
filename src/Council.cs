@@ -23,7 +23,9 @@ partial class HitStudent
     // Returns a short line for the status, or null when no other AI is connected.
     async Task<string> SecondOpinion(string course, int num)
     {
-        if (HelperOrder().Count == 0) return null;
+        // The reviewer must be a different AI from the one that wrote the summary: a Gemini-only student has no second opinion.
+        bool geminiWrote = Provider == "gemini";
+        if (HelperOrder().Count(p => !(geminiWrote && p == "gemini")) == 0) return null;
         string page = StudyPagePath(course, num);
         if (!File.Exists(page)) return null;
         string html = File.ReadAllText(page, Encoding.UTF8);
@@ -48,7 +50,7 @@ partial class HitStudent
         // The review is ChatGPT's job (a strong reasoner, and a different "mind" from the one that wrote the summary); Gemini steps in when it isn't there.
         var reviewMessages = new List<Tuple<string, string>> { Tuple.Create("user", "הסיכום לבדיקה:\n" + text + (official.Length > 0 ? "\n\n=== הפתרונות הרשמיים ===\n" + official : "")) };
         var r = await HelperAsk(system, reviewMessages, "openai");
-        if (r == null || r.Error) r = await HelperAsk(system, reviewMessages, "gemini") ?? r;
+        if ((r == null || r.Error) && !geminiWrote) r = await HelperAsk(system, reviewMessages, "gemini") ?? r;
         if (r == null || r.Error) return "הבדיקה השנייה לא הצליחה: " + (r == null ? "אין AI מחובר" : r.Text);
         var data = JsonFromAnswer(r.Text, json);
         if (data == null) return "הבדיקה השנייה לא החזירה תשובה מובנת";

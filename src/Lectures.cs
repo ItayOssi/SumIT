@@ -162,6 +162,9 @@ partial class HitStudent
     string SiteSaveDir(string name, out string where)
     {
         string course = siteDownloadCourse;
+        // Pages saved from the personal portal (timetable, exam board) go to the timetable folder, where "update timetable" reads them.
+        if (course == null && site != null && site.Source != null && site.Source.Host.IndexOf("webrashim.hit.ac.il", StringComparison.OrdinalIgnoreCase) >= 0)
+        { where = "מערכת שעות"; return Path.Combine(AppRoot, TimetableFolder); }
         if (course == null) { where = "הורדות"; return Path.Combine(AppRoot, "הורדות"); }
         string rel = SafeDownloadFolder(siteDownloadFolder);
         string dir = Path.Combine(CourseDir(course), rel);

@@ -199,6 +199,22 @@ partial class HitStudent
                 check("Claude can't use curl", blocked.Text.IndexOf("illustrative examples", StringComparison.OrdinalIgnoreCase) < 0, Trunc(blocked.Text, 200));
                 try { Directory.Delete(tmp, true); } catch { }
             }
+
+            // Gemini on the student's Google account (Antigravity), when asked for: it reads a course file and writes a file in the course folder.
+            if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGY") == "1" && FindAgy() != null)
+            {
+                settings["agyOk"] = true;
+                string tmp = Path.Combine(Path.GetTempPath(), "hit-student-agy-test");
+                Directory.CreateDirectory(tmp);
+                File.WriteAllText(Path.Combine(tmp, "note.txt"), "The secret number is 4711.");
+                var events = new List<string>();
+                var result = await RunGemini("selftest-agy", tmp, "Read note.txt, write the secret number into a new file named answer.txt, and reply with the number only.", null, ev => { if (ev.Action != null) events.Add(ev.Action); });
+                check("Gemini (Antigravity) reads a course file", !result.Error && result.Text.Contains("4711"), Trunc(result.Text, 200));
+                check("Gemini (Antigravity) writes a file in the course folder", File.Exists(Path.Combine(tmp, "answer.txt")) && File.ReadAllText(Path.Combine(tmp, "answer.txt")).Contains("4711"), "");
+                check("Gemini (Antigravity) reports what it is doing", events.Count > 0, string.Join(" | ", events.Take(3)));
+                check("Gemini (Antigravity) leaves no task file behind", !Directory.Exists(Path.Combine(tmp, SumitDir)) || Directory.GetFiles(Path.Combine(tmp, SumitDir), "agy-task-*").Length == 0, "");
+                try { Directory.Delete(tmp, true); } catch { }
+            }
         }
         catch (Exception ex) { check("Self test crashed", false, ex.ToString()); }
 

@@ -386,10 +386,10 @@ function renderTimetable() {
   if (!tt || !((tt.classes || []).length || (tt.exams || []).length)) {
     renderNextUp(); renderStats();
     const e = h(`<div class="empty" style="border:none;padding:10px">${ART.calendar().replace('<svg', '<svg class="art"')}<b>הוסף את המערכת ואת לוח המבחנים</b>
-      בפורטל מידע אישי פותחים את מערכת השעות ואת לוח הבחינות, ושומרים אותם כ-PDF או כצילום מסך. אחר כך בוחרים את הקבצים כאן.
-      <div class="row"><button class="soft" data-p>פתח את הפורטל</button><button class="primary" data-i>בחר קבצים</button></div></div>`);
+      בפורטל מידע אישי: במערכת שעות בוחרים "מבנה יומן" ולוחצים "שמור את הדף כ-PDF", ואותו הדבר ב"לוח בחינות". הקבצים נשמרים לבד, ואחר כך לוחצים כאן "עדכן מערכת".
+      <div class="row"><button class="primary" data-p>פתח את הפורטל</button><button class="soft" data-i><span data-ic="refresh"></span>עדכן מערכת</button></div></div>`);
     e.querySelector('[data-p]').onclick = () => { setSaveTarget('', ''); openSite('portal'); };
-    e.querySelector('[data-i]').onclick = () => send({ type: 'importTimetable' });
+    e.querySelector('[data-i]').onclick = () => send({ type: 'importTimetable', fromFolder: true });
     box.append(e);
     return;
   }
@@ -446,8 +446,8 @@ function weekGrid(classes) {
   });
   return wrap;
 }
-$('ttPaste').onclick = () => send({type:'pasteTimetable'});
-$('ttImport').onclick = () => send({ type: 'importTimetable' });
+$('ttImport').onclick = () => send({ type: 'importTimetable', fromFolder: true });
+$('ttDelete').onclick = () => { if (confirm('למחוק את המערכת, לוח המבחנים והקבצים ששמרת מהפורטל?')) send({ type: 'deleteTimetable' }); };
 
 // ---------- Home ----------
 // For homework deadlines: whether the syllabus says it counts (known after "learn the course" read the syllabus).
@@ -1368,7 +1368,7 @@ $('siteDownloads').onclick = () => send({type:'siteAction',action:'downloads'});
 $('siteExternal').onclick = () => send({ type: 'siteAction', action: 'external' });
 $('sitePrint').onclick = () => send({ type: 'siteAction', action: 'savepdf' });
 $('siteCopy').onclick = () => send({ type: 'siteAction', action: 'copylink' });
-$('siteCalendar').onclick = () => { send({ type: 'readCalendarPage' }); toast('קורא את התאריכים מהדף...'); };
+$('portalUpdate').onclick = () => { send({ type: 'importTimetable', fromFolder: true }); toast('קורא את הקבצים מתיקיית מערכת שעות...'); };
 function syncDownloadTarget() { send({ type: 'setDownloadTarget', course: $('dlCourse').value, folder: $('dlFolder').value }); $('dlFolder').disabled = !$('dlCourse').value; }
 // The bar above a site always shows the course and the lecture that files are saved into.
 function fillSaveFolders(course, selected) {
@@ -1724,7 +1724,7 @@ function onMessage(m) {
       break;
     }
     case 'academicCalendar': S.academic = m.data; if (S.view === 'course') renderLectures(); break;
-    case 'siteNav': $('siteCalendar').hidden = !/webrashim\.hit\.ac\.il/i.test(m.url || ''); $('siteUrl').textContent = m.url || ''; $('siteBack').disabled = !m.canBack; $('siteForward').disabled = !m.canForward; break;
+    case 'siteNav': { const onPortal = /webrashim\.hit\.ac\.il/i.test(m.url || ''); if (document.getElementById('portalHint').hidden === onPortal) { $('portalHint').hidden = !onPortal; requestAnimationFrame(() => placeSite(true)); } } $('siteUrl').textContent = m.url || ''; $('siteBack').disabled = !m.canBack; $('siteForward').disabled = !m.canForward; break;
     case 'timetable': S.timetable = m.data; renderTimetable(); break;
     case 'prepStatus':
       S.prep = m.busy ? m : null; renderBanners();
@@ -1762,10 +1762,7 @@ const tipTimer = setInterval(() => { $('splashText').textContent = splashTips[++
 function maybeHideSplash(force) {
   if (!force && !(S.ready.settings && S.ready.ai)) return;
   clearInterval(tipTimer);
-  const hide = () => { if ($('splash')) $('splash').classList.add('hide'); };
-  // At start-up: the stones fly into the gauntlet for everything that is connected, then the app shows.
-  if (window.splashFinale && !DEMO) { if (S.splashStarted) return; S.splashStarted = true; setTimeout(hide, 14000); window.splashFinale(hide); return; }
-  hide();
+  if ($('splash')) $('splash').classList.add('hide');
 }
 setTimeout(() => maybeHideSplash(true), 7000);
 
@@ -1774,7 +1771,7 @@ function start() {
   if (!host) return;
   host.addEventListener('message', e => onMessage(e.data));
   icons();
-  $('splashLogo').innerHTML = window.gauntletStage ? window.gauntletStage() : ART.mascot(); $('navLogo').innerHTML = ART.mascot();
+  $('splashLogo').innerHTML = ART.mascot(); $('navLogo').innerHTML = ART.mascot();
   renderHome(); renderTimetable(); refreshJobs(); renderStatus();
   send({ type: 'ready' });
 }

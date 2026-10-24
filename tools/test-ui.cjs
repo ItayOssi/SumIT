@@ -148,6 +148,23 @@ const assert = require('assert/strict');
  assert.equal(await page.locator('#view-home #homeTasks').count(),0);
  await page.locator('#tasksPage .task-check').click();
  assert.equal(await page.evaluate(()=>S.tasks[0].done),true);
+ // The timetable: update reads the saved portal pages, delete asks first, the portal shows how to download them (no "read the page" button).
+ page.on('dialog',d=>d.accept());
+ await page.evaluate(()=>show('home'));
+ await page.locator('#ttImport').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.fromFolder];}),['importTimetable',true]);
+ await page.locator('#ttDelete').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'deleteTimetable');
+ assert.equal(await page.locator('#siteCalendar').count(),0);
+ await page.evaluate(()=>onMessage({type:'siteNav',url:'https://webrashim.hit.ac.il/Portals/student/schedule',canBack:false,canForward:false}));
+ await page.evaluate(()=>{show('sites');});
+ assert.equal(await page.locator('#portalHint').isVisible(),true);
+ assert.equal((await page.locator('#portalHint').textContent()).includes('מבנה יומן'),true);
+ await page.locator('#portalUpdate').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.fromFolder];}),['importTimetable',true]);
+ await page.evaluate(()=>onMessage({type:'siteNav',url:'https://md.hit.ac.il/',canBack:false,canForward:false}));
+ assert.equal(await page.locator('#portalHint').isVisible(),false);
+ await page.evaluate(()=>{show('home');});
  // A connected helper shows a small test button that reports how long the answer took.
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});show('settings');renderProviders();});
  assert.equal(await page.locator('#aiTeam').count(),0);
@@ -155,12 +172,6 @@ const assert = require('assert/strict');
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['testBrain','gemini']);
  await page.evaluate(()=>onMessage({type:'brainTest',kind:'gemini',ok:true,ms:2500,text:'ok'}));
  assert.equal((await page.locator('#providers .provider[data-kind=gemini] .test-line.ok').textContent()).includes('2.5'),true);
- // The start-up screen: the gauntlet, and a stone flies in for each thing that is connected; with all six it snaps and the screen is released.
- await page.evaluate(()=>{document.body.insertAdjacentHTML('afterbegin','<div class="splash" id="splash"><div class="box"><div class="logo stage" id="splashLogo"></div><b>SumIT</b><small id="splashText"></small><div class="track"><i></i></div></div></div>');$('splashLogo').innerHTML=gauntletStage();S.moodle='ready';S.ai=Object.assign({},S.ai,{claude:{loggedIn:true},helpers:{gemini:'account',openai:'account',order:['gemini','openai']}});localStorage.setItem('sumit.seen.cs24','1');localStorage.setItem('sumit.seen.zoom','1');window.__fin=false;splashFinale(()=>{window.__fin=true;});});
- await page.waitForSelector('.splash.snap',{timeout:15000});
- assert.equal(await page.locator('.splash .infinity-stone').count(),6);
- await page.waitForFunction(()=>window.__fin===true,null,{timeout:8000});
- await page.evaluate(()=>{document.getElementById('splash').remove();});
  // With another AI connected: a "check with another AI" button under the last chat answer and on a ready summary.
  await page.evaluate(()=>{show('course');setTab('lessons');setChatScope('lesson:1');S.chatBusy=false;addMsg('assistant','תשובה לבדיקה');addCheckButton();});
  await page.getByRole('button',{name:'בדוק עם AI נוסף',exact:true}).click();

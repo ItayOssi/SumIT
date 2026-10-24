@@ -338,7 +338,9 @@ partial class HitStudent : Form
     string NotabilityDir { get { return Str(settings, "notabilityDir"); } }
     // Gemini isn't reliable yet, so it is shown as "coming soon" and everything runs on Claude until it is.
     static readonly bool GeminiEnabled = false;
-    string Provider { get { return GeminiEnabled && Str(settings, "aiProvider") == "gemini" ? "gemini" : "claude"; } }
+    internal bool claudeLoggedIn;
+    // Claude when the student has it; otherwise Gemini (through their Google account), which then writes the summaries too.
+    string Provider { get { return !claudeLoggedIn && GeminiAccountReady() ? "gemini" : "claude"; } }
 
     // The student's own to-do list: a title, an optional course and date, done or not. Only these fields are kept.
     internal static System.Collections.ArrayList CleanTasks(System.Collections.ArrayList raw)
@@ -554,8 +556,8 @@ partial class HitStudent : Form
             // Notability
             case "linkNotability": LinkNotability(course, Str(m, "folder")); break;
             case "openNotability": OpenNotability(); break;
-            case "importTimetable": ImportTimetable(); break;
-            case "readCalendarPage": ReadCalendarPage(); break;
+            case "importTimetable": ImportTimetable(null, Bool(m, "fromFolder")); break;
+            case "deleteTimetable": DeleteTimetable(); break;
             case "skipExams": SkipExams(course); break;
             case "viewFile": ShowFile(m); break;
             case "pickProfileImage": SetProfileImage(false); break;
