@@ -169,7 +169,8 @@ partial class HitStudent
 $argline = $env:FAKE_ARGS
 if ($argline -match 'login' -and $argline -match 'status') { 'Logged in using ChatGPT'; exit 0 }
 if ($env:FAKE_LOGIN -eq '1') {
-  Write-Host 'Opening authentication page in your browser. Do you want to continue? [Y/n]:'
+  if ($env:CI) { [Console]::Error.WriteLine('non-interactive session'); exit 41 }   # like the real Gemini CLI: with CI set it never opens a browser
+  Write-Host -NoNewline 'Opening authentication page in your browser. Do you want to continue? [Y/n]: '   # no line break, like the real one
   [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)   # like node: the input is UTF-8 (the app may put a byte-order mark in front)
   $line = [Console]::In.ReadLine()
   if ($line -and $line.Trim().TrimStart([char]0xFEFF) -eq 'Y') { Set-Content -Path $env:FAKE_LOGIN_FLAG -Value 'signed-in'; Write-Host 'https://accounts.example/login?x=1'; Start-Sleep 1 }

@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -340,10 +340,27 @@ partial class HitStudent : Form
     static readonly bool GeminiEnabled = false;
     string Provider { get { return GeminiEnabled && Str(settings, "aiProvider") == "gemini" ? "gemini" : "claude"; } }
 
+    // The student's own to-do list: a title, an optional course and date, done or not. Only these fields are kept.
+    internal static System.Collections.ArrayList CleanTasks(System.Collections.ArrayList raw)
+    {
+        var list = new System.Collections.ArrayList();
+        if (raw == null) return list;
+        foreach (var o in raw.OfType<Dictionary<string, object>>().Take(300))
+        {
+            string title = Trunc(Str(o, "title").Trim(), 200);
+            if (title.Length == 0) continue;
+            string due = Str(o, "due");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(due, @"^\d{4}-\d{2}-\d{2}$")) due = "";
+            list.Add(new Dictionary<string, object> { { "id", Trunc(Str(o, "id"), 40) }, { "title", title }, { "course", Trunc(Str(o, "course"), 120) }, { "due", due }, { "done", Bool(o, "done") } });
+        }
+        return list;
+    }
+
     void SendSettings()
     {
         Send(new
         {
+            tasks = settings.ContainsKey("tasks") ? settings["tasks"] : new System.Collections.ArrayList(),
             type = "settings", studyRoot = StudyRoot, recordingsDir = RecordingsDir, notabilityDir = NotabilityDir,
             aiProvider = Provider, hasGeminiKey = Str(settings, "geminiKey").Length > 0, hasOpenAiKey = Str(settings, "openaiKey").Length > 0,
             helperPref = Str(settings, "helperPref").Length > 0 ? Str(settings, "helperPref") : "auto", displayName = Str(settings, "displayName"), bio = Str(settings, "bio"),
@@ -449,6 +466,10 @@ partial class HitStudent : Form
             case "setProfile":
                 settings["displayName"] = Trunc(Str(m, "name").Trim(), 40);
                 settings["bio"] = Trunc(Str(m, "bio").Trim(), 80);
+                SaveSettings(); SendSettings();
+                break;
+            case "saveTasks":
+                settings["tasks"] = CleanTasks(m.ContainsKey("tasks") ? m["tasks"] as System.Collections.ArrayList : null);
                 SaveSettings(); SendSettings();
                 break;
             case "openGeminiKeyPage": OpenExternal("https://aistudio.google.com/apikey"); break;

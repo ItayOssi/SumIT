@@ -73,7 +73,7 @@ const assert = require('assert/strict');
   S.update={version:'99.0',canAuto:true};renderBanners();
  });
  assert.equal(await page.locator('.week-table tbody tr').count(),2);
- assert.equal(await page.locator('#timetable .info-grid > div:last-child .deadline').count(),8);
+ assert.equal(await page.locator('#examBoard .deadline').count(),8);
  await page.getByRole('button',{name:'לא עכשיו',exact:true}).click();
  assert.equal(await page.evaluate(()=>sent.some(m=>m.type==='installUpdate')),false);
  await page.evaluate(()=>{S.dismissedUpdate=null;renderBanners();});
@@ -111,9 +111,27 @@ const assert = require('assert/strict');
  await page.getByRole('button',{name:'הורד את כל המבחנים מה-Moodle',exact:true}).click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.what];}),['downloadMoodle','exams']);
  await page.evaluate(()=>{S.local={dir:'t',lectures:[]};setTab('info');});
- await page.getByRole('button',{name:'הורד את הסילבוס מה-Moodle ונתח',exact:true}).click();
+ await page.getByRole('button',{name:'לחץ כאן כדי לסנכרן את הסילבוס',exact:true}).click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.what];}),['downloadMoodle','syllabus']);
  assert.equal(await page.getByText('הסיכום המלא').count(),0);
+ // Gone: the library course, NotebookLM, "analyze what exists", CS24 exams on the home page, "summary ready" tile.
+ assert.equal(await page.getByText('נתח את מה שכבר יש').count(),0);
+ assert.equal(await page.locator('[data-site-link=notebooklm],[data-site=notebooklm]').count(),0);
+ await page.evaluate(()=>{onMessage({type:'courses',data:[{id:1,name:'ספרייה',current:false},{id:2,name:'אלגברה',current:true}]});show('home');});
+ assert.equal(await page.evaluate(()=>S.courses.map(c=>c.name).join()),'אלגברה');
+ assert.equal(await page.locator('#view-home').getByText('מבחנים ב-CS24').count(),0);
+ assert.equal(await page.locator('#stats').getByText('סיכום מוכן').count(),0);
+ // The weekly timetable comes first, the exams are a card of their own below it.
+ assert.equal(await page.evaluate(()=>document.getElementById('timetable').getBoundingClientRect().top<document.getElementById('examBoard').getBoundingClientRect().top),true);
+ // My tasks: added on the home page, shown on the tasks page, checked off, kept through the app's settings.
+ await page.locator('#homeTasks [data-t-title]').fill('להגיש תרגיל 3');
+ await page.locator('#homeTasks [data-t-due]').fill('2099-01-05');
+ await page.locator('#homeTasks button[type=submit]').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.tasks.length,m.tasks[0].title,m.tasks[0].due];}),['saveTasks',1,'להגיש תרגיל 3','2099-01-05']);
+ await page.locator('.nav-item[data-view=tasks]').click();
+ assert.equal(await page.locator('#tasksPage .task').count(),1);
+ await page.locator('#tasksPage .task-check').click();
+ assert.equal(await page.evaluate(()=>S.tasks[0].done),true);
  // With another AI connected: a "check with another AI" button under the last chat answer and on a ready summary.
  await page.evaluate(()=>{show('course');setTab('lessons');setChatScope('lesson:1');S.chatBusy=false;addMsg('assistant','תשובה לבדיקה');addCheckButton();});
  await page.getByRole('button',{name:'בדוק עם AI נוסף',exact:true}).click();

@@ -147,18 +147,34 @@ partial class HitStudent
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = Path.GetTempPath()
         };
         foreach (var kv in CliEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
+        // A tool that sees CI in its environment never opens a browser (Gemini says "non-interactive session"), so sign-in runs without it.
+        psi.EnvironmentVariables.Remove("CI");
         var seen = new StringBuilder();
         string urlSent = null;
         using (var p = Process.Start(psi))
         {
-            DataReceivedEventHandler onData = (s, e) =>
+            bool answered = false;
+            // The question "[Y/n]:" has no line break after it, so the output is read as it comes, not line by line.
+            Action<StreamReader> pump = (reader) => Task.Run(() =>
             {
-                if (e.Data == null) return;
-                lock (seen) seen.AppendLine(e.Data);
-                if (answerYes && e.Data.IndexOf("[Y/n]", StringComparison.OrdinalIgnoreCase) >= 0) { try { var yes = new byte[] { (byte)'Y', 13, 10 }; p.StandardInput.BaseStream.Write(yes, 0, yes.Length); p.StandardInput.BaseStream.Flush(); } catch { } }   // raw bytes: no encoding preamble in front of the Y
-            };
-            p.OutputDataReceived += onData; p.ErrorDataReceived += onData;
-            p.BeginOutputReadLine(); p.BeginErrorReadLine();
+                var buf = new char[512];
+                int n;
+                try
+                {
+                    while ((n = reader.Read(buf, 0, buf.Length)) > 0)
+                    {
+                        string all;
+                        lock (seen) { seen.Append(buf, 0, n); all = seen.ToString(); }
+                        if (answerYes && !answered && all.IndexOf("[Y/n]", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            answered = true;
+                            try { var yes = new byte[] { (byte)'Y', 13, 10 }; p.StandardInput.BaseStream.Write(yes, 0, yes.Length); p.StandardInput.BaseStream.Flush(); } catch { }   // raw bytes: no encoding preamble in front of the Y
+                        }
+                    }
+                }
+                catch { }
+            });
+            pump(p.StandardOutput); pump(p.StandardError);
             if (!answerYes) { try { p.StandardInput.Close(); } catch { } }
             var started = DateTime.UtcNow;
             while (!p.HasExited && (DateTime.UtcNow - started).TotalMinutes < 6)
@@ -172,6 +188,31 @@ partial class HitStudent
             }
             if (!p.HasExited) { await Task.Delay(1500); KillTree(p); }
         }
+    }
+
+    // Tells Gemini's tool to sign in with a Google account (without it, a tool run without a window has no way to ask which kind of sign-in).
+    // Existing settings are kept; only the sign-in type is added when it is missing.
+    void EnsureGeminiGoogleAuth()
+    {
+        try
+        {
+            Directory.CreateDirectory(GeminiDir);
+            string file = Path.Combine(GeminiDir, "settings.json");
+            var root = new Dictionary<string, object>();
+            if (File.Exists(file))
+            {
+                try { root = json.DeserializeObject(File.ReadAllText(file, Encoding.UTF8)) as Dictionary<string, object> ?? root; }
+                catch { return; }   // a settings file we can't read is left alone
+            }
+            var security = root.ContainsKey("security") ? root["security"] as Dictionary<string, object> : null;
+            if (security == null) { security = new Dictionary<string, object>(); root["security"] = security; }
+            var auth = security.ContainsKey("auth") ? security["auth"] as Dictionary<string, object> : null;
+            if (auth == null) { auth = new Dictionary<string, object>(); security["auth"] = auth; }
+            if (auth.ContainsKey("selectedType")) return;
+            auth["selectedType"] = "oauth-personal";
+            File.WriteAllText(file, json.Serialize(root), new UTF8Encoding(false));
+        }
+        catch { }
     }
 
     async void ConnectBrain(string kind)
@@ -191,6 +232,7 @@ partial class HitStudent
             {
                 if (FindGemini() == null) await InstallCli("@google/gemini-cli", "installing-gemini");
                 setupState = "login-gemini"; await SendAiStatus();
+                EnsureGeminiGoogleAuth();
                 // The first run asks "open the sign-in page in your browser? [Y/n]": the app answers, the browser opens, the student signs in.
                 await RunLogin(FindGemini(), "-p " + Q("hello") + " -o text", kind, GeminiGoogleSignedIn, true);
                 Toast(GeminiGoogleSignedIn() ? "Gemini חובר, והוא עוזר ל-Claude" : "ההתחברות ל-Google לא הסתיימה. אפשר לנסות שוב", !GeminiGoogleSignedIn());

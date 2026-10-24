@@ -144,6 +144,7 @@ function show(view) {
     requestAnimationFrame(() => placeSite(true));
   }
   if (view === 'home') renderHome();
+  if (view === 'tasks') renderTasks($('tasksPage'), false);
   if (view === 'courses' && !S.courses) loadCourses();
 }
 document.querySelectorAll('.nav-item[data-view]').forEach(n => n.onclick = () => show(n.dataset.view));
@@ -315,13 +316,13 @@ const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 
 function renderStats() {
   const box = $('stats'); if (!box) return;
   const cur = (S.courses || []).filter(c => c.current);
-  const summaries = cur.reduce((n, c) => n + (((c.local || {}).lecturePdfs) || ((c.local || {}).studyPages) || 0), 0);
+  const openTasks = (S.tasks || []).filter(t => !t.done).length;
   const week = (S.events || []).filter(e => !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000).length;
   const exams = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && new Date(x.date + 'T12:00:00') >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
   const days = exams.length ? Math.max(0, Math.round((new Date(exams[0].date + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000)) : null;
   const tile = (ic, cls, value, label) => `<div class="stat-tile"><span class="ic ${cls}" data-ic="${ic}"></span><div><b>${value}</b><small>${label}</small></div></div>`;
   box.innerHTML = tile('book', 'file', S.courses ? cur.length : '·', 'קורסים בסמסטר')
-    + tile('sparkles', 'assign', summaries, summaries === 1 ? 'סיכום מוכן' : 'סיכומים מוכנים')
+    + tile('check', 'assign', openTasks, openTasks === 1 ? 'מטלה פתוחה שלי' : 'מטלות פתוחות שלי')
     + tile('calendar', 'zoom', S.events ? week : '·', 'מטלות השבוע')
     + tile('exam', 'other', days == null ? '—' : days, days == null ? 'אין מבחן בלוח' : days === 1 ? 'יום למבחן הבא' : 'ימים למבחן הבא');
   icons(box);
@@ -367,7 +368,7 @@ function renderNextUp() {
 }
 
 function renderTimetable() {
-  const box = $('timetable'); box.innerHTML = '';
+  const box = $('timetable'); box.innerHTML = ''; if ($('examBoard')) $('examBoard').innerHTML = '';
   const tt = S.timetable;
   if (!tt || !((tt.classes || []).length || (tt.exams || []).length)) {
     renderNextUp(); renderStats();
@@ -382,11 +383,10 @@ function renderTimetable() {
   const today = DAYS[new Date().getDay()];
   const todays = (tt.classes || []).filter(c => c.day === today).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
   const exams = (tt.exams || []).filter(x => x.date && new Date(x.date) >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
-  const grid = h('<div class="info-grid"></div>');
   const day = h(`<div><h3 style="margin-bottom:8px">היום · יום ${today}</h3></div>`);
   if (!todays.length) day.append(h('<div class="muted">אין שיעורים היום.</div>'));
   todays.forEach(c => { const r = h(`<div class="deadline"><div class="cal"><b style="font-size:13px;margin-top:10px">${esc(c.start)}</b><small>${esc(c.end)}</small></div><div class="info"><div class="name" dir="auto"></div><div class="course" dir="auto"></div></div></div>`); r.querySelector('.name').textContent = c.course; r.querySelector('.course').textContent = [c.kind, c.room, c.lecturer].filter(Boolean).join(' · '); day.append(r); });
-  const ex = h('<div><h3 style="margin-bottom:8px">מבחנים קרובים</h3></div>');
+  const ex = h('<div></div>'); const eb = $('examBoard'); eb.innerHTML = ''; eb.append(ex);
   if (!exams.length) ex.append(h('<div class="muted">אין מבחנים קרובים במערכת.</div>'));
   exams.forEach(x => { const d = new Date(x.date); const r = h(`<div class="deadline${(d - new Date()) < 14 * 86400000 ? ' soon' : ''}"><div class="cal"><b>${d.getDate()}</b><small>${esc(monFmt.format(d))}</small></div><div class="info"><div class="name" dir="auto"></div><div class="course"></div></div><span class="chip">מועד ${esc(x.moed || '')}</span></div>`); r.querySelector('.name').textContent = x.course; r.querySelector('.course').textContent = [x.time, x.room].filter(Boolean).join(' · '); ex.append(r); });
   const weekly = h('<div class="week-table"><table><caption>מערכת השעות השבועית המלאה</caption><thead><tr><th>יום</th><th>שעות</th><th>קורס</th><th>סוג</th><th>חדר</th><th>מרצה</th></tr></thead><tbody></tbody></table></div>');
@@ -395,8 +395,7 @@ function renderTimetable() {
     [d, [c.start,c.end].filter(Boolean).join('–'),c.course,c.kind,c.room,c.lecturer].forEach((v,i) => { const cell = document.createElement('td'); cell.textContent = v || ''; cell.dir = i === 1 ? 'ltr' : 'auto'; row.append(cell); });
     weekly.querySelector('tbody').append(row);
   }));
-  grid.append(day, ex);
-  box.append(grid);
+  box.append(day);
   const wg = weekGrid(tt.classes || []);
   if (wg) box.append(wg);
   const list = h('<details class="week-list"><summary>הצג כרשימה</summary></details>'); list.append(weekly); box.append(list);
@@ -455,7 +454,7 @@ function semesterOf(c) {
   return `${y.slice(0, -1)}״${y.slice(-1)} · סמסטר ${m[2]}`;
 }
 function renderHome() {
-  renderStats(); renderNextUp();
+  renderStats(); renderNextUp(); renderTasks($('homeTasks'), true);
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
   $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
@@ -493,12 +492,12 @@ function renderHome() {
 $('heroArt').innerHTML = ART.hero();
 $('heroCourses').innerHTML = IC.book + 'לקורסים שלי';
 $('heroCourses').onclick = () => show('courses');
-$('heroPaste').innerHTML = IC.exam + 'מבחנים ב-CS24';
-$('heroPaste').onclick = () => openSite('cs24');
+$('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
+$('heroPaste').onclick = () => { const f = document.querySelector('#homeTasks [data-t-title]'); if (f) { f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.focus(); } };
 $('allCourses').onclick = () => show('courses');
+$('allTasks').onclick = () => show('tasks');
 (function quick() {
   const items = [
-    ['c2', 'exam', 'מבחנים ב-CS24', 'מבחנים וסיכומים משנים קודמות', () => openSite('cs24')],
     ['c3', 'user', 'פורטל מידע אישי', 'ציונים, מערכת שעות ובחינות', () => openSite('portal')],
     ['c4', 'folder', 'תיקיית הקורסים', 'כל החומר שהורדת', () => send({ type: 'openFolder', which: 'study' })]
   ];
@@ -1098,13 +1097,10 @@ function renderInfo() {
   const busy = S.infoBusy;
   if (!info) {
     p.append(h(`<div class="empty">${ART.empty().replace('<svg', '<svg class="art"')}<b>עוד אין מידע על הקורס</b>
-      לחיצה אחת, והאפליקציה מורידה את הסילבוס מה-Moodle וקוראת אותו: מרצה, הרכב הציון, האם שיעורי הבית חובה, מבנה המבחן ותאריכים חשובים.
-      <div class="row"><button class="primary" id="sylBtn"><span data-ic="download"></span>הורד את הסילבוס מה-Moodle ונתח</button>
-      <button class="ghost" id="addSyl"><span data-ic="plus"></span>הוסף סילבוס מהמחשב</button>
-      <button class="ghost" id="analyzeBtn"><span data-ic="sparkles"></span>נתח את מה שכבר יש</button></div></div>`));
+      לחיצה אחת, והאפליקציה מסנכרנת את הסילבוס מה-Moodle וקוראת אותו: מרצה, הרכב הציון, האם שיעורי הבית חובה, מבנה המבחן ותאריכים חשובים.
+      <div class="row"><button class="primary" id="sylBtn"><span data-ic="refresh"></span>לחץ כאן כדי לסנכרן את הסילבוס</button>
+      <button class="ghost" id="addSyl"><span data-ic="plus"></span>הוסף סילבוס מהמחשב</button></div></div>`));
     $('sylBtn').onclick = () => downloadMoodle('syllabus');
-    $('analyzeBtn').disabled = busy;
-    $('analyzeBtn').onclick = () => { S.infoBusy = true; send({ type: 'analyzeCourse', course: S.course.name }); renderInfo(); };
     $('addSyl').onclick = () => send({ type: 'addFiles', course: S.course.name, folder: 'מידע על הקורס' });
     return;
   }
@@ -1522,7 +1518,8 @@ function renderWizardMoodle() {
 function onMessage(m) {
   switch (m.type) {
     case 'settings':
-      S.settings = m; S.ready.settings = true;
+      S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
+      renderTasks($('homeTasks'), true); if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderStats();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
       if (!m.onboarded && $('wizard').hidden) openWizard(0);
@@ -1539,7 +1536,7 @@ function onMessage(m) {
       break;
     case 'home': S.events = m.events || []; if (m.name) S.userName = m.name; renderHome(); renderWizardMoodle(); renderProfile(S.settings); break;
     case 'courses':
-      S.courses = m.data || []; renderCourses(); fillDownloadCourses();
+      S.courses = (m.data || []).filter(c => !/^ספרי[יה]ה?\s*$/.test((c.name || '').trim())); renderCourses(); fillDownloadCourses();
       if (S.view === 'home') renderHome();
       if (!$('wizard').hidden) renderWizardCourses();
       break;
@@ -1802,7 +1799,7 @@ function timetableLectureDays() {
 // Before the first lecture: past exams (with solutions) teach the app which questions this lecturer asks and how he answers.
 function downloadMoodle(what) {
   send({ type: 'downloadMoodle', course: S.course.name, id: S.course.id, what });
-  toast(what === 'exams' ? 'מוריד את כל המבחנים והפתרונות מה-Moodle...' : 'מוריד את הסילבוס ומנתח אותו...', { ms: 5000 });
+  toast(what === 'exams' ? 'מוריד את כל המבחנים והפתרונות מה-Moodle...' : 'מסנכרן את הסילבוס...', { ms: 5000 });
 }
 function examsIntroNeeded() { return !!(S.local && !S.local.exams && !S.local.examsSkipped && !S.sections.length); }
 function examsIntroCard() {
@@ -1906,4 +1903,48 @@ function lectureCalendarEditor() {
   form.querySelector('[data-tt]').textContent = days ? 'לפי המערכת שלך, ההרצאות של הקורס ביום ' + days.map(d => names[d]).join(' וביום ') + '.' : 'לא מצאתי את הקורס במערכת השעות. אפשר להוסיף אותה בדף הבית, ואז התאריכים יוצעו לבד.';
   form.onsubmit = e => { e.preventDefault(); send({ type: 'saveLectureCalendar', course: S.course.name, first: form.elements.first.value, holidays: form.elements.holidays.value }); toast('נשמר'); };
   return box;
+}
+
+// ---------- My tasks ----------
+// The student's own to-do list (not from Moodle): a title, an optional course and date. Kept in the app's settings.
+S.tasks = S.tasks || [];
+function saveTasks() { send({ type: 'saveTasks', tasks: S.tasks }); renderStats(); renderTasks($('homeTasks'), true); if (S.view === 'tasks') renderTasks($('tasksPage'), false); }
+function renderTasks(box, compact) {
+  if (!box) return;
+  const keep = box.querySelector('[data-t-title]'); const draft = keep ? keep.value : '';
+  const focused = keep && document.activeElement === keep;
+  box.innerHTML = '';
+  const open = S.tasks.filter(t => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  const done = S.tasks.filter(t => t.done);
+  const n = $('homeTaskCount'); if (n) n.textContent = open.length ? open.length + ' פתוחות' : '';
+  const nav = $('taskCount'); if (nav) { nav.textContent = open.length; nav.hidden = !open.length; }
+  const courses = (S.courses || []).filter(c => c.current).map(c => c.name);
+  const form = h(`<form class="task-add"><input data-t-title placeholder="מטלה חדשה: למשל להגיש תרגיל 3" maxlength="200" autocomplete="off">
+    <select data-t-course><option value="">כללי</option>${courses.map(c => `<option>${esc(c)}</option>`).join('')}</select>
+    <input type="date" data-t-due class="ltr" title="תאריך הגשה (לא חובה)"><button class="primary" type="submit"><span data-ic="plus"></span>הוסף</button></form>`);
+  form.querySelector('[data-t-title]').value = draft;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const title = form.querySelector('[data-t-title]').value.trim(); if (!title) return;
+    S.tasks.push({ id: String(Date.now()) + Math.random().toString(36).slice(2, 6), title, course: form.querySelector('[data-t-course]').value, due: form.querySelector('[data-t-due]').value, done: false });
+    saveTasks();
+  };
+  box.append(form);
+  const row = (t) => {
+    const days = t.due ? Math.round((new Date(t.due + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
+    const when = days == null ? '' : days < 0 ? 'עבר' : days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';
+    const el = h(`<div class="task${t.done ? ' done' : ''}"><label class="task-check"><input type="checkbox"${t.done ? ' checked' : ''}><span class="box"></span></label><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div>${when ? `<span class="chip${days < 0 && !t.done ? ' bad' : days <= 2 && !t.done ? ' warn' : ''}">${when}</span>` : ''}<button class="small ghost" title="מחק" data-del><span data-ic="x"></span></button></div>`);
+    el.querySelector('b').textContent = t.title;
+    el.querySelector('small').textContent = [t.course, t.due ? t.due.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ');
+    el.querySelector('input').onchange = (e) => { t.done = e.target.checked; saveTasks(); };
+    el.querySelector('[data-del]').onclick = () => { S.tasks = S.tasks.filter(x => x !== t); saveTasks(); };
+    return el;
+  };
+  const shown = compact ? open.slice(0, 5) : open;
+  if (!open.length) box.append(h('<div class="muted" style="padding:10px 4px">אין מטלות פתוחות. אפשר להוסיף כאן הגשות, הכנות למבחן וכל מה שצריך לזכור.</div>'));
+  shown.forEach(t => box.append(row(t)));
+  if (compact && open.length > shown.length) box.append(h(`<div class="muted" style="padding:6px 4px">ועוד ${open.length - shown.length} בדף "המטלות שלי"</div>`));
+  if (!compact && done.length) { box.append(h('<h3 style="margin:18px 0 6px">הושלמו</h3>')); done.forEach(t => box.append(row(t))); }
+  icons(box);
+  if (focused) form.querySelector('[data-t-title]').focus();
 }

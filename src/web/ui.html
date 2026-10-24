@@ -25,13 +25,13 @@
     </button>
     <button class="nav-item active" data-view="home"><span class="ni" data-ic="home"></span><span class="nav-text">בית</span></button>
     <button class="nav-item" data-view="courses"><span class="ni" data-ic="book"></span><span class="nav-text">הקורסים שלי</span></button>
+    <button class="nav-item" data-view="tasks"><span class="ni" data-ic="check"></span><span class="nav-text">המטלות שלי</span><span class="count" id="taskCount" hidden>0</span></button>
     <button class="nav-item" data-view="recordings" id="navDownloads" hidden><span class="ni" data-ic="download"></span><span class="nav-text">הורדות</span><span class="count" id="jobCount" hidden>0</span></button>
     <div class="nav-label nav-text">אתרים</div>
     <button class="nav-item" data-site-link="moodle"><span class="ni" data-ic="globe"></span><span class="nav-text">Moodle</span></button>
     <button class="nav-item" data-site-link="portal"><span class="ni" data-ic="user"></span><span class="nav-text">פורטל מידע אישי</span></button>
     <button class="nav-item" data-site-link="cs24"><span class="ni" data-ic="exam"></span><span class="nav-text">CS24</span></button>
     <button class="nav-item" data-notes hidden><span class="ni" data-ic="note"></span><span class="nav-text">המחברות והסיכומים שלי</span></button>
-    <button class="nav-item" data-site-link="notebooklm"><span class="ni" data-ic="book"></span><span class="nav-text">NotebookLM</span></button>
     <div class="nav-user" id="navUser" hidden><img id="navAvatar" alt=""><span class="nav-text" id="navUserName"></span></div>
     <div class="nav-label nav-text"></div>
     <button class="nav-item" data-view="settings"><span class="ni" data-ic="settings"></span><span class="nav-text">הגדרות</span></button>
@@ -68,16 +68,32 @@
             <div class="card-head"><span class="ic assign" data-ic="clock"></span><h2>הבא בתור</h2></div>
             <div id="nextUp"></div>
           </div>
+          <div class="card full" id="homeTasksCard">
+            <div class="card-head"><span class="ic assign" data-ic="check"></span><h2>המטלות שלי</h2><span class="chip" id="homeTaskCount"></span><button class="small ghost" id="allTasks">לכל המטלות</button></div>
+            <div id="homeTasks"></div>
+          </div>
           <div class="full"><div class="shortcuts" id="quick"></div></div>
           <div class="card full">
             <div class="card-head"><span class="ic zoom" data-ic="clock"></span><h2>המערכת שלי</h2><span class="chip" id="ttStatus"></span><button class="small ghost" id="ttPaste">הדבק תמונה</button><button class="small ghost" id="ttImport">עדכן מערכת</button></div>
             <div id="timetable"></div>
+          </div>
+          <div class="card full exam-board">
+            <div class="card-head"><span class="ic assign" data-ic="exam"></span><h2>מבחנים קרובים</h2></div>
+            <div id="examBoard"></div>
           </div>
           <div class="card full">
             <div class="card-head"><span class="ic file" data-ic="book"></span><h2>הקורסים של הסמסטר</h2><button class="small ghost" id="allCourses">לכל הקורסים</button></div>
             <div class="grid stagger" id="homeCourses"></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- My tasks -->
+    <section class="view" id="view-tasks">
+      <div class="page">
+        <div class="head"><div class="grow"><h1>המטלות שלי</h1><p>מטלות שאתה מוסיף בעצמך: הגשות, הכנות למבחן, כל מה שלא מופיע ב-Moodle.</p></div></div>
+        <div class="card pad-lg"><div id="tasksPage"></div></div>
       </div>
     </section>
 
@@ -168,7 +184,6 @@
           <button data-site="moodle" class="active">Moodle</button>
           <button data-site="portal">פורטל מידע אישי</button>
           <button data-site="cs24">CS24</button>
-          <button data-site="notebooklm">NotebookLM</button>
         </div>
         <button class="small ghost" id="siteBack" title="חזרה לדף הקודם באתר, כדי לבחור עוד קבצים"><span data-ic="back"></span>אחורה</button>
         <button class="small icon ghost" id="siteForward" title="קדימה"><span data-ic="forward"></span></button>
