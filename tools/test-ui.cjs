@@ -101,6 +101,8 @@ const assert = require('assert/strict');
  await page.locator('#providers .provider[data-kind=gemini] [data-code]').fill('4/0AbC');
  await page.locator('#providers .provider[data-kind=gemini] [data-send-code]').click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.code];}),['submitAuthCode','4/0AbC']);
+ await page.locator('#providers .provider[data-kind=gemini] [data-paste-code]').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'authFromClipboard');
  await page.evaluate(()=>onMessage({type:'authCode',kind:'gemini',state:'done'}));
  assert.equal(await page.locator('#providers .provider[data-kind=gemini] [data-code]').count(),0);
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});renderProviders();});
@@ -129,7 +131,16 @@ const assert = require('assert/strict');
  await page.getByRole('button',{name:'לחץ כאן כדי לסנכרן את הסילבוס',exact:true}).click();
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.what];}),['downloadMoodle','syllabus']);
  assert.equal(await page.getByText('הסיכום המלא').count(),0);
- // Gone: the library course, NotebookLM, "analyze what exists", CS24 exams on the home page, "summary ready" tile.
+ // The profile (name, description, picture) is edited with the pen on the picture, not in the settings.
+ assert.equal(await page.locator('#view-settings #profName').count(),0);
+ assert.equal(await page.locator('#view-settings #recDir').count(),0);
+ await page.locator('#editProfile').click();
+ assert.equal(await page.locator('#profileDlg').isVisible(),true);
+ await page.locator('#profName').fill('דנה');
+ await page.locator('#saveProfile').click();
+ assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.name];}),['setProfile','דנה']);
+ assert.equal(await page.locator('#profileDlg').isVisible(),false);
+ assert.equal(await page.locator('#view-home').evaluate(()=>true),true); // Gone: the library course, NotebookLM, "analyze what exists", CS24 exams on the home page, "summary ready" tile.
  assert.equal(await page.getByText('נתח את מה שכבר יש').count(),0);
  assert.equal(await page.locator('[data-site-link=notebooklm],[data-site=notebooklm]').count(),0);
  await page.evaluate(()=>{onMessage({type:'courses',data:[{id:1,name:'ספרייה',current:false},{id:2,name:'אלגברה',current:true}]});show('home');});

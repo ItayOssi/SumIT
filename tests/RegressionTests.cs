@@ -236,6 +236,7 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             bool signedIn = loginTask.Wait(20000) && loginTask.Result;
             check("Gemini sign-in: the pasted code finishes it and the account is remembered", signedIn && Bool(app.settings, "agyOk") && app.HelperMode("gemini") == "account");
             Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
+            check("a pasted link gives the code, a code stays a code, other text is refused", AuthCodeFrom("https://antigravity.google/oauth-callback?code=4%2F0AbC_d&scope=x&state=y") == "4/0AbC_d" && AuthCodeFrom("4/0AbC-xyz") == "4/0AbC-xyz" && AuthCodeFrom("hello world") == "");
             app.codexSignedIn = true; app.geminiSignedOverride = true;
 
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.

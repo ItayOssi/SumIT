@@ -226,7 +226,7 @@ partial class HitStudent
         string dir = Path.Combine(Path.GetTempPath(), "SumIT-agy-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var seen = new StringBuilder();
-        string urlSent = null;
+        string urlSent = null, lastClip = null;
         try
         {
             var psi = new ProcessStartInfo(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan")
@@ -250,10 +250,19 @@ partial class HitStudent
                 {
                     await Task.Delay(700);
                     string text; lock (seen) text = seen.ToString();
+                    // The student copies the address Google ended on: it is taken from the clipboard by itself, no pasting needed.
+                    try
+                    {
+                        string clip = System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : "";
+                        if (clip != lastClip && urlSent != null && clip.Length > 10 && clip.Length < 3000 && clip != urlSent && (clip.Contains("oauth-callback") || Regex.IsMatch(clip.Trim(), @"^4/[A-Za-z0-9_\-]{20,}$")))
+                        { lastClip = clip; if (SubmitAuthCode(clip)) Toast("קלטתי את הקישור מההעתקה", false); }
+                    }
+                    catch { }
                     var m = Regex.Match(text, "https://accounts\\.google\\.com/[^\\s\"']+");
                     if (m.Success && urlSent != m.Value)
                     {
                         urlSent = m.Value;
+                        try { lastClip = System.Windows.Forms.Clipboard.ContainsText() ? System.Windows.Forms.Clipboard.GetText() : null; } catch { }   // what was copied before does not count
                         if (Environment.GetEnvironmentVariable("SUMIT_AGY") == null) OpenExternal(m.Value);   // a stand-in tool in the tests must not open a browser
                         Send(new { type = "authCode", kind = "gemini", state = "wait", url = m.Value });
                     }
@@ -275,12 +284,32 @@ partial class HitStudent
     }
 
     // The code Google showed after the sign-in, typed into the app: passed on to the waiting sign-in. Only the characters of such a code.
-    void SubmitAuthCode(string code)
+    // What the student pastes may be the code itself, or the whole address of the page Google ended on (it has "code=..." in it).
+    static string AuthCodeFrom(string pasted)
     {
-        code = (code ?? "").Trim();
-        if (code.Length == 0 || code.Length > 600 || !Regex.IsMatch(code, @"^[A-Za-z0-9/_\-\.~%+=]+$")) { Toast("זה לא נראה כמו הקוד של Google", true); return; }
-        try { var p = agyLogin; if (p != null && !p.HasExited) { var b = Encoding.ASCII.GetBytes(code + "\r\n"); p.StandardInput.BaseStream.Write(b, 0, b.Length); p.StandardInput.BaseStream.Flush(); } }
+        pasted = (pasted ?? "").Trim();
+        var m = Regex.Match(pasted, @"[?&]code=([^&\s#]+)");
+        if (m.Success) return System.Net.WebUtility.UrlDecode(m.Groups[1].Value);
+        if (pasted.Length > 0 && pasted.Length <= 600 && Regex.IsMatch(pasted, @"^[A-Za-z0-9/_\-\.~%+=]+$")) return pasted;
+        return "";
+    }
+
+    bool SubmitAuthCode(string pasted)
+    {
+        string code = AuthCodeFrom(pasted);
+        if (code.Length == 0 || code.Length > 600 || !Regex.IsMatch(code, @"^[A-Za-z0-9/_\-\.~%+=]+$")) { Toast("זה לא נראה כמו הקישור או הקוד של Google. העתק את הכתובת מהדפדפן אחרי ההתחברות", true); return false; }
+        try { var p = agyLogin; if (p != null && !p.HasExited) { var b = Encoding.ASCII.GetBytes(code + "\r\n"); p.StandardInput.BaseStream.Write(b, 0, b.Length); p.StandardInput.BaseStream.Flush(); return true; } }
         catch { }
+        return false;
+    }
+
+    // The "paste" button: takes the link or code from the clipboard.
+    void SubmitAuthFromClipboard()
+    {
+        string text = "";
+        try { if (System.Windows.Forms.Clipboard.ContainsText()) text = System.Windows.Forms.Clipboard.GetText(); } catch { }
+        if (text.Length == 0) { Toast("אין כלום בלוח. העתק את הכתובת מהדפדפן ונסה שוב", true); return; }
+        SubmitAuthCode(text);
     }
 
     // Tells Gemini's tool to sign in with a Google account (without it, a tool run without a window has no way to ask which kind of sign-in).

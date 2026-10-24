@@ -20,7 +20,7 @@
 <div class="app">
   <nav class="side">
     <button class="brand" id="brand" title="מסך הבית">
-      <div class="logo" id="navLogo"></div>
+      <div class="logo" id="navLogo"></div><span class="edit-pen" id="editProfile" role="button" tabindex="0" title="עריכת השם, התיאור והתמונה" data-ic="edit"></span>
       <div><b id="brandName">SumIT</b><small id="brandSub">כל הלימודים במקום אחד</small></div>
     </button>
     <button class="nav-item active" data-view="home"><span class="ni" data-ic="home"></span><span class="nav-text">בית</span></button>
@@ -234,22 +234,9 @@
             <div class="grow"><b>תיקיית הקורסים</b><small>לכל קורס תיקייה, ובתוכה תיקייה לכל שיעור, מבחנים ומחברת.</small><span class="path" id="studyRoot">…</span></div>
             <button id="changeStudy">שנה</button><button id="openStudy" class="ghost">פתח</button>
           </div>
-          <div class="setting">
-            <div class="grow"><b>תיקיית הקלטות</b><small>הקלטות שמורידים מהלשונית "הקלטות".</small><span class="path" id="recDir">…</span></div>
-            <button id="changeRec">שנה</button><button id="openRec" class="ghost">פתח</button>
-          </div>
           <div class="setting" hidden>
             <div class="grow"><b>Notability</b><small>ב-Notability: הגדרות › גיבוי אוטומטי › Google Drive / OneDrive / Dropbox, בפורמט PDF. אחר כך בוחרים כאן את תיקיית הגיבוי שמסונכרנת למחשב.</small><span class="path" id="notabilityDir">לא נבחרה</span></div>
             <button id="changeNotability">בחר תיקייה</button>
-          </div>
-          <div class="setting">
-            <div class="grow"><b>השם והתיאור שלי</b><small>מופיעים בראש התפריט, במקום SumIT.</small></div>
-            <input id="profName" placeholder="השם שלי" dir="auto" style="width:150px"><input id="profBio" placeholder="תיאור קצר (BIO)" dir="auto" style="width:220px"><button id="saveProfile" class="soft">שמור</button>
-          </div>
-          <div class="setting">
-            <div class="grow"><b>תמונה אישית</b><small>מופיעה בדף הבית ובתפריט. אפשר גם לבחור רקע לכל קורס, בכפתור "רקע" בראש הקורס.</small></div>
-            <img id="profilePreview" class="avatar-img" alt="" hidden>
-            <button id="pickProfile">בחר תמונה</button><button id="clearProfile" class="ghost">הסר</button>
           </div>
           <div class="setting">
             <div class="grow"><b>מראה</b><small>בהיר, כהה, או לפי ההגדרה של Windows.</small></div>
@@ -281,6 +268,18 @@
   </main>
 </div>
 
+<!-- Profile: name, short description and picture (opened from the pen on the picture) -->
+<div class="overlay" id="profileDlg" hidden>
+  <div class="profile-dlg">
+    <div class="row" style="align-items:center"><h2 class="grow" style="margin:0">הפרופיל שלי</h2><button class="small ghost" id="profileClose" title="סגור"><span data-ic="x"></span></button></div>
+    <div class="profile-photo"><img id="profilePreview" class="avatar-img" alt="" hidden><div class="row"><button id="pickProfile" class="soft">בחר תמונה</button><button id="clearProfile" class="ghost">הסר</button></div></div>
+    <label>השם שלי<input id="profName" placeholder="השם שלי" dir="auto" maxlength="40"></label>
+    <label>תיאור קצר<input id="profBio" placeholder="למשל: סטודנט להנדסת חשמל" dir="auto" maxlength="80"></label>
+    <small class="muted">השם והתיאור מופיעים בראש התפריט במקום SumIT.</small>
+    <div class="row"><button id="saveProfile" class="primary">שמור</button></div>
+  </div>
+</div>
+
 <!-- First-run setup -->
 <div class="overlay" id="wizard" hidden>
   <div class="wizard">
@@ -291,11 +290,11 @@
         <p class="lead">כל הקורסים, ההקלטות והסיכומים שלך במקום אחד. כמה צעדים קצרים, ואני מכין לך הכל.</p>
         <div class="check-row"><div class="ci" data-ic="book"></div><div class="grow"><b>מתחברים ל-Moodle של HIT</b><small>משם אני לוקח את כל הקורסים, המטלות וההקלטות</small></div></div>
         <div class="check-row"><div class="ci" data-ic="check"></div><div class="grow"><b>בוחרים את הקורסים של הסמסטר</b><small>ואני מוריד הכל לבד למחשב</small></div></div>
-        <div class="check-row"><div class="ci" data-ic="sparkles"></div><div class="grow"><b>מחברים מנוע חכם</b><small>Claude, שמכין לך סיכום PDF לכל הרצאה עם שיעורי הבית (Gemini - בקרוב)</small></div></div>
+        <div class="check-row"><div class="ci" data-ic="sparkles"></div><div class="grow"><b>מחברים מנוע חכם</b><small>Claude או Gemini (מספיק אחד), שמכין לך סיכום PDF לכל הרצאה עם שיעורי הבית</small></div></div>
       </div>
       <div class="step" data-step="1">
         <h1>התחברות ל-Moodle</h1>
-        <p class="lead">ייפתח דף ההתחברות של HIT. מתחברים פעם אחת, והאפליקציה זוכרת אותך, גם ל-Zoom ולפורטל.</p>
+        <p class="lead">ייפתח דף ההתחברות של HIT. מתחברים פעם אחת, והאפליקציה זוכרת אותך. ל-Zoom ולפורטל תתחבר כשתפתח אותם בפעם הראשונה.</p>
         <div class="check-row" id="wizMoodle"><div class="ci" data-ic="key"></div><div class="grow"><b id="wizMoodleTitle">עוד לא מחובר</b><small id="wizMoodleSub">לחץ על "התחבר" כדי להמשיך</small></div><button class="primary" id="wizMoodleBtn">התחבר</button></div>
       </div>
       <div class="step" data-step="2">

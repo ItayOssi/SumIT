@@ -462,6 +462,7 @@ partial class HitStudent : Form
             case "setHelperKey": SetHelperKey(Str(m, "provider"), Str(m, "key")); break;
             case "removeHelperKey": RemoveHelperKey(Str(m, "provider")); break;
             case "submitAuthCode": SubmitAuthCode(Str(m, "code")); break;
+            case "authFromClipboard": SubmitAuthFromClipboard(); break;
             case "testBrain": TestBrain(Str(m, "kind")); break;
             case "connectBrain": ConnectBrain(Str(m, "kind")); break;
             case "disconnectBrain": DisconnectBrain(Str(m, "kind")); break;
