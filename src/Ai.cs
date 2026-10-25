@@ -816,7 +816,9 @@ partial class HitStudent
 
     async void AnalyzeCourse(string course) { await AnalyzeCourseAsync(course); }
 
-    async Task AnalyzeCourseAsync(string course)
+    async Task AnalyzeCourseAsync(string course) { await RunCourseOperation(course, "info", () => AnalyzeCourseCore(course)); }
+
+    async Task AnalyzeCourseCore(string course)
     {
         string key = "info|" + course;
         if (aiRuns.ContainsKey(key)) return;
@@ -855,7 +857,9 @@ partial class HitStudent
 
     async void ExamPrep(string course) { await ExamPrepAsync(course); }
 
-    async Task ExamPrepAsync(string course)
+    async Task ExamPrepAsync(string course) { await RunCourseOperation(course, "exam", () => ExamPrepCore(course)); }
+
+    async Task ExamPrepCore(string course)
     {
         string key = "exam|" + course;
         if (aiRuns.ContainsKey(key)) return;

@@ -3,13 +3,67 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DEMO = new URLSearchParams(location.search).has('demo');
 let host = null;
-const send = (m) => host && host.postMessage(m);
+const send = (m) => { if(m.course && ['chat','chatCheck'].includes(m.type)) {const r=runtimeFor(m.course);r.chatBusy=r.chatBusy||{};r.chatBusy[m.scope||'course']=true;} return host && host.postMessage(m); };
 
 const S = {
   settings: {}, moodle: 'checking', ai: null, courses: null, events: null, userName: '',
   course: null, sections: [], local: null, notability: null, open: new Set(), tab: 'lessons',
   chatBusy: false, chatHidden: true, view: 'home', site: 'moodle', jobs: new Map(), ready: { settings: false, ai: false }, theme: 'system'
 };
+
+// Runtime belongs to the course, not to whichever course happens to be visible.
+const courseRuntime = new Map();
+function runtimeFor(name) {
+  if (!courseRuntime.has(name)) courseRuntime.set(name, { sections: new Map(), operations: new Map(), runs: new Map() });
+  return courseRuntime.get(name);
+}
+function rememberCourseUi() {
+  if (!S.course) return;
+  Object.assign(runtimeFor(S.course.name), { tab:S.tab, open:new Set(S.open), chatLogs:S.chatLogs, chatScope:S.chatScope, pendingChat:S.pendingChat });
+}
+function rememberCourseEvent(m) {
+  const parts = (m.key || '').split('|'), name = m.course || (['aiRun','aiLog'].includes(m.type) ? parts[1] : null);
+  if (!name) return;
+  const r = runtimeFor(name);
+  if(m.type==='chatDone'){r.chatBusy=r.chatBusy||{};r.chatBusy[m.scope||'course']=false;}
+  if(m.type==='chat' && S.course?.name!==name && m.role!=='tool'){r.chatLogs=r.chatLogs||{};const scope=m.scope||'course';(r.chatLogs[scope]=r.chatLogs[scope]||[]).push({role:m.role,text:m.text});}
+  if (m.type === 'operationStatus') r.operations.set(m.operation, m.busy);
+  if (m.type === 'courseStatus' || m.type === 'learnStatus') r.status = {...m};
+  if (m.type === 'learnStatus') r.learning = m.busy;
+  if (m.type === 'aiRun') r.runs.set(m.key, m.busy);
+  const num = m.num ?? (parts[0] === 'sum' ? +parts[2] : null);
+  if (num != null && ['sectionStatus','sectionProgress','aiRun','aiLog'].includes(m.type)) {
+    const s = r.sections.get(num) || {}; r.sections.set(num,s);
+    if (m.type === 'sectionStatus') Object.assign(s,{status:m.text,statusError:m.error,busy:m.busy});
+    if (m.type === 'sectionProgress') Object.assign(s,{pct:m.pct>=100?null:m.pct,eta:m.eta,pctText:m.text});
+    if (m.type === 'aiRun') {s.aiBusy=m.busy;if(!m.busy){s.busy=false;s.pct=null;}else s.logs=[];}
+    if (m.type === 'aiLog') s.logs=[...(s.logs||[]),m.text].slice(-40);
+  }
+  if (m.type === 'courseLocal' && S.courses) {const c=S.courses.find(c=>c.name===name);if(c)c.local=m.local;}
+}
+function restoreCourseRuntime(render=false) {
+  if (!S.course) return;
+  const r=runtimeFor(S.course.name), running=k=>!!r.operations.get(k);
+  S.infoBusy=running('syllabus')||running('info')||!!r.runs.get('info|'+S.course.name);
+  S.examBusy=running('exam')||!!r.runs.get('exam|'+S.course.name);
+  S.sections.forEach(s=>Object.assign(s,r.sections.get(s.num)||{}));
+  $('learnAll').disabled=!!r.learning;
+  const active=[...r.operations].filter(([,busy])=>busy).map(([op])=>({syllabus:'מסנכרן וקורא את הסילבוס...',info:'קורא את הסילבוס...',exams:'מוריד מבחנים ופתרונות...',exam:'מכין חומר למבחן...'}[op]||'עובד ברקע...'));
+  const status=r.status;
+  if(status && (status.busy || status.error || !active.length))courseStatus(status.text,status.busy,status.error,status.pct);
+  else if(active.length)courseStatus(active.join(' · '),true,false);
+  else courseStatus('',false,false);
+  if(render) {
+    renderLectures();
+    if(S.tab==='info')renderInfo();if(S.tab==='exams')renderExams();
+    S.sections.forEach(s=>{
+      const log=document.querySelector(`.lecture[data-num="${s.num}"] .ai-log`);
+      if(!log||!s.logs?.length)return;
+      log.replaceChildren();log.classList.add('show');
+      s.logs.forEach((text,i)=>{const line=document.createElement('div');line.className='phase '+(s.aiBusy&&i===s.logs.length-1?'now':'done');line.textContent=text;log.append(line);});
+    });
+  }
+}
 
 // ---------- Theme ----------
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
@@ -600,7 +654,9 @@ const modIcon = { resource: 'file', file: 'file', assign: 'exam', zoom: 'play', 
 const modLabel = { resource: 'קובץ', file: 'קובץ', assign: 'מטלה', zoom: 'Zoom', url: 'קישור', folder: 'תיקייה', page: 'דף', quiz: 'בוחן', forum: 'פורום', book: 'ספר', label: 'טקסט', lti: 'כלי חיצוני', choice: 'סקר', feedback: 'משוב', h5pactivity: 'תרגול אינטראקטיבי' };
 
 function openCourse(c) {
-  S.course = c; S.sections = []; S.open = new Set(); S.local = c.local || null; S.notability = null;
+  rememberCourseUi();
+  const saved=runtimeFor(c.name);
+  S.course = c; S.sections = []; S.open = new Set(saved.open || []); S.local = c.local || null; S.notability = null;
   $('courseName').textContent = c.name;
   $('courseBand').innerHTML = ART.band(c.id);
   $('lecturer').value = ''; $('lecturer').placeholder = 'מי המרצה?';
@@ -608,16 +664,20 @@ function openCourse(c) {
   $('courseStatus').hidden = true;
   $('lectures').innerHTML = '';
   for (let i = 0; i < 6; i++) $('lectures').append(h('<div class="skeleton" style="height:70px;border-radius:16px;margin-bottom:10px"></div>'));
-  S.chatScope = 'course'; S.chatLogs = {}; S.pendingChat = null; S.chatHidden = true;
+  S.chatScope = saved.chatScope || 'course'; S.chatLogs = saved.chatLogs || {}; S.pendingChat = saved.pendingChat || null; S.chatHidden = true;
+  S.chatBusy=!!saved.chatBusy?.[S.chatScope]; $('chatSend').disabled=S.chatBusy; thinking=null;
   resetChat();
+  (S.chatLogs[S.chatScope]||[]).forEach(x=>addMsg(x.role,x.text,true));
+  if(S.chatBusy)setThinking('ממשיך לעבוד ברקע...');
   // A course that was never set up goes straight to the questions - not the full course screen.
   S.local = S.local || { exists: false };
   applySetupMode();
-  if (!inSetup()) setTab('lessons');
+  restoreCourseRuntime();
+  if (!inSetup()) setTab(saved.tab || 'lessons');
   show('course');
   send({ type: 'openCourse', id: c.id, course: c.name });
 }
-$('backToCourses').onclick = () => { S.course = null; show('courses'); };
+$('backToCourses').onclick = () => { rememberCourseUi(); S.course = null; show('courses'); };
 $('reloadCourse').onclick = () => S.course && openCourse(S.course);
 $('openCourseFolder').onclick = () => S.local && send({ type: 'openPath', path: S.local.dir });
 const plainSections = () => S.sections.map(s => ({ num: s.num, title: s.title, items: s.items }));
@@ -1122,6 +1182,7 @@ function renderInfo() {
       לחיצה אחת, והאפליקציה מסנכרנת את הסילבוס מה-Moodle וקוראת אותו: מרצה, הרכב הציון, האם שיעורי הבית חובה, מבנה המבחן ותאריכים חשובים.
       <div class="row"><button class="primary" id="sylBtn"><span data-ic="refresh"></span>לחץ כאן כדי לסנכרן את הסילבוס</button>
       <button class="ghost" id="addSyl"><span data-ic="plus"></span>הוסף סילבוס מהמחשב</button></div></div>`));
+    $('sylBtn').disabled=!!busy; if(busy)$('sylBtn').textContent='מסנכרן וקורא את הסילבוס...';
     $('sylBtn').onclick = () => downloadMoodle('syllabus');
     $('addSyl').onclick = () => send({ type: 'addFiles', course: S.course.name, folder: 'מידע על הקורס' });
     return;
@@ -1147,7 +1208,7 @@ function renderInfo() {
   const tips = (info.tips || []).filter(Boolean);
   if (tips.length) wrap.append(h(`<div class="card" style="margin-top:14px;--i:6"><h2>טיפים לקורס</h2><ul class="tips">${tips.map(t => `<li dir="auto">${esc(t)}</li>`).join('')}</ul></div>`));
   const row = h('<div class="row wrap" style="margin-top:14px"></div>');
-  const sy = h(`<button class="soft"><span data-ic="download"></span>הורד סילבוס מה-Moodle מחדש</button>`); sy.onclick = () => downloadMoodle('syllabus'); row.append(sy);
+  const sy = h(`<button class="soft"><span data-ic="download"></span>הורד סילבוס מה-Moodle מחדש</button>`); sy.disabled=!!busy; sy.onclick = () => downloadMoodle('syllabus'); row.append(sy);
   const r = h(`<button class="ghost"><span data-ic="refresh"></span>נתח מחדש</button>`); r.disabled = busy; r.onclick = () => { S.infoBusy = true; send({ type: 'analyzeCourse', course: S.course.name }); renderInfo(); }; row.append(r);
   wrap.append(row);
   p.append(wrap);
@@ -1165,7 +1226,7 @@ function renderExams() {
   p.append(card);
   const acts = card.querySelector('#examActs');
   const add = (ic, t, cls, fn, dis) => { const b = h(`<button class="${cls}"><span data-ic="${ic}"></span>${t}</button>`); b.onclick = fn; b.disabled = !!dis; acts.append(b); };
-  add('download', 'הורד את כל המבחנים מה-Moodle', 'primary', () => downloadMoodle('exams'));
+  add('download', 'הורד את כל המבחנים מה-Moodle', 'primary', () => downloadMoodle('exams'), runtimeFor(S.course.name).operations.get('exams'));
   add('exam', 'מבחנים מ-CS24', 'soft', () => { setSaveTarget(S.course.name, 'מבחנים'); openSite('cs24'); toast('כל קובץ שתוריד מ-CS24 יישמר בתיקיית המבחנים של הקורס'); });
   add('plus', 'הוסף מבחנים מהמחשב', 'ghost', () => send({ type: 'addFiles', course: S.course.name, folder: 'מבחנים' }));
   if (L.exams) add('folder', 'תיקיית המבחנים', 'ghost', () => send({ type: 'openPath', path: L.dir + '\\מבחנים' }));
@@ -1560,6 +1621,7 @@ function renderWizardMoodle() {
 
 // ---------- Messages from the app ----------
 function onMessage(m) {
+  rememberCourseEvent(m);
   if (window.stonesHook) window.stonesHook(m);
   switch (m.type) {
     case 'settings':
@@ -1599,8 +1661,12 @@ function onMessage(m) {
       else { applySetupMode(); if (!m.cached || S.tab === 'setup') setTab(S.tab === 'setup' || !S.tab ? 'lessons' : S.tab); }
       // Once a course is set up, new material on Moodle shows up as a question (the app sends newMaterial).
       // Moodle categories are available through the source browser.
+      restoreCourseRuntime(true);
       break;
     }
+    case 'operationStatus':
+      if(S.course?.name===m.course){restoreCourseRuntime();if(S.tab==='info')renderInfo();if(S.tab==='exams')renderExams();}
+      break;
     case 'learnStatus':
       if (!S.course || S.course.name !== m.course) break;
       courseStatus(m.text, m.busy, false);
@@ -1632,6 +1698,7 @@ function onMessage(m) {
       if (!S.course || S.course.name !== m.course) break;
       S.local = m.local; S.notability = m.notability;
       S.sections = (m.local.lectures || []).map(row => Object.assign({}, S.sections.find(s => s.num === row.num), row, lectureState(row)));
+      restoreCourseRuntime();
       renderLectures(); renderCourseHeader();
       if (S.tab !== 'lessons') setTab(S.tab);
       if (S.courses) { const c = S.courses.find(x => x.name === m.course); if (c) c.local = m.local; }
@@ -1650,7 +1717,7 @@ function onMessage(m) {
       if (m.setup && $('setupProgress')) { updateSetupProgress(m.course); break; }
       courseStatus(m.text, m.busy, m.error, m.pct);
       if (m.error && !m.busy && m.text) toast(m.text, { error: true, ms: 9000 });
-      if (!m.busy) { S.infoBusy = false; S.examBusy = false; if (S.tab !== 'lessons') setTab(S.tab); }
+      restoreCourseRuntime(); if (S.tab === 'info') renderInfo(); if (S.tab === 'exams') renderExams();
       // After the setup questions: everything is downloaded, so start preparing the study material.
       if (m.synced && S.learnAfterSync && S.learnAfterSync[m.course]) {
         delete S.learnAfterSync[m.course];
@@ -1678,6 +1745,7 @@ function onMessage(m) {
         if (log && m.busy) { log.innerHTML = '<div class="phase now">מתחיל...</div>'; log.classList.add('show'); }
         if (log && !m.busy) { log.querySelectorAll('.phase').forEach(p => p.classList.remove('now')); log.append(h(`<div class="phase ${m.error ? 'bad' : 'done'}">${m.error ? 'לא הצליח. אפשר לנסות שוב.' : 'מוכן ✓'}</div>`)); }
       } else if (!m.busy && !m.error) toast(parts[0] === 'info' ? 'המידע על הקורס מוכן' : 'ההכנה למבחן מוכנה');
+      restoreCourseRuntime(); if (S.tab === 'info') renderInfo(); if (S.tab === 'exams') renderExams();
       break;
     }
     case 'aiLog': {
@@ -1704,7 +1772,7 @@ function onMessage(m) {
       break;
     }
     case 'chatTool': if (S.course && S.course.name === m.course && (m.scope || 'course') === S.chatScope) setThinking(m.text); break;
-    case 'chatDone': if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
+    case 'chatDone': if(!S.course || S.course.name!==m.course || S.chatScope!==(m.scope||'course'))break; if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
     case 'summaryReady':
       // The summary is not opened in a browser: a button opens its interactive version inside the app (the PDF is already in the lecture's folder).
       toast(`הסיכום של הרצאה ${m.num} מוכן`, { action: 'פתח את הסיכום', ms: 20000, onAction: () => openViewer(m.page, `הרצאה ${m.num} · סיכום`, m.pdf, m.num) });

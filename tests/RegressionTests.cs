@@ -90,6 +90,17 @@ partial class HitStudent
 
     static void RunLifecycleTests(HitStudent app, string root, Action<string, bool> check)
     {
+        var gate = new System.Threading.Tasks.TaskCompletionSource<bool>(); int operations = 0;
+        Run(async () => {
+            var a = app.RunCourseOperation("A", "info", async () => {operations++;await gate.Task;});
+            var duplicate = app.RunCourseOperation("A", "info", () => {operations++;return gate.Task;});
+            var b = app.RunCourseOperation("B", "info", async () => {operations++;await gate.Task;});
+            check("course operations are independent and duplicate clicks do not restart work", operations == 2 && app.courseOperations.Count == 2);
+            gate.SetResult(true);await System.Threading.Tasks.Task.WhenAll(a,b,duplicate);
+            await app.RunCourseOperation("A", "info", () => {throw new Exception("expected failure");});
+            check("completed and failed course operations release their busy state", app.courseOperations.Count == 0);
+            return true;
+        });
         int active = 0, peak = 0, calls = 0;
         app.summaryWorkOverride = async (course, num) => {
             active++; peak = Math.Max(peak, active); calls++;

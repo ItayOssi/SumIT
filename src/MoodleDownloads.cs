@@ -96,6 +96,7 @@ partial class HitStudent
     {
         string key = what + "|" + course;
         if (!moodleDownloading.Add(key)) return;
+        Send(new { type = "operationStatus", course = course, operation = what, busy = true });
         string label = what == "exams" ? "המבחנים והפתרונות" : "הסילבוס";
         Action<string, int?> status = (t, pct) => Send(new { type = "courseStatus", course = course, busy = true, text = t, pct = pct });
         int saved = 0, failed = 0;
@@ -162,6 +163,6 @@ partial class HitStudent
             if (what == "syllabus" && saved > 0) await AnalyzeCourseAsync(course);
         }
         catch (Exception ex) { Send(new { type = "courseStatus", course = course, busy = false, text = ex.Message, error = true }); }
-        finally { moodleDownloading.Remove(key); }
+        finally { moodleDownloading.Remove(key); Send(new { type = "operationStatus", course = course, operation = what, busy = false }); }
     }
 }
