@@ -56,7 +56,7 @@ partial class HitStudent
     }
 
     // Runs a tool with the prompt on its standard input (so a long text is no problem) and returns exit code, output, errors.
-    async Task<Tuple<int, string, string>> RunCli(string exe, string args, string stdin, string cwd, int timeoutMs)
+    async Task<Tuple<int, string, string>> RunCli(string exe, string args, string stdin, string cwd, int timeoutMs, bool loginVerification = false)
     {
         var psi = new ProcessStartInfo(exe, args)
         {
@@ -66,6 +66,7 @@ partial class HitStudent
         foreach (var kv in CliEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
         using (var p = Process.Start(psi))
         {
+            if (loginVerification) agyLoginProcess = p;
             var outTask = p.StandardOutput.ReadToEndAsync();
             var errTask = p.StandardError.ReadToEndAsync();
             try
@@ -74,7 +75,12 @@ partial class HitStudent
                 p.StandardInput.Close();
             }
             catch { }
-            bool done = await Task.Run(() => p.WaitForExit(timeoutMs));
+            bool done = await Task.Run(() => {
+                var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+                while (!p.WaitForExit(100))
+                    if (DateTime.UtcNow >= deadline || (loginVerification && agyLoginCancelled)) return false;
+                return true;
+            });
             if (!done) { KillTree(p); return Tuple.Create(-2, "", "הזמן הקצוב נגמר"); }
             // The tool's own child processes may keep the pipes open for a moment.
             await Task.WhenAny(Task.WhenAll(outTask, errTask), Task.Delay(4000));
@@ -298,47 +304,66 @@ partial class HitStudent
         catch { return false; }
     }
 
-    // Signs in to Antigravity the way it does for anyone at a terminal: its own sign-in screen runs in a hidden console, the app presses
-    // Enter on "Google", the browser opens, the student signs in, and the tool saves the account by itself (no code to copy).
-    // (Its one-question mode would need a code pasted within a minute, and does not take it from a program.)
-    // Ends when the account is saved and a tiny question has been answered.
+    Process agyLoginProcess;
+    volatile bool agyLoginCancelled;
+    internal int AgyLoginTimeoutSeconds = 300;
+
+    void CancelAgyLogin()
+    {
+        agyLoginCancelled = true;
+        var p = agyLoginProcess;
+        if (p != null) { try { if (!p.HasExited) KillTree(p); } catch { } }
+    }
+
+    // Use the official interactive screen. Hidden Enter injection concealed additional
+    // questions and manual OAuth steps, leaving the student with an endless spinner.
     async Task<bool> LoginAgy()
     {
         string dir = Path.Combine(Path.GetTempPath(), "SumIT-agy-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
+        agyLoginCancelled = false;
         try
         {
             bool fake = Environment.GetEnvironmentVariable("SUMIT_AGY") != null;
-            var psi = new ProcessStartInfo(FindAgy()) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = dir };
-            psi.EnvironmentVariables.Remove("CI");
+            var psi = new ProcessStartInfo(FindAgy()) {
+                UseShellExecute = false, CreateNoWindow = fake,
+                WindowStyle = fake ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal,
+                WorkingDirectory = dir
+            };
+            foreach (string key in new[] { "CI", "NO_BROWSER", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY" }) psi.EnvironmentVariables.Remove(key);
             bool signed = false;
             using (var p = Process.Start(psi))
             {
+                agyLoginProcess = p;
                 var started = DateTime.UtcNow;
-                var sinceLogs = started.AddSeconds(-2);
-                bool pushing = false;
-                while (!p.HasExited && (DateTime.UtcNow - started).TotalMinutes < 5)
+                Send(new { type = "authCode", kind = "gemini", state = "wait", phase = "interactive" });
+                while (!p.HasExited && !agyLoginCancelled && (DateTime.UtcNow - started).TotalSeconds < AgyLoginTimeoutSeconds)
                 {
-                    await Task.Delay(1500);
-                    if (!pushing && !fake) { pushing = true; if (!await PushToSignIn(p, sinceLogs)) { Toast("לא הצלחתי לפתוח את ההתחברות ל-Google. נסה שוב", true); break; } Send(new { type = "authCode", kind = "gemini", state = "wait" }); } else if (fake && !pushing) { pushing = true; Send(new { type = "authCode", kind = "gemini", state = "wait" }); }
+                    await Task.Delay(500);
                     if (await AgyCredentialPresent()) { signed = true; break; }
                 }
-                if (!p.HasExited) { await Task.Delay(1500); KillTree(p); }
+                if (!p.HasExited) KillTree(p);
+                agyLoginProcess = null;
             }
+            if (agyLoginCancelled) return false;
             if (!signed) signed = await AgyCredentialPresent();
             if (!signed) { settings["agyOk"] = false; SaveSettings(); return false; }
-            // The proof: the tool answers a tiny question with the account just saved.
-            var r = await RunCli(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan", null, dir, 120000);
-            bool ok = r.Item1 == 0 && r.Item2.IndexOf("READY", StringComparison.OrdinalIgnoreCase) >= 0;
+            Send(new { type = "authCode", kind = "gemini", state = "wait", phase = "verify" });
+            // Existing credentials alone do not prove that the account can make requests.
+            var r = await RunCli(FindAgy(), "-p " + Q("Reply with exactly: READY") + " --mode plan --print-timeout 30s", null, dir, 45000, true);
+            bool ok = !agyLoginCancelled && r.Item1 == 0 && Regex.IsMatch(r.Item2, @"(?im)^\s*(?:\*\*)?READY(?:\*\*)?[.!]?\s*$");
             settings["agyOk"] = ok; SaveSettings();
+            if (!ok && !agyLoginCancelled) Toast("Google לא אישר חיבור פעיל. נסה שוב או השתמש במפתח API; בדיקת החיבור מוגבלת ל-45 שניות.", true);
             return ok;
         }
         finally
         {
+            agyLoginProcess = null;
             Send(new { type = "authCode", kind = "gemini", state = "done" });
             try { Directory.Delete(dir, true); } catch { }
         }
     }
+
     // Tells Gemini's tool to sign in with a Google account (without it, a tool run without a window has no way to ask which kind of sign-in).
     // Existing settings are kept; only the sign-in type is added when it is missing.
     void EnsureGeminiGoogleAuth()
@@ -383,7 +408,7 @@ partial class HitStudent
                 if (FindAgy() == null) { setupState = "installing-gemini"; await SendAiStatus(); await InstallAgy(); }
                 setupState = "login-gemini"; await SendAiStatus();
                 bool signedIn = await LoginAgy();
-                Toast(signedIn ? "Gemini חובר, והוא עוזר ל-Claude" : "ההתחברות ל-Google לא הסתיימה. אפשר לנסות שוב", !signedIn);
+                Toast(signedIn ? "Gemini חובר, והוא עוזר ל-Claude" : agyLoginCancelled ? "ההתחברות בוטלה" : "ההתחברות לא הושלמה. השלם את ההוראות בחלון Google Antigravity ונסה שוב.", !signedIn && !agyLoginCancelled);
             }
         }
         catch (Exception ex) { Toast(ex.Message, true); }

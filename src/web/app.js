@@ -238,7 +238,7 @@ function helperCard(kind) {
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
   // While the Google page is open: say what to do (the app carries on by itself when the account is saved).
   const codeBox = gem && S.authCode ? `<div class="auth-code" dir="rtl"><b>כמעט סיימנו</b>
-    <small>נפתח דף התחברות של <bdi>Google</bdi> בדפדפן. היכנס עם החשבון ואשר, והאפליקציה תמשיך לבד.</small></div>` : '';  const keyBox = codeBox + (mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
+    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const keyBox = codeBox + (mode || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
   const tr = (S.brainTests || {})[brain];
   const testLine = !mode || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
   const el = h(`<div class="provider${mode ? ' selected' : ''}" data-kind="${kind}"><span class="chip ${mode ? 'ok' : ''} tag">${mode ? 'מחובר' : 'עוזר · לא חובה'}</span>
@@ -248,7 +248,8 @@ function helperCard(kind) {
     <div class="act">${act}</div>${testLine}${keyBox}</div>`);
   el.onclick = (e) => e.stopPropagation();
   const login = el.querySelector('[data-login]');
-  if (login) login.onclick = () => { S.brainBusy = brain; send({ type: 'connectBrain', kind: brain }); toast(gem ? 'נפתח דפדפן להתחברות עם Google. אשר שם והאפליקציה תמשיך לבד.' : 'נפתח דפדפן להתחברות עם ChatGPT. אשר שם והאפליקציה תמשיך לבד.', { ms: 7000 }); };
+  if (login) login.onclick = () => { S.brainBusy = brain; send({ type: 'connectBrain', kind: brain }); toast(gem ? 'נפתח חלון ההתחברות הרשמי. בחר Google והשלם בו את ההתחברות.' : 'נפתח דפדפן להתחברות עם ChatGPT. אשר שם והאפליקציה תמשיך לבד.', { ms: 7000 }); };
+  const cancel = el.querySelector('[data-cancel-login]'); if (cancel) cancel.onclick = () => { cancel.disabled = true; cancel.textContent = 'מבטל…'; send({type:'cancelGeminiLogin'}); };
   const tst = el.querySelector('[data-test]'); if (tst) tst.onclick = () => { S.brainTests = S.brainTests || {}; S.brainTests[brain] = { busy: true }; renderProviders(); send({ type: 'testBrain', kind: brain }); };
   const out = el.querySelector('[data-logout]'); if (out) out.onclick = () => { if (confirm(`להתנתק מ-${name}?`)) send({ type: 'disconnectBrain', kind: brain }); };
   const rm = el.querySelector('[data-rm]'); if (rm) rm.onclick = () => send({ type: 'removeHelperKey', provider: kind });
@@ -494,7 +495,7 @@ function renderHome() {
     cur.forEach((c, i) => hc.append(courseCard(c, i)));
   }
 }
-$('heroArt').innerHTML = ART.hero();
+$('heroArt').innerHTML = ART.mascot('wave');
 $('heroCourses').innerHTML = IC.book + 'לקורסים שלי';
 $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
@@ -998,7 +999,7 @@ function fillLecture(el, s) {
   top.append(h('<small class="muted">לא לכל הקורס יש הקלטה, זה לא חובה.</small>'));
 
   btn('book', 'מצגות וחומר מה-Moodle', hasMaterial ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'slides'));
-  btn('exam', 'שיעורי בית ופתרונות מה-Moodle', hasHomework && hasSolutions ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'homework'));
+  btn('exam', 'שיעורי בית ופתרונות מה-Moodle', hasHomework ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'homework'));
   btn('book', 'חומר מ-CS24', 'ghost', () => lectureSource(s.num, 'cs24', 'slides'));
   btn('plus', 'קבצים מהמחשב', 'ghost', () => send({ type: 'addFiles', course: course.name, folder: String(s.num), kind: '' }));
   btn('calendar', 'ערוך תאריכים וכותרת', 'ghost', () => {
@@ -1341,6 +1342,8 @@ function openSite(site, url) {
   document.querySelectorAll('#siteTabs button').forEach(b => b.classList.toggle('active', b.dataset.site === site));
   S.siteUrl = url || null;
   show('sites');
+  // A button that means a particular page (a course in Moodle) always lands there, not on the page the student left the site on.
+  if (url) { const target = url; setTimeout(() => send({ type: 'siteNavigate', url: target }), 300); }
 }
 function placeSite(navigate) {
   if (S.view !== 'sites') return;
@@ -1675,7 +1678,7 @@ function onMessage(m) {
     }
     case 'chatTool': if (S.course && S.course.name === m.course && (m.scope || 'course') === S.chatScope) setThinking(m.text); break;
     case 'chatDone': if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
-    case 'authCode': S.authCode = m.state === 'wait' ? { kind: m.kind, url: m.url } : null; renderProviders(); break;
+    case 'authCode': S.authCode = m.state === 'wait' ? { kind: m.kind, url: m.url, phase:m.phase } : null; renderProviders(); break;
     case 'loginUrl':
       // The browser normally opens by itself; if it didn't, the address is here.
       toast(`אם הדפדפן לא נפתח, ההתחברות ל-${m.kind === 'gemini' ? 'Google' : 'ChatGPT'} כאן:`, { action: 'פתח את דף ההתחברות', ms: 20000, onAction: () => send({ type: 'openLink', url: m.url }) });
@@ -1754,10 +1757,14 @@ function onMessage(m) {
 }
 
 // ---------- Start ----------
+const launchStarted = performance.now();
+let splashFinishTimer;
 let splashTips = ['מכין את סביבת הלימוד שלך...', 'מתחבר ל-Moodle...', 'בודק את המנוע החכם...', 'כמעט מוכן...'], tipI = 0;
-const tipTimer = setInterval(() => { $('splashText').textContent = splashTips[++tipI % splashTips.length]; }, 1400);
+const tipTimer = setInterval(() => { const el = $('splashText'); if (el) el.textContent = splashTips[++tipI % splashTips.length]; }, 1400);
 function maybeHideSplash(force) {
   if (!force && !(S.ready.settings && S.ready.ai)) return;
+  const remaining = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 2000 - (performance.now() - launchStarted);
+  if (remaining > 0) { clearTimeout(splashFinishTimer); splashFinishTimer = setTimeout(() => maybeHideSplash(force), remaining); return; }
   clearInterval(tipTimer);
   if ($('splash')) $('splash').classList.add('hide');
 }

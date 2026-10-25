@@ -28,6 +28,11 @@ const assert = require('assert/strict');
  assert.equal(await page.evaluate(()=>sent.findLast(m=>m.type==='setDownloadTarget').folder),'הרצאות\\הרצאה 1\\תרגילים');
  assert.equal(await page.evaluate(()=>$('dlCourse').value===S.course.name && $('dlFolder').selectedOptions[0].textContent.includes('שיעורי בית')),true);
  assert.equal(await page.locator('#siteBackCourse').isVisible(),true);
+ // The button always lands on the course page in Moodle (not on the page the student left the site on), and turns green once homework is there, with or without solutions.
+ await page.waitForTimeout(450);
+ assert.equal(await page.evaluate(()=>sent.some(m=>m.type==='siteNavigate'&&m.url.includes('/course/view.php'))),true);
+ await page.evaluate(()=>{onMessage({type:'courseLocal',course:S.course.name,local:{dir:'test',setupDone:true,lectures:[{num:1,title:'x',date:'',due:'',items:[],local:{exists:true,files:2,dir:'test',materialFiles:[{name:'תרגילים\\\\דף תרגילים מס 5.pdf',path:'x'}]}}]},notability:{}});show('course');});
+ assert.equal(await page.getByRole('button',{name:'שיעורי בית ופתרונות מה-Moodle',exact:true}).evaluate(e=>e.classList.contains('done')),true);
  await page.evaluate(()=>show('course'));
  // The recording is named after the lecture by default.
  await page.getByRole('button',{name:'הוסף הקלטה',exact:true}).first().click();
@@ -99,6 +104,8 @@ const assert = require('assert/strict');
  assert.deepEqual(await page.evaluate(()=>{const m=sent.at(-1);return [m.type,m.kind];}),['connectBrain','gemini']);
  await page.evaluate(()=>onMessage({type:'authCode',kind:'gemini',state:'wait',url:'https://accounts.google.com/x'}));
  assert.equal(await page.locator('#providers .provider[data-kind=gemini] .auth-code').isVisible(),true);
+ await page.locator('#providers .provider[data-kind=gemini] [data-cancel-login]').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'cancelGeminiLogin');
  await page.evaluate(()=>onMessage({type:'authCode',kind:'gemini',state:'done'}));
  assert.equal(await page.locator('#providers .provider[data-kind=gemini] .auth-code').count(),0);
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'',order:['gemini']}});renderProviders();});

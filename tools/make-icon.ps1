@@ -1,48 +1,19 @@
-# Draws the app icon (gradient tile with a graduation cap) and writes assets\app.ico with 16-256 px images.
+# Convert the user-supplied Photoshop artwork into a multi-resolution Windows icon.
 param([string]$Out = (Join-Path $PSScriptRoot '..\assets\app.ico'))
 Add-Type -AssemblyName System.Drawing
-
+$source = [System.Drawing.Image]::FromFile((Join-Path $PSScriptRoot '..\assets\brand-original.png'))
 function Draw-Icon([int]$size) {
     $bmp = New-Object System.Drawing.Bitmap $size, $size
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = 'AntiAlias'
     $g.InterpolationMode = 'HighQualityBicubic'
-    $r = [float]($size * 0.22)
-    $s = [float]$size
-    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $path.AddArc(0, 0, $r * 2, $r * 2, 180, 90)
-    $path.AddArc($s - $r * 2, 0, $r * 2, $r * 2, 270, 90)
-    $path.AddArc($s - $r * 2, $s - $r * 2, $r * 2, $r * 2, 0, 90)
-    $path.AddArc(0, $s - $r * 2, $r * 2, $r * 2, 90, 90)
-    $path.CloseFigure()
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush (New-Object System.Drawing.PointF 0, 0), (New-Object System.Drawing.PointF $s, $s), ([System.Drawing.Color]::FromArgb(99, 102, 241)), ([System.Drawing.Color]::FromArgb(236, 72, 153))
-    $blend = New-Object System.Drawing.Drawing2D.ColorBlend 3
-    $blend.Colors = @([System.Drawing.Color]::FromArgb(99, 102, 241), [System.Drawing.Color]::FromArgb(139, 92, 246), [System.Drawing.Color]::FromArgb(236, 72, 153))
-    $blend.Positions = @([float]0, [float]0.55, [float]1)
-    $brush.InterpolationColors = $blend
-    $g.FillPath($brush, $path)
-
-    # Soft highlight
-    $hl = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(36, 255, 255, 255))
-    $g.FillEllipse($hl, -$s * 0.3, -$s * 0.55, $s * 1.1, $s * 0.95)
-
-    # Graduation cap
-    $white = [System.Drawing.Color]::White
-    $u = $s / 24
-    $cap = @(
-        (New-Object System.Drawing.PointF ($u * 12), ($u * 5)),
-        (New-Object System.Drawing.PointF ($u * 21.5), ($u * 9.6)),
-        (New-Object System.Drawing.PointF ($u * 12), ($u * 14.2)),
-        (New-Object System.Drawing.PointF ($u * 2.5), ($u * 9.6))
-    )
-    $g.FillPolygon((New-Object System.Drawing.SolidBrush $white), $cap)
-    $pen = New-Object System.Drawing.Pen $white, ([float]($u * 1.9))
-    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'; $pen.LineJoin = 'Round'
-    $g.DrawArc($pen, $u * 6.3, $u * 7.5, $u * 11.4, $u * 9.5, 15, 150)
-    $g.DrawLine($pen, $u * 6.4, $u * 11.6, $u * 6.4, $u * 13.6)
-    $g.DrawLine($pen, $u * 17.6, $u * 11.6, $u * 17.6, $u * 13.6)
-    $g.DrawLine($pen, $u * 21.5, $u * 9.8, $u * 21.5, $u * 15)
-    $g.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(251, 191, 36))), $u * 20.2, $u * 14.4, $u * 2.6, $u * 2.6)
+    $g.PixelOffsetMode = 'HighQuality'
+    $g.SmoothingMode = 'AntiAlias'
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $circle = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $circle.AddEllipse([single]0, [single]0, [single]$size, [single]$size)
+    $g.SetClip($circle)
+    $g.DrawImage($source, 0, 0, $size, $size)
+    $circle.Dispose()
     $g.Dispose()
     return $bmp
 }
@@ -76,3 +47,5 @@ $big = Draw-Icon 512
 $big.Save((Join-Path (Split-Path $Out) 'icon-512.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 $big.Dispose()
 Write-Host "Icon: $Out"
+
+$source.Dispose()

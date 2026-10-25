@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.1";
+    public const string Version = "1.0.0";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -70,7 +70,7 @@ partial class HitStudent : Form
         ClientSize = new Size(1240, 820);
         MinimumSize = new Size(820, 620);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.FromArgb(14, 16, 22);
+        BackColor = Color.FromArgb(10, 24, 48);
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         LoadSettings();
 
@@ -110,6 +110,7 @@ partial class HitStudent : Form
         Activated += delegate { CheckClipboard(false); };
         FormClosing += delegate
         {
+            CancelAgyLogin();
             foreach (var p in aiRuns.Values.ToList()) KillTree(p);
             // A downloaded update is put in place on the way out, so the next start is the new version.
             if (stagedUpdateDir != null && !restartingForUpdate) ApplyUpdate(false);
@@ -125,7 +126,7 @@ partial class HitStudent : Form
     Panel LoginPanel(WebView2 view, string hint, EventHandler back)
     {
         var panel = new Panel { Dock = DockStyle.Fill };
-        var bar = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(79, 70, 229) };
+        var bar = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(31, 100, 216) };
         var label = new Label
         {
             Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f), Text = hint,
@@ -134,7 +135,7 @@ partial class HitStudent : Form
         var button = new Button
         {
             Dock = DockStyle.Left, Width = 170, Text = "\u05D7\u05D6\u05E8\u05D4 \u05DC\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4", FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.White, BackColor = Color.FromArgb(67, 56, 202), Font = new Font("Segoe UI", 10f, FontStyle.Bold), Cursor = Cursors.Hand
+            ForeColor = Color.White, BackColor = Color.FromArgb(24, 79, 176), Font = new Font("Segoe UI", 10f, FontStyle.Bold), Cursor = Cursors.Hand
         };
         button.FlatAppearance.BorderSize = 0;
         button.Click += back;
@@ -310,7 +311,7 @@ partial class HitStudent : Form
     void ApplyTitleBarTheme()
     {
         bool light = LightTheme;
-        Color bg = light ? Color.FromArgb(244, 245, 251) : Color.FromArgb(13, 15, 23);
+        Color bg = light ? Color.FromArgb(241, 245, 252) : Color.FromArgb(10, 24, 48);
         Color fg = light ? Color.FromArgb(21, 24, 38) : Color.FromArgb(238, 240, 248);
         BackColor = bg;
         if (ui != null) ui.DefaultBackgroundColor = bg;
@@ -450,14 +451,14 @@ partial class HitStudent : Form
                 break;
             case "setupClaude": SetupClaude(); break;
             case "setupGemini": SetupGemini(); break;
-            case "loginGemini": LoginGemini(); break;
+            case "loginGemini": ConnectBrain("gemini"); break;
             case "geminiCode": GeminiCode(Str(m, "code")); break;
             case "setupDone":
                 var sm = LoadMeta(course);
                 sm["setupDone"] = true;
                 SaveMeta(course, sm);
                 break;
-            case "cancelGeminiLogin": CancelGeminiLogin(); break;
+            case "cancelGeminiLogin": CancelGeminiLogin(); CancelAgyLogin(); break;
             case "setGeminiKey": SetHelperKey("gemini", Str(m, "key")); break;
             case "setHelperKey": SetHelperKey(Str(m, "provider"), Str(m, "key")); break;
             case "removeHelperKey": RemoveHelperKey(Str(m, "provider")); break;
@@ -576,6 +577,7 @@ partial class HitStudent : Form
             case "showSite": ShowSite(m); break;
             case "placeSite": PlaceSite(m); break;
             case "hideSite": sitePanel.Visible = false; break;
+            case "siteNavigate": { string go = Str(m, "url"); if (IsMoodleUrl(go) && site != null && site.CoreWebView2 != null && (site.Source == null || site.Source.ToString() != go)) site.CoreWebView2.Navigate(go); break; }
             case "siteAction": SiteAction(Str(m, "action")); break;
             case "setDownloadTarget":
                 siteDownloadCourse = course.Length > 0 ? course : null;

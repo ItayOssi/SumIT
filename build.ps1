@@ -28,6 +28,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 Copy-Item "$lib\Microsoft.Web.WebView2.Core.dll", "$lib\Microsoft.Web.WebView2.WinForms.dll", (Join-Path $sdk 'pkg\runtimes\win-x64\native\WebView2Loader.dll') $out -Force
 # The page the app shows; only this folder is visible to it.
 Copy-Item (Join-Path $root 'src\web') (Join-Path $out 'web') -Recurse -Force
+Copy-Item (Join-Path $root 'assets\app.ico') (Join-Path $out 'app.ico') -Force
 # The study skill ships next to the app; the app installs it into ~/.claude/skills on first run.
 Copy-Item (Join-Path $root 'skill') (Join-Path $out 'skill') -Recurse -Force
 

@@ -170,7 +170,8 @@ partial class HitStudent
 $argline = $env:FAKE_ARGS
 if ($argline -match 'login' -and $argline -match 'status') { 'Logged in using ChatGPT'; exit 0 }
 if ($env:FAKE_AGY_LOGIN -eq '1') {
-  if ($argline -match 'READY') { Write-Host 'READY'; exit 0 }
+  if ($argline -match 'READY') { if ($env:FAKE_VERIFY_WAIT -eq '1') { Start-Sleep 60 }; Write-Host 'READY'; exit 0 }
+  if ($env:FAKE_AGY_WAIT -eq '1') { Start-Sleep 60; exit 0 }
   Start-Sleep 2; Set-Content -Path $env:FAKE_AGY_CRED -Value 'saved'; Start-Sleep 60; exit 0   # the sign-in screen: the account gets saved a moment later
 }
 if ($env:FAKE_LOGIN -eq '1') {
@@ -227,7 +228,30 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             app.settings["agyOk"] = false; app.geminiSignedOverride = null;
             bool signedIn = Run(() => app.LoginAgy());
             check("Gemini sign-in: once the account is saved the app is connected", signedIn && Bool(app.settings, "agyOk") && app.HelperMode("gemini") == "account");
-            File.Delete(credFlag);            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
+            File.Delete(credFlag);
+            Environment.SetEnvironmentVariable("FAKE_AGY_WAIT", "1");
+            app.AgyLoginTimeoutSeconds = 1;
+            var loginWatch = System.Diagnostics.Stopwatch.StartNew();
+            signedIn = Run(() => app.LoginAgy());
+            check("Gemini sign-in times out without claiming connected", !signedIn && !Bool(app.settings, "agyOk") && loginWatch.Elapsed.TotalSeconds < 10);
+            app.AgyLoginTimeoutSeconds = 300;
+            loginWatch.Restart();
+            signedIn = Run(async () => { var pending = app.LoginAgy(); await System.Threading.Tasks.Task.Delay(200); app.CancelAgyLogin(); return await pending; });
+            check("Gemini sign-in can be cancelled promptly", !signedIn && app.agyLoginProcess == null && loginWatch.Elapsed.TotalSeconds < 10);
+            Environment.SetEnvironmentVariable("FAKE_AGY_WAIT", null);
+            Environment.SetEnvironmentVariable("FAKE_VERIFY_WAIT", "1");
+            signedIn = Run(async () => {
+                var pending = app.LoginAgy();
+                for (int attempt = 0; attempt < 100; attempt++) {
+                    if (app.agyLoginProcess != null && app.agyLoginProcess.StartInfo.Arguments.Contains("READY")) break;
+                    await System.Threading.Tasks.Task.Delay(100);
+                }
+                app.CancelAgyLogin(); return await pending;
+            });
+            check("Gemini verification is cancellable too", !signedIn && app.agyLoginProcess == null);
+            Environment.SetEnvironmentVariable("FAKE_VERIFY_WAIT", null);
+            File.Delete(credFlag);
+            Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
             app.codexSignedIn = true; app.geminiSignedOverride = true;
 
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.

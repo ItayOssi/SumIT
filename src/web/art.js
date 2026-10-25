@@ -44,37 +44,27 @@ const IC = {
 };
 
 const ART = {
-  // SumIT's own mascot: a student with dark hair, glasses, a hoodie and a graduation cap, giving a thumbs up.
-  // The arm swings up (.mascot-arm) and a small gleam flashes on the smile (.mascot-gleam).
-  // Its gradient / clip ids get a unique suffix per copy: with duplicate ids, a hidden copy "wins" and the others go blank.
-  mascot: (cls = '') => ART._mascotSvg(cls).replace(/ms(Bg|Hood|Clip)/g, '$&' + (ART._mi = (ART._mi || 0) + 1)),
-  _mascotSvg: (cls) => `<svg class="mascot ${cls}" viewBox="0 0 200 200" fill="none">
-    <defs>
-      <linearGradient id="msBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#ec4899"/></linearGradient>
-      <linearGradient id="msHood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#3730a3"/></linearGradient>
-      <clipPath id="msClip"><rect x="6" y="6" width="188" height="188" rx="46"/></clipPath>
-    </defs>
-    <rect x="6" y="6" width="188" height="188" rx="46" fill="url(#msBg)"/>
-    <g clip-path="url(#msClip)">
-    <circle cx="100" cy="112" r="70" fill="rgba(255,255,255,.12)"/>
-    <path d="M44 200c2-40 26-62 56-62s54 22 56 62z" fill="url(#msHood)"/>
-    <path d="M86 140l14 16 14-16" stroke="#c7d2fe" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="100" y="186" text-anchor="middle" font-family="Segoe UI, sans-serif" font-weight="800" font-size="17" fill="#e0e7ff">IT</text>
-    <circle cx="100" cy="98" r="36" fill="#f6c9a8"/>
-    <path d="M64 92c0-24 16-38 36-38s36 14 36 38c-6-10-16-16-36-16s-30 6-36 16z" fill="#2b2140"/>
-    <circle cx="64" cy="100" r="6" fill="#efb893"/><circle cx="136" cy="100" r="6" fill="#efb893"/>
-    <g stroke="#1e1b4b" stroke-width="3.5"><rect x="74" y="90" width="22" height="16" rx="7" fill="rgba(255,255,255,.35)"/><rect x="104" y="90" width="22" height="16" rx="7" fill="rgba(255,255,255,.35)"/><path d="M96 97h8"/></g>
-    <circle cx="85" cy="98" r="3" fill="#1e1b4b"/><path d="M110 99c3-3 8-3 11 0" stroke="#1e1b4b" stroke-width="3" stroke-linecap="round"/>
-    <path d="M84 114c8 10 24 10 32 0" fill="#fff" stroke="#1e1b4b" stroke-width="3" stroke-linejoin="round"/>
-    <g class="mascot-gleam"><path d="M118 108l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#fff"/></g>
-    <path d="M100 46l46 18-46 18-46-18z" fill="#1e1b4b"/><path d="M76 72v10c14 8 34 8 48 0V72l-24 10z" fill="#312e81"/>
-    <path d="M146 64v22" stroke="#fbbf24" stroke-width="3"/><circle cx="146" cy="89" r="4.5" fill="#fbbf24"/>
-    <g class="mascot-arm">
-      <path d="M52 168c-6-16-6-30 0-44" stroke="#4338ca" stroke-width="18" stroke-linecap="round"/>
-      <g transform="translate(52 118)"><rect x="-13" y="-6" width="26" height="22" rx="8" fill="#f6c9a8"/><rect x="-5" y="-24" width="10" height="22" rx="5" fill="#f6c9a8"/><path d="M-13 3h26M-13 9h26" stroke="#e3a986" stroke-width="2"/></g>
-    </g>
-    </g>
-  </svg>`,
+  // Keep the supplied artwork intact. SVG masks isolate its arm for animation;
+  // every instance uses one consistent ID prefix for all masks and references.
+  mascot: (cls = '') => ART._mascotSvg(cls, 'brand' + (ART._mi = (ART._mi || 0) + 1)),
+  _mascotSvg: (cls, id) => {
+    const arm = 'M18 422 Q16 389 86 389 Q69 345 77 314 Q87 278 116 276 Q149 274 150 309 L143 350 Q146 375 174 399 L198 419 Q290 444 451 437 L479 516 L420 540 L385 611 Q295 656 187 676 Q149 681 136 616 L132 578 Q67 583 38 557 Q21 535 27 509 Q13 486 29 462 Q18 447 18 422Z';
+    return `<svg class="mascot brand-art ${cls}" viewBox="0 0 1024 1024" fill="none" role="img" aria-label="SumIT — סטודנט מחייך עם אגודל למעלה">
+      <defs>
+        <mask id="${id}-body"><rect width="1024" height="1024" fill="white"/><path d="${arm}" fill="black"/></mask>
+        <clipPath id="${id}-arm"><path d="${arm}"/></clipPath>
+        <clipPath id="${id}-tile"><circle cx="512" cy="512" r="512"/></clipPath>
+        <linearGradient id="${id}-halo" x1=".2" y1="1" x2=".8" y2="0" gradientUnits="objectBoundingBox"><stop stop-color="#2f8fe8"/><stop offset="1" stop-color="#2f8fe8"/></linearGradient>
+      </defs>
+      <g clip-path="url(#${id}-tile)">
+        <rect width="1024" height="1024" fill="#122a58"/>
+        <ellipse cx="548" cy="590" rx="402" ry="382" fill="url(#${id}-halo)"/>
+        <image href="images/brand.png" width="1024" height="1024" mask="url(#${id}-body)"/>
+        <g class="brand-arm"><image href="images/brand.png" width="1024" height="1024" clip-path="url(#${id}-arm)"/></g>
+        <g class="brand-tooth-glint" transform="translate(548 375)"><path d="M0 -24 L5 -5 L24 0 L5 5 L0 24 L-5 5 L-24 0 L-5 -5Z" fill="white"/><circle r="4" fill="#d8ffff"/></g>
+      </g>
+    </svg>`;
+  },
 
   // Desk with a laptop playing a lecture, books, a mug and a plant.
   hero: () => `<svg viewBox="0 0 300 200" fill="none">
@@ -151,9 +141,9 @@ const ART = {
 
   // Decorative band for a course card, coloured from the course id.
   band: (seed) => {
-    const hues = [244, 262, 199, 160, 330, 24, 280, 214];
+    const hues = [214, 205, 222, 198, 210, 226, 200, 218];
     const h = hues[Math.abs(seed) % hues.length];
-    const a = `hsl(${h} 78% 60%)`, b = `hsl(${(h + 38) % 360} 72% 52%)`;
+    const a = `hsl(${h} 70% 50%)`, b = `hsl(${h + 10} 68% 34%)`;
     const r = (n) => ((seed * 9301 + n * 49297) % 233280) / 233280;
     // Gradient ids must be unique on the page, or a hidden copy "wins" and the band renders grey.
     const gid = 'g' + seed + '_' + (ART._n = (ART._n || 0) + 1);
