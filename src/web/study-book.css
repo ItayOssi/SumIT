@@ -39,3 +39,11 @@
 @media print{.bookpage{display:block!important}.booktabs,.pagenav{display:none!important}.bookgrid{display:block!important}
 .print-only{display:block;break-before:page;margin:0 0 12px;font-size:26px}.bookpage:first-of-type .print-only{break-before:avoid}
 .qgroup{break-inside:auto}}
+/* light and dark, both available: the colors of the page for each, so the button in the side menu works on every study page */
+:root[data-theme="light"]{color-scheme:light;--bg:#f7f6f2;--surface:#ffffff;--surface2:#f0eee8;--text:#1d1d1f;--muted:#5f5e5a;--line:#e2dfd6;--accent:#2f5bd3;--accent-soft:#e7edfc;--must:#1f7a4d;--must-soft:#e3f3ea;--skip:#8a8a86;--skip-soft:#efefec;--warn:#b4541a;--warn-soft:#fbeadf;--err:#b42335;--err-soft:#fbe4e7;--exam:#7b3fc4;--exam-soft:#efe6fa}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#141416;--surface:#1d1d20;--surface2:#26262a;--text:#ecebe6;--muted:#a3a29c;--line:#34343a;--accent:#7ea2ff;--accent-soft:#1f2a47;--must:#5fd39a;--must-soft:#173326;--skip:#8d8d88;--skip-soft:#26262a;--warn:#f0a26b;--warn-soft:#3a2617;--err:#ff8593;--err-soft:#3d1a20;--exam:#c9a2ff;--exam-soft:#2c2140}
+:root[data-theme] body{background:var(--bg);color:var(--text)}
+.booktheme{display:flex;align-items:center;gap:10px;width:100%;margin-top:6px;font:inherit;font-weight:600;cursor:pointer;border:1px dashed var(--line,#bbb);background:transparent;color:var(--muted,#666);border-radius:12px;padding:9px 12px}
+.booktheme:hover{color:var(--text,#111);border-style:solid}
+.booktheme.floating{position:fixed;top:12px;left:12px;z-index:20;width:auto;background:var(--surface,#fff)}
+@media print{.booktheme{display:none!important}}

@@ -5,6 +5,21 @@
   var ICONS = { over: '🎯', sum: '📖', hw: '✏️' };
   var LONG = { over: 'סקירה: מה חובה לדעת', sum: 'הסיכום', hw: 'שיעורי בית' };
 
+
+  // Light or dark, as the student likes (the choice is remembered on this PC); without a choice the page follows Windows.
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark' || t === 'light') return t;
+    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function applyTheme(t) { document.documentElement.setAttribute('data-theme', t); }
+  try { var saved = localStorage.getItem('sumit-study-theme'); if (saved === 'dark' || saved === 'light') applyTheme(saved); } catch (e) { }
+  function themeButton(parent) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'booktheme' + (parent ? '' : ' floating');
+    function label() { b.textContent = currentTheme() === 'dark' ? '☀️ מצב בהיר' : '🌙 מצב כהה'; }
+    b.onclick = function () { var n = currentTheme() === 'dark' ? 'light' : 'dark'; applyTheme(n); try { localStorage.setItem('sumit-study-theme', n); } catch (e) { } label(); };
+    label(); (parent || document.body).appendChild(b); return b;
+  }
   function kindOf(h) {
     var id = h.id || '', t = h.textContent || '';
     if (/^use/.test(id) || /שיעורי בית|שימוש בתרגילים|תרגילים|פתרונות/.test(t)) return 'hw';
@@ -44,7 +59,7 @@
       g[cur].push(k);
     }
     var order = ['over', 'sum', 'hw'].filter(function (n) { return g[n].length > 0; });
-    if (order.length < 2) return;
+    if (order.length < 2) { return; }
     if (notyet.length && order.indexOf('hw') < 0) { g.hw = []; order.push('hw'); }
     wrap.setAttribute('data-book', '1');
 
@@ -75,6 +90,8 @@
       b.onclick = function () { show(n, true); };
       side.appendChild(b);
     });
+
+    themeButton(side);
 
     // Bottom of each page: the way to the next one.
     order.forEach(function (n, ix) {
@@ -138,5 +155,6 @@
     });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+  function start() { build(); if (!document.querySelector('.booktheme') && document.body) themeButton(null); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
