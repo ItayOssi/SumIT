@@ -202,7 +202,10 @@ const assert = require('assert/strict');
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'',openai:'',order:[]}});renderLectures();});
  assert.equal(await page.getByRole('button',{name:'בדיקה שנייה עם AI נוסף',exact:true}).count(),0);
  await page.screenshot({path:path.resolve(__dirname,'../build/timetable-ui.png'),fullPage:true,animations:'disabled'});
- // Outlook and OneDrive of HIT are in the side menu and in the site tabs.
+ // A finished summary is not opened in a browser: the app offers it, and the interactive version opens inside the app, with a PDF button.
+ await page.evaluate(()=>onMessage({type:'summaryReady',course:S.course?S.course.name:'x',num:1,page:'C:\\x\\s.html',pdf:'C:\\x\\s.pdf'}));
+ assert.equal((await page.locator('body').innerText()).includes('פתח את הסיכום'),true);
+ assert.equal((await page.locator('#viewerPdf').textContent()).includes('פתח כ-PDF'),true); // Outlook and OneDrive of HIT are in the side menu and in the site tabs.
  assert.equal(await page.locator('.nav-item[data-site-link=outlook]').count()+await page.locator('.nav-item[data-site-link=onedrive]').count()+await page.locator('#siteTabs [data-site=outlook]').count()+await page.locator('#siteTabs [data-site=onedrive]').count(),4);
  // The first-run guide has the gauntlet, and the stones light as things get connected.
  await page.evaluate(()=>{localStorage.removeItem('sumit.snap');S.settings=Object.assign({},S.settings,{snapSeen:false});openWizard(1);});

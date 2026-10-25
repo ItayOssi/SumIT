@@ -1013,7 +1013,7 @@ function fillLecture(el, s) {
   else if (s.num > 0 && (L.lecturePdf || L.studyPage)) {
     // The summary opens inside the app (with the chat next to it for questions); the PDF is a file in the lecture's folder.
     btn('book', 'פתח את הסיכום', 'primary', () => openViewer(L.studyPage || L.lecturePdf, `הרצאה ${s.num} · סיכום`, L.lecturePdf, s.num));
-    if (L.lecturePdf) btn('file', 'הורד PDF', 'soft', () => send({ type: 'openPath', path: L.lecturePdf }));
+    if (L.lecturePdf) btn('file', 'פתח כ-PDF', 'soft', () => send({ type: 'openPath', path: L.lecturePdf }));
     btn('sparkles', 'עדכן סיכום אם החומר השתנה', 'soft', () => send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title }), s.busy);
     // Another AI (ChatGPT / Gemini on the student's account) checks every solution in the summary and adds its notes at the end.
     if (helpersConnected()) btn('check', 'בדיקה שנייה עם AI נוסף', 'soft', () => send({ type: 'secondOpinion', course: course.name, num: s.num }), s.busy);
@@ -1692,6 +1692,10 @@ function onMessage(m) {
     }
     case 'chatTool': if (S.course && S.course.name === m.course && (m.scope || 'course') === S.chatScope) setThinking(m.text); break;
     case 'chatDone': if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
+    case 'summaryReady':
+      // The summary is not opened in a browser: a button opens its interactive version inside the app (the PDF is already in the lecture's folder).
+      toast(`הסיכום של הרצאה ${m.num} מוכן`, { action: 'פתח את הסיכום', ms: 20000, onAction: () => openViewer(m.page, `הרצאה ${m.num} · סיכום`, m.pdf, m.num) });
+      break;
     case 'authCode': S.authCode = m.state === 'wait' ? { kind: m.kind, url: m.url, phase:m.phase } : null; renderProviders(); break;
     case 'loginUrl':
       // The browser normally opens by itself; if it didn't, the address is here.

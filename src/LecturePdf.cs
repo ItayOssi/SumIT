@@ -82,7 +82,7 @@ partial class HitStudent
         {
             SectionStatus(course, num, "הסיכום מעודכן - החומר לא השתנה, אז לא הייתה צורך לעבוד שוב", false, false);
             SendSectionLocal(course, num);
-            if (open) OpenLocal(File.Exists(LecturePdfPath(course, num)) ? LecturePdfPath(course, num) : StudyPagePath(course, num));
+            if (open) Send(new { type = "summaryReady", course = course, num = num, page = StudyPagePath(course, num), pdf = File.Exists(LecturePdfPath(course, num)) ? LecturePdfPath(course, num) : null });   // the student opens it inside the app
             return null;
         }
         if (!AiReadyOrSay(t => SectionStatus(course, num, t, false, true))) return null;
@@ -161,7 +161,7 @@ partial class HitStudent
         {
             File.WriteAllText(cache, fingerprint);
             Notify("הסיכום של הרצאה " + num + " מוכן", course);
-            if (open) OpenLocal(pdf ?? StudyPagePath(course, num));
+            if (open) Send(new { type = "summaryReady", course = course, num = num, page = StudyPagePath(course, num), pdf = pdf });   // not opened in a browser: the student opens the interactive version inside the app
         }
         return result;
     }

@@ -4,7 +4,8 @@ const {pathToFileURL} = require('url'); const path = require('path');
 const out = (n) => path.resolve(__dirname, '../docs/' + n);
 (async () => {
  const browser = await chromium.launch({channel:'msedge',headless:true});
- const page = await browser.newPage({viewport:{width:1360,height:860}});
+ const page = await browser.newPage({viewport:{width:1360,height:860},colorScheme:'dark'});
+ await page.addInitScript(()=>{ try { localStorage.setItem('theme','dark'); localStorage.setItem('sumit.theme','dark'); } catch {} });
  await page.goto(pathToFileURL(path.resolve(__dirname,'../src/web/ui.html')).href+'?demo=1');
  await page.waitForFunction(()=>typeof S!=='undefined' && S.courses && S.ai && S.ready.settings);
  await page.waitForTimeout(2300);

@@ -150,7 +150,9 @@ partial class HitStudent
     internal void OpenSitePopup(object sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         var core = sender as CoreWebView2;
-        Uri u;
+        // The personal portal (and the pages it leads to) work like in a browser: a link that opens a window gets a real window, with its own
+        // session link back to the page, so sign-in hand-offs and forms work. Everything else opens in the view the student is looking at.
+        if (core != null && env != null && IsPortalPage(core.Source)) { OpenRealPopup(core, e); return; }        Uri u;
         if (core != null && Uri.TryCreate(e.Uri, UriKind.Absolute, out u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp || u.Scheme == "blob"))
         { e.Handled = true; core.Navigate(e.Uri); return; }
         // Many pages open an empty window and set its address a moment later (window.open("") and then .location = ...). The page needs a real
@@ -193,6 +195,39 @@ partial class HitStudent
         catch { e.Handled = true; try { deferral.Complete(); } catch { } }
     }
 
+    static bool IsPortalPage(string url)
+    {
+        Uri u;
+        return Uri.TryCreate(url ?? "", UriKind.Absolute, out u) && (u.Host.Equals("portal.hit.ac.il", StringComparison.OrdinalIgnoreCase) || u.Host.Equals("webrashim.hit.ac.il", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // A real window for a page that asked for one (a normal window of the app, with the same sign-in as the site view).
+    void OpenRealPopup(CoreWebView2 opener, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        var deferral = e.GetDeferral();
+        try
+        {
+            var win = new Form { Text = "SumIT", Icon = Icon, StartPosition = FormStartPosition.CenterParent, ClientSize = new System.Drawing.Size(1180, 820), ShowInTaskbar = true };
+            var view = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
+            win.Controls.Add(view);
+            win.Show(this);
+            view.EnsureCoreWebView2Async(env).ContinueWith(t =>
+            {
+                try
+                {
+                    var pc = view.CoreWebView2;
+                    pc.NewWindowRequested += OpenSitePopup;
+                    pc.DownloadStarting += OnSiteDownload; pc.PermissionRequested += OnDownloadPermission;
+                    pc.DocumentTitleChanged += delegate { try { if (!string.IsNullOrEmpty(pc.DocumentTitle)) win.Text = pc.DocumentTitle + " - SumIT"; } catch { } };
+                    pc.WindowCloseRequested += delegate { try { win.Close(); } catch { } };
+                    e.NewWindow = pc; e.Handled = true;
+                }
+                catch { e.Handled = true; try { win.Close(); } catch { } }
+                finally { deferral.Complete(); }
+            }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+        }
+        catch { e.Handled = true; try { deferral.Complete(); } catch { } }
+    }
     // ---------- Saving from the sites ----------
 
     // Where a file saved from a site goes: the course / lecture / folder chosen in the bar above the site, or "הורדות".
