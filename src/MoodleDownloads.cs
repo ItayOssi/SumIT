@@ -12,13 +12,14 @@ using System.Threading.Tasks;
 partial class HitStudent
 {
     static readonly Regex ExamSectionName = new Regex("(מבחן|מבחנ|בחינ|מועד [אבג]|exam|midterm)", RegexOptions.IgnoreCase);
-    static readonly string[] SkippedMods = { "forum", "quiz", "label", "choice", "feedback", "lti", "h5pactivity", "zoom", "url" };
+    static readonly string[] SkippedMods = { "forum", "quiz", "label", "choice", "feedback", "lti", "h5pactivity", "zoom" };
     readonly HashSet<string> moodleDownloading = new HashSet<string>();
 
     // What belongs: for exams, everything in a section about exams and any item named like an exam; for the syllabus, items named like one.
     internal static List<Dictionary<string, object>> PickMoodleItems(List<Dictionary<string, object>> sections, string what)
     {
         var picked = new List<Dictionary<string, object>>();
+        var urls = new HashSet<string>();
         foreach (var s in sections)
         {
             bool wholeSection = what == "exams" && ExamSectionName.IsMatch(Str(s, "title"));
@@ -27,7 +28,8 @@ partial class HitStudent
                 if (SkippedMods.Contains(Str(it, "mod")) || Str(it, "url").Length == 0) continue;
                 string name = Str(it, "name");
                 bool match = what == "exams" ? (wholeSection || ExamName.IsMatch(name)) : (SyllabusName.IsMatch(name) || (SyllabusName.IsMatch(Str(s, "title")) && Str(s, "title").Length < 40));
-                if (match) picked.Add(it);
+                bool container = new[] { "folder", "page", "url" }.Contains(Str(it, "mod")) || Regex.IsMatch(name + " " + Str(it, "url"), @"\.zip(?:$|[?\s])", RegexOptions.IgnoreCase);
+                if ((match || container) && urls.Add(Str(it, "url"))) { var candidate = new Dictionary<string, object>(it); candidate["discoveryOnly"] = !match; picked.Add(candidate); }
             }
         }
         return picked;
@@ -36,25 +38,57 @@ partial class HitStudent
     // A zip of past exams ("מבחנים משנים קודמות") is opened into the same folder: only documents, flat names, nothing outside the folder.
     // Returns how many files came out (the zip itself is then removed).
     static readonly string[] ZipKeep = { ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".png", ".jpg", ".jpeg", ".txt", ".html", ".htm", ".xlsx" };
-    int UnpackZip(string zipPath, string dest)
+    int UnpackZip(string zipPath, string dest, string filter = null, int depth = 0, string context = "", ArchiveBudget budget = null)
     {
-        if (!string.Equals(Path.GetExtension(zipPath), ".zip", StringComparison.OrdinalIgnoreCase)) return 0;
-        int n = 0;
-        try
+        if (!string.Equals(Path.GetExtension(zipPath), ".zip", StringComparison.OrdinalIgnoreCase) || depth > 3) return 0;
+        budget = budget ?? new ArchiveBudget(); int n = 0;
+        using (var za = System.IO.Compression.ZipFile.OpenRead(zipPath))
+        foreach (var en in za.Entries)
         {
-            using (var za = System.IO.Compression.ZipFile.OpenRead(zipPath))
-                foreach (var en in za.Entries)
-                {
-                    if (string.IsNullOrEmpty(en.Name) || en.Length > 200L * 1024 * 1024) continue;
-                    string ext = Path.GetExtension(en.Name).ToLowerInvariant();
-                    if (!ZipKeep.Contains(ext)) continue;
-                    string path = UniquePathIn(dest, SafeName(en.Name));
-                    using (var inp = en.Open()) using (var outp = File.Create(path)) inp.CopyTo(outp); n++;
-                }
-            File.Delete(zipPath);
+            if (++budget.Entries > 1000 || en.Length > 100L * 1024 * 1024 || (budget.Bytes += en.Length) > 300L * 1024 * 1024) throw new IOException("הארכיון גדול מדי לחילוץ אוטומטי");
+            if (string.IsNullOrEmpty(en.Name)) continue;
+            string ext = Path.GetExtension(en.Name).ToLowerInvariant();
+            string label = context + " " + en.FullName;
+            if (ext == ".zip") {
+                string nested = Path.Combine(Path.GetTempPath(), "sumit-archive-" + Guid.NewGuid().ToString("N") + ".zip");
+                try { using (var inp = en.Open()) using (var output = File.Create(nested)) inp.CopyTo(output); n += UnpackZip(nested, dest, filter, depth + 1, label, budget); }
+                finally { if (File.Exists(nested)) File.Delete(nested); }
+                continue;
+            }
+            if (!ZipKeep.Contains(ext) || (filter == "syllabus" && !SyllabusName.IsMatch(label)) || (filter == "exams" && !ExamName.IsMatch(label))) continue;
+            // Flatten archive paths: traversal and absolute names never become output paths.
+            string path = Path.Combine(dest, SafeName(en.FullName.Replace('\\', '_').Replace('/', '_')));
+            Directory.CreateDirectory(dest);
+            if (File.Exists(path) && new FileInfo(path).Length == en.Length) { n++; continue; }
+            string tmp = path + ".part";
+            using (var inp = en.Open()) using (var output = File.Create(tmp)) inp.CopyTo(output);
+            File.Copy(tmp, path, true); File.Delete(tmp); n++;
         }
-        catch { }
-        return n > 0 ? n - 1 : 0;
+        return n;
+    }
+    class ArchiveBudget { public int Entries; public long Bytes; }
+
+    async Task<List<string>> DiscoverMoodleFiles(HttpClient http, string url, string what)
+    {
+        var found = new HashSet<string>(); var visited = new HashSet<string>();
+        var pending = new Queue<Tuple<string, int>>(); pending.Enqueue(Tuple.Create(url, 0));
+        while (pending.Count > 0 && visited.Count < 60)
+        {
+            var next = pending.Dequeue(); if (!IsMoodleUrl(next.Item1) || !visited.Add(next.Item1)) continue;
+            string html;
+            try { html = await http.GetStringAsync(next.Item1); } catch { continue; }
+            foreach (Match link in Regex.Matches(html, @"<a\b[^>]*href\s*=\s*['""]([^'""]+)['""][^>]*>([\s\S]*?)</a>", RegexOptions.IgnoreCase))
+            {
+                Uri target; if (!Uri.TryCreate(new Uri(next.Item1), System.Net.WebUtility.HtmlDecode(link.Groups[1].Value), out target) || !IsMoodleUrl(target.AbsoluteUri)) continue;
+                string label = Uri.UnescapeDataString(target.AbsoluteUri) + " " + HtmlToText(link.Groups[2].Value);
+                bool relevant = what == "exams" ? ExamName.IsMatch(label) : SyllabusName.IsMatch(label);
+                bool archive = target.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                if (target.AbsolutePath.Contains("pluginfile.php") && (relevant || archive)) found.Add(target.AbsoluteUri);
+                else if (relevant && target.AbsolutePath.Contains("/mod/resource/view.php")) found.Add(target.AbsoluteUri + "&redirect=1");
+                else if (next.Item2 < 3 && Regex.IsMatch(target.AbsolutePath, @"/mod/(folder|page|resource|url)/view\.php$") && !visited.Contains(target.AbsoluteUri)) pending.Enqueue(Tuple.Create(target.AbsoluteUri, next.Item2 + 1));
+            }
+        }
+        return found.ToList();
     }
 
     // what = "exams" | "syllabus"
@@ -74,6 +108,12 @@ partial class HitStudent
             var sections = json.Deserialize<List<Dictionary<string, object>>>(v);
 
             var picked = PickMoodleItems(sections, what);
+            foreach (var section in sections)
+                foreach (Dictionary<string, object> item in (section.ContainsKey("items") ? section["items"] as ArrayList : null) ?? new ArrayList())
+                    if (Str(item, "mod") == "resource" && !picked.Any(p => Str(p, "url") == Str(item, "url"))) {
+                        var candidate = new Dictionary<string, object>(item); candidate["discoveryOnly"] = true; picked.Add(candidate);
+                    }
+            picked = picked.Take(80).ToList();
             if (picked.Count == 0)
             {
                 Send(new { type = "courseStatus", course = course, busy = false, error = true,
@@ -93,9 +133,25 @@ partial class HitStudent
                     try
                     {
                         if (!IsMoodleUrl(url)) continue;
-                        if (mod == "resource") { var rp = await DownloadFile(http, url + (url.Contains("?") ? "&" : "?") + "redirect=1", dest, true); if (rp != null) saved += 1 + UnpackZip(rp, dest); }
-                        else if (mod == "file") { var fp = await DownloadFile(http, url, dest, true); if (fp != null) saved += 1 + UnpackZip(fp, dest); }
-                        else foreach (string f in await PluginFiles(http, url)) { var pp = await DownloadFile(http, f, dest, true); if (pp != null) saved += 1 + UnpackZip(pp, dest); }
+                        bool discover = Bool(it, "discoveryOnly");
+                        var urls = mod == "resource" ? new List<string> { url + (url.Contains("?") ? "&" : "?") + "redirect=1" }
+                            : mod == "file" ? new List<string> { url }
+                            : discover ? await DiscoverMoodleFiles(http, url, what) : await PluginFiles(http, url);
+                        foreach (string f in urls.Distinct()) {
+                            string downloadDir = discover ? Path.Combine(CourseDir(course), SumitDir, "discovery") : dest;
+                            string path = await DownloadFile(http, f, downloadDir, true, discover ? 64L * 1024 * 1024 : 0); if (path == null) continue;
+                            if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase)) saved += UnpackZip(path, dest, discover ? what : null, 0, name + " " + Path.GetFileName(path));
+                            else if (!discover) saved++;
+                            else {
+                                bool matches = (what == "exams" ? ExamName : SyllabusName).IsMatch(Path.GetFileName(path)) || (mod != "resource" && mod != "file");
+                                if (!matches && what == "syllabus") {
+                                    string sample = await ExtractTexts(new[] { path });
+                                    matches = SyllabusName.IsMatch(sample) || (sample.Contains("מטרות הקורס") && sample.Contains("דרישות"));
+                                }
+                                if (matches) { File.Copy(path, Path.Combine(dest, Path.GetFileName(path)), true); saved++; }
+                            }
+                        }
+
                     }
                     catch (Exception ex) { failed++; Toast(Trunc(name, 40) + ": " + ex.Message, true); }
                 }

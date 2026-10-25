@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 partial class HitStudent
 {
     // What the last check found; read without waiting (the check itself runs in the background, see RefreshBrains).
+    readonly HashSet<Process> helperRuns = new HashSet<Process>();
     internal bool codexSignedIn;
     internal bool? geminiSignedOverride;   // tests
 
@@ -66,6 +67,8 @@ partial class HitStudent
         foreach (var kv in CliEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
         using (var p = Process.Start(psi))
         {
+            helperRuns.Add(p);
+            try {
             if (loginVerification) agyLoginProcess = p;
             var outTask = p.StandardOutput.ReadToEndAsync();
             var errTask = p.StandardError.ReadToEndAsync();
@@ -85,6 +88,7 @@ partial class HitStudent
             // The tool's own child processes may keep the pipes open for a moment.
             await Task.WhenAny(Task.WhenAll(outTask, errTask), Task.Delay(4000));
             return Tuple.Create(p.ExitCode, outTask.IsCompleted ? outTask.Result : "", errTask.IsCompleted ? errTask.Result : "");
+            } finally { helperRuns.Remove(p); }
         }
     }
 

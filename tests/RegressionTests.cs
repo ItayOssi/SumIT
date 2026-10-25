@@ -68,7 +68,7 @@ partial class HitStudent
             check("every item of the exams section is taken, with the solutions", exams.Select(i => Str(i, "url")).OrderBy(x => x).SequenceEqual(new[] { "u3", "u4", "u5", "u7" }));
             check("an exam named inside a lecture section is taken too, the slides are not", !exams.Any(i => Str(i, "url") == "u6"));
             var syllabus = HitStudent.PickMoodleItems(sections, "syllabus");
-            check("only the syllabus is taken for the course information", syllabus.Count == 1 && Str(syllabus[0], "url") == "u1");
+            check("only the syllabus is taken for the course information", syllabus.Count(x => !Bool(x, "discoveryOnly")) == 1 && syllabus.Any(x => Str(x, "url") == "u1"));
             // A zip of past exams inside the intro section ("מבחנים משנים קודמות") is found by its name and opened into the exams folder.
             var intro = app.json.Deserialize<List<Dictionary<string, object>>>("[{\"num\":0,\"title\":\"מבוא\",\"items\":[{\"mod\":\"resource\",\"name\":\"מבחנים משנים קודמות\",\"url\":\"z1\"},{\"mod\":\"resource\",\"name\":\"מצגת\",\"url\":\"z2\"}]}]");
             var introPicked = HitStudent.PickMoodleItems(intro, "exams");
@@ -80,12 +80,55 @@ partial class HitStudent
                 foreach (string en in new[] { "2023/exam a.pdf", "2023/solution a.pdf", "../evil.exe", "run.bat" }) { var ze = za.CreateEntry(en); using (var w = new StreamWriter(ze.Open())) w.Write("x"); }
             }
             int unpacked = app.UnpackZip(zpath, zdir);
-            check("zip opened: documents only, the zip is removed", unpacked == 1 && File.Exists(Path.Combine(zdir, "exam a.pdf")) && File.Exists(Path.Combine(zdir, "solution a.pdf")) && !File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));            RunHelperTests(app, root, check);
+            check("zip opened safely and original archive is preserved", unpacked == 2 && File.Exists(Path.Combine(zdir, "2023_exam a.pdf")) && File.Exists(Path.Combine(zdir, "2023_solution a.pdf")) && File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));            RunHelperTests(app, root, check);
             RunBrainTests(app, root, check);
+            RunLifecycleTests(app, root, check);
             Console.WriteLine("Offline regression checks complete. Fixtures: " + root);
         }
     }
 
+
+    static void RunLifecycleTests(HitStudent app, string root, Action<string, bool> check)
+    {
+        int active = 0, peak = 0, calls = 0;
+        app.summaryWorkOverride = async (course, num) => {
+            active++; peak = Math.Max(peak, active); calls++;
+            await System.Threading.Tasks.Task.Delay(40);
+            string page = app.StudyPagePath(course, num); Directory.CreateDirectory(Path.GetDirectoryName(page));
+            File.WriteAllText(page, "<html><body>complete</body></html>"); active--;
+            return new AiResult { Provider = "claude" };
+        };
+        Run(async () => { var a = app.LecturePdfAsync("queue-a", 1, "one"); var b = app.LecturePdfAsync("queue-b", 1, "two"); var dup = app.LecturePdfAsync("queue-a", 1, "one"); await System.Threading.Tasks.Task.WhenAll(a,b,dup); return true; });
+        check("multiple courses serialize and duplicate clicks do not spend tokens", calls == 2 && peak == 1 && app.summaryQueued.Count == 0);
+        string previous = app.StudyPagePath("queue-a", 1);
+        app.summaryWorkOverride = (course, num) => { File.WriteAllText(previous, "broken partial output"); return System.Threading.Tasks.Task.FromResult(new AiResult { Error = true }); };
+        Run(() => app.LecturePdfAsync("queue-a", 1, "one", false, true));
+        check("failed regeneration restores the last complete summary", File.ReadAllText(previous).Contains("complete") && File.ReadAllText(previous + ".interrupted").Contains("broken"));
+        app.summaryWorkOverride = (course, num) => { app.shuttingDown = true; File.WriteAllText(previous, "interrupted on close"); return System.Threading.Tasks.Task.FromResult(new AiResult { Error = true }); };
+        Run(() => app.LecturePdfAsync("queue-a", 1, "one", false, true)); app.shuttingDown = false;
+        check("closing retains a durable pending job and the previous page", File.Exists(app.PendingSummary("queue-a",1)) && File.ReadAllText(previous).Contains("complete"));
+        app.summaryWorkOverride = null;
+        string fixture = Path.Combine(root, "math", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(fixture));
+        File.WriteAllText(fixture, "<html><head><script src='https://cdn.example/katex.min.js'></script></head><body dir='rtl'>מהירות $v^2-v_0^2=2a\\Delta x$ וגם \\(x+1\\) <details><summary>פתרון</summary>עברית ואנגלית</details></body></html>");
+        app.PrepareStudyPage(fixture); app.PrepareStudyPage(fixture);
+        string repaired = File.ReadAllText(fixture);
+        check("study page repair is offline, idempotent and preserves interaction", repaired.Contains(".sumit-math/katex.min.js") && !repaired.Contains("cdn.example") && System.Text.RegularExpressions.Regex.Matches(repaired,"sumit-render-start").Count == 1 && repaired.Contains("<details>"));
+        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
+        if (!string.IsNullOrEmpty(sample) && File.Exists(sample)) {
+            string actual = Path.Combine(root, "actual-study", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(actual));
+            File.Copy(sample, actual, true); app.PrepareStudyPage(actual);
+            check("existing student page repaired on a copy", File.ReadAllText(actual).Contains("sumit-render-start"));
+        }
+        string archive = Path.Combine(root,"nested.zip"), target = Path.Combine(root,"nested-out"); Directory.CreateDirectory(target);
+        using(var zip = System.IO.Compression.ZipFile.Open(archive,System.IO.Compression.ZipArchiveMode.Create)) {
+            using(var inner = new System.IO.Compression.ZipArchive(zip.CreateEntry("bundle.zip").Open(), System.IO.Compression.ZipArchiveMode.Create)) {
+                using(var w=new StreamWriter(inner.CreateEntry("מבחנים/2024/פתרונות.pdf").Open())) w.Write("solution");
+                using(var w=new StreamWriter(inner.CreateEntry("../unrelated.txt").Open())) w.Write("irrelevant");
+            }
+        }
+        check("generic nested zip discovers solutions by parent folder", app.UnpackZip(archive,target,"exams") == 1 && Directory.GetFiles(target).Length == 1);
+        check("archive rescanning is idempotent", app.UnpackZip(archive,target,"exams") == 1 && Directory.GetFiles(target).Length == 1);
+    }
     // The form installs a WinForms synchronization context, so awaits would wait for a message loop that is not running here.
     static T Run<T>(Func<System.Threading.Tasks.Task<T>> work) { return System.Threading.Tasks.Task.Run(work).GetAwaiter().GetResult(); }
 
@@ -265,19 +308,31 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             Environment.SetEnvironmentVariable("FAKE_AGY_LOGIN", null);
             app.codexSignedIn = true; app.geminiSignedOverride = true;
 
+            bool wasLogged = app.claudeLoggedIn; app.claudeLoggedIn = true;
+            var routed = new List<string>();
+            app.aiWorkOverride = provider => { routed.Add(provider); return System.Threading.Tasks.Task.FromResult(new AiResult { Error = provider != "gemini", Text = provider != "gemini" ? "usage limit reached" : "ready" }); };
+            var routedResult = Run(() => app.RunAi("routing", root, "test", null, null, null));
+            check("generation falls back Claude then ChatGPT then Gemini", string.Join(",", routed) == "claude,openai,gemini" && routedResult.Provider == "gemini" && !routedResult.Error);
+            routed.Clear(); app.aiWorkOverride = provider => { routed.Add(provider); return System.Threading.Tasks.Task.FromResult(new AiResult { Error = true, Text = "invalid input" }); };
+            Run(() => app.RunAi("routing", root, "test", null, null, null));
+            check("non-quota errors do not spend another provider", routed.Count == 1);
+            app.aiWorkOverride = null; app.claudeLoggedIn = wasLogged;
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.
             string course = "review-course";
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 1 }, { "title", "L1" } });
             Directory.CreateDirectory(Path.GetDirectoryName(app.StudyPagePath(course, 1)));
             File.WriteAllText(app.StudyPagePath(course, 1), "<html><body><h1>סיכום</h1><p>שאלה 2: התשובה היא 5</p></body></html>");
             Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"issues\",\"issues\":[{\"where\":\"שאלה 2\",\"problem\":\"החישוב שגוי\",\"fix\":\"התשובה היא 7\"}]}");
-            string note = Run(() => app.SecondOpinion(course, 1));
+            string note = Run(() => app.SecondOpinion(course, 1, "claude"));
             string html = File.ReadAllText(app.StudyPagePath(course, 1));
-            check("a second AI's notes are added to the summary", note != null && note.Contains("הערות") && html.Contains("id=\"second-opinion\"") && html.Contains("החישוב שגוי") && html.Contains("התשובה היא 7") && html.Contains("<h1>סיכום</h1>"));
+            check("a second AI's notes are added to the summary", note != null && note.Contains("הערות") && html.Contains("id=\"second-opinion-openai\"") && html.Contains("id=\"second-opinion-gemini\"") && html.Contains("החישוב שגוי") && html.Contains("התשובה היא 7") && html.Contains("<h1>סיכום</h1>"));
             Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"ok\",\"issues\":[]}");
-            note = Run(() => app.SecondOpinion(course, 1));
+            note = Run(() => app.SecondOpinion(course, 1, "claude"));
+            check("unchanged review reuses cached result", note.Contains("הערות"));
+            File.WriteAllText(app.StudyPagePath(course, 1), "<html><body><h1>סיכום</h1><p>תשובה מתוקנת 7</p></body></html>");
+            note = Run(() => app.SecondOpinion(course, 1, "claude"));
             html = File.ReadAllText(app.StudyPagePath(course, 1));
-            check("a repeated check replaces the notes, and a clean one says so", note.Contains("לא מצא טעויות") && System.Text.RegularExpressions.Regex.Matches(html, "id=\"second-opinion\"").Count == 1 && !html.Contains("החישוב שגוי") && html.Contains("לא נמצאו טעויות"));
+            check("a repeated check replaces the notes, and a clean one says so", note.Contains("לא מצא טעויות") && System.Text.RegularExpressions.Regex.Matches(html, "id=\"second-opinion-").Count == 2 && !html.Contains("החישוב שגוי") && html.Contains("לא נמצאו טעויות"));
             Environment.SetEnvironmentVariable("FAKE_REPLY", null);
             app.codexSignedIn = false; app.geminiSignedOverride = false;
             check("with no other AI the check is skipped", Run(() => app.SecondOpinion(course, 1)) == null);

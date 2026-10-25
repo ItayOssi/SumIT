@@ -15,7 +15,7 @@ partial class HitStudent
     // A property, not a field: static fields in other partial files (Home) may not be set yet when this one would be.
     static string SkillsDir { get { return Path.Combine(Home, @".claude\skills"); } }
 
-    readonly Dictionary<string, Process> aiRuns = new Dictionary<string, Process>();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, Process> aiRuns = new System.Collections.Concurrent.ConcurrentDictionary<string, Process>();
     string setupState = "";   // what the background installer is doing right now
 
     // ---------- Finding the tools ----------
@@ -378,7 +378,8 @@ partial class HitStudent
                 Match url = Regex.Match(e.Data, @"https://accounts\.google\.com/\S+");
                 if (!url.Success) return;
                 opened = true;
-                BeginInvoke((MethodInvoker)delegate { OpenExternal(url.Value); Send(new { type = "geminiCode" }); });
+                if (shuttingDown || IsDisposed || !IsHandleCreated) return;
+            BeginInvoke((MethodInvoker)delegate { OpenExternal(url.Value); Send(new { type = "geminiCode" }); });
             };
             p.OutputDataReceived += onLine;
             p.ErrorDataReceived += onLine;
@@ -461,33 +462,55 @@ partial class HitStudent
     // One normalised event from either Claude or Gemini: some text, a tool action, or the session id.
     class AiEvent { public string Text, Action, Session; }
 
-    class AiResult { public bool Error; public bool Limit; public string Text = ""; public string Session; }
+    class AiResult { public bool Error; public bool Limit; public string Text = ""; public string Session; public string Provider; }
 
     // Tools the AI may use. No web access and only Python as a shell command, so text hidden in a downloaded
     // PDF can't make it browse somewhere or run arbitrary commands.
     const string ClaudeTools = "Read,Write,Edit,MultiEdit,Glob,Grep,Skill,TodoWrite,Bash(python:*),Bash(py:*),Bash(python3:*)";
     const string ClaudeDenied = "WebFetch,WebSearch,Bash(curl:*),Bash(wget:*),Bash(powershell:*),Bash(pwsh:*),Bash(cmd:*),Bash(rm:*),Bash(del:*)";
 
+    Func<string, Task<AiResult>> aiWorkOverride; // Offline routing regression seam.
     async Task<AiResult> RunAi(string key, string cwd, string prompt, string session, string system, Action<AiEvent> onEvent)
     {
-        string provider = Provider;
-        var result = provider == "gemini" ? await RunGemini(key, cwd, prompt, system, onEvent) : await RunClaude(key, cwd, prompt, session, system, onEvent);
-        // A usage limit isn't an error the student can do anything about here: say it kindly and offer the other AI.
-        if (result.Error && IsUsageLimit(result.Text))
+        await aiGate.WaitAsync();
+        try
         {
-            bool otherReady = provider == "claude" ? GeminiAccountReady() : FindClaude() != null && claudeLoggedIn;
-            // With both connected and the "switch automatically" setting on, just carry on with the other one.
-            if (otherReady && Option("autoFallback"))
+            if (shuttingDown) return new AiResult { Error = true, Text = "העבודה הופסקה בסגירה" };
+            var order = new List<string> { Provider };
+            if (Option("autoFallback")) order.AddRange(new[] { "claude", "openai", "gemini" }.Where(p => !order.Contains(p)));
+            AiResult result = null;
+            foreach (string provider in order)
             {
-                Toast((provider == "claude" ? "המכסה של Claude נגמרה לעכשיו - ממשיך עם Gemini" : "המכסה של Gemini נגמרה לעכשיו - ממשיך עם Claude"), false);
-                var second = provider == "claude" ? await RunGemini(key, cwd, prompt, system, onEvent) : await RunClaude(key, cwd, prompt, null, system, onEvent);
-                if (!(second.Error && IsUsageLimit(second.Text))) return second;
+                if (provider == "claude" && (FindClaude() == null || !claudeLoggedIn)) continue;
+                if (provider == "openai" && !ChatGptAccountReady()) continue;
+                if (provider == "gemini" && !GeminiAccountReady()) continue;
+                if (result != null) Toast("המכסה נגמרה — ממשיך עם " + BrainName(provider), false);
+                string continuation = result == null ? prompt : prompt + "\nעבודה קודמת נעצרה בגלל מכסה. בדוק קודם את הקבצים שכבר נוצרו והשלם רק את החסר; אל תחזור על קריאת מקורות שכבר סוכמו.";
+                result = aiWorkOverride != null ? await aiWorkOverride(provider) : provider == "claude" ? await RunClaude(key, cwd, continuation, session, system, onEvent)
+                    : provider == "openai" ? await RunChatGptTask(cwd, continuation, system)
+                    : await RunGemini(key, cwd, continuation, system, onEvent);
+                result.Provider = provider;
+                if (shuttingDown || !result.Error || !(result.Limit || IsUsageLimit(result.Text))) return result;
+                result.Limit = true;
             }
-            Send(new { type = "aiLimit", provider = provider, otherReady = otherReady, reset = LimitResetText(result.Text) });
-            result.Text = (provider == "claude" ? "Claude" : "Gemini") + " הגיע למגבלת השימוש לעכשיו. אפשר לעבור ל" + (provider == "claude" ? "-Gemini" : "-Claude") + " ולהמשיך.";
-            result.Limit = true;
+            return result ?? new AiResult { Error = true, Text = "אין מנוע מחובר ליצירת סיכום" };
         }
-        return result;
+        finally { aiGate.Release(); }
+    }
+
+    async Task<AiResult> RunChatGptTask(string cwd, string prompt, string system)
+    {
+        string output = Path.Combine(cwd, SumitDir, "chatgpt-result-" + Guid.NewGuid().ToString("N") + ".txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(output));
+        try
+        {
+            var r = await RunCli(FindCodex(), "exec --ignore-user-config --skip-git-repo-check -s workspace-write --ephemeral -o " + Q(output) + " -",
+                (system ?? "") + "\n" + prompt, cwd, 1800000);
+            string answer = File.Exists(output) ? File.ReadAllText(output, Encoding.UTF8) : "";
+            return new AiResult { Provider = "openai", Error = r.Item1 != 0 || answer.Length == 0,
+                Limit = IsUsageLimit(r.Item2 + r.Item3), Text = answer.Length > 0 ? answer : Trunc(r.Item3 + r.Item2, 800) };
+        }
+        finally { if (File.Exists(output)) File.Delete(output); }
     }
 
     static bool IsUsageLimit(string text)
@@ -627,6 +650,7 @@ partial class HitStudent
             AiEvent ev;
             try { ev = parse(e.Data); } catch { return; }
             if (ev == null) return;
+            if (shuttingDown || IsDisposed || !IsHandleCreated) { tcs.TrySetResult(new AiResult { Error = true, Text = "העבודה הופסקה בסגירה" }); return; }
             BeginInvoke((MethodInvoker)delegate
             {
                 if (ev.Session != null && ev.Session.Length > 0) result.Session = ev.Session;
@@ -646,9 +670,10 @@ partial class HitStudent
             p.WaitForExit();
             int code = p.ExitCode;
             p.Dispose();
+            if (shuttingDown || IsDisposed || !IsHandleCreated) { tcs.TrySetResult(new AiResult { Error = true, Text = "העבודה הופסקה בסגירה" }); return; }
             BeginInvoke((MethodInvoker)delegate
             {
-                aiRuns.Remove(key);
+                Process removedProcess; aiRuns.TryRemove(key, out removedProcess);
                 if (!gotResult)
                 {
                     string err;
@@ -707,7 +732,7 @@ partial class HitStudent
 
     bool AiReadyOrSay(Action<string> say)
     {
-        bool ok = Provider == "gemini" ? GeminiAccountReady() : FindClaude() != null;
+        bool ok = (FindClaude() != null && claudeLoggedIn) || ChatGptAccountReady() || GeminiAccountReady();
         if (!ok) say("צריך לחבר AI קודם - לחץ על הסטטוס למעלה"); // צריך לחבר AI קודם - לחץ על הסטטוס למעלה
         return ok;
     }

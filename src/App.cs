@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.3";
+    public const string Version = "1.0.4";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -112,8 +112,10 @@ partial class HitStudent : Form
         Activated += delegate { CheckClipboard(false); };
         FormClosing += delegate
         {
+            shuttingDown = true;
             CancelAgyLogin();
             foreach (var p in aiRuns.Values.ToList()) KillTree(p);
+            foreach (var p in helperRuns.ToList()) KillTree(p);
             // A downloaded update is put in place on the way out, so the next start is the new version.
             if (stagedUpdateDir != null && !restartingForUpdate) ApplyUpdate(false);
         };
@@ -350,7 +352,7 @@ partial class HitStudent : Form
     static readonly bool GeminiEnabled = false;
     internal bool claudeLoggedIn;
     // Claude when the student has it; otherwise Gemini (through their Google account), which then writes the summaries too.
-    string Provider { get { return !claudeLoggedIn && GeminiAccountReady() ? "gemini" : "claude"; } }
+    string Provider { get { return claudeLoggedIn ? "claude" : ChatGptAccountReady() ? "openai" : GeminiAccountReady() ? "gemini" : "claude"; } }
 
     // The student's own to-do list: a title, an optional course and date, done or not. Only these fields are kept.
     internal static System.Collections.ArrayList CleanTasks(System.Collections.ArrayList raw)
@@ -388,7 +390,7 @@ partial class HitStudent : Form
 
     void Send(object message)
     {
-        if (ui.CoreWebView2 != null) ui.CoreWebView2.PostWebMessageAsJson(json.Serialize(message));
+        if (!shuttingDown && !IsDisposed && ui.CoreWebView2 != null) ui.CoreWebView2.PostWebMessageAsJson(json.Serialize(message));
     }
 
     void Toast(string text, bool error) { Send(new { type = "toast", text = text, error = error }); }
@@ -683,6 +685,7 @@ partial class HitStudent : Form
             Send(new { type = "moodle", state = ms, message = "" });
             if (full && ms == "ready") LoadHome();
             ImportAllNotability();
+            RecoverSummaries();
             // Every few hours: anything new on Moodle in the courses that are set up? (Not while a course is downloading.)
             if (ms == "ready" && Option("autoSync") && syncingCourses.Count == 0 && progressRange.Count == 0) { var check = BackgroundNewMaterialCheck(); }
         }

@@ -67,7 +67,7 @@ partial class HitStudent
         }
     }
 
-    async Task<AiResult> LecturePdfAsync(string course, int num, string title, bool open = false, bool force = false)
+    async Task<AiResult> LecturePdfCoreAsync(string course, int num, string title, bool open = false, bool force = false)
     {
         string key = "sum|" + course + "|" + num;
         if (aiRuns.ContainsKey(key)) return null;
@@ -116,6 +116,7 @@ partial class HitStudent
                   + "צור גם את קבצי ה-PDF עם המפנים ב-\"" + folder + "/" + Exercises + "/" + PointersFolder + "\".\n"
                 : "2. אין עדיין שיעורי בית להרצאה הזו - במקום החלק \"שימוש בתרגילים\" תן 2-3 שאלות תרגול בסגנון של המרצה (מהמבחנים הקודמים, אם יש).\n")
             + "עברית, אנגלית, מספרים ונוסחאות מופיעים יחד בדף: כל נוסחה ב-KaTeX, וטקסט באנגלית בתוך משפט בעברית נשאר קריא ובסדר הנכון.\n"
+            + "אם קיים לצד דף הסיכום קובץ עם סיומת .interrupted, זו טיוטה שנעצרה: אפשר להיעזר בחלקים התקינים שלה אך יש להשלים ולבדוק לפני שמירה.\n"
             + "הדף יודפס, אז כל טקסט חשוב צריך להיות כתוב בדף עצמו (לא רק בתוך קישור או אנימציה)." + WorkAlone;
 
         summaryRunning.Add(course + "|" + num);
@@ -124,22 +125,25 @@ partial class HitStudent
         bool printing = false, finished = false;
         var ticker = ProgressTicker(course, num, EstimatedSummarySeconds(course), started, () => phaseText, () => printing, () => finished);
         AiResult result = null;
-        string pdf = null;
+        string pdf = null, warning = "";
         try
         {
             result = await CourseTask(key, course, s => { phaseText = s; SectionStatus(course, num, s, true, false); }, prompt);
             if (!result.Error && File.Exists(StudyPagePath(course, num)))
             {
+                var authorMeta = LoadMeta(course);
+                var writers = Dict(authorMeta, "summaryWriters") ?? new Dictionary<string, object>();
+                writers[num.ToString()] = result.Provider ?? Provider; authorMeta["summaryWriters"] = writers; SaveMeta(course, authorMeta);
                 // A second AI (Gemini / ChatGPT) reads the homework solutions like a strict reviewer, if one is connected.
                 if (HelperOrder().Count > 0)
                 {
                     phaseText = "AI נוסף בודק את הפתרונות...";
                     SectionStatus(course, num, phaseText, true, false);
-                    try { await SecondOpinion(course, num); } catch { }
+                    try { string note = await SecondOpinion(course, num, result.Provider); if (note != null) SectionStatus(course, num, note, true, false); } catch (Exception ex) { SectionStatus(course, num, "הביקורת לא הושלמה: " + Trunc(ex.Message, 100), true, false); }
                 }
                 printing = true; phaseText = "מכין את קובץ ה-PDF...";
                 SectionStatus(course, num, phaseText, true, false);
-                pdf = await BuildLecturePdf(course, num);
+                pdf = await BuildLecturePdf(course, num); warning = pdfFailure;
             }
         }
         finally { finished = true; summaryRunning.Remove(course + "|" + num); }
@@ -151,9 +155,9 @@ partial class HitStudent
 
         bool pageReady = File.Exists(StudyPagePath(course, num));
         string status = result.Error ? "נכשל: " + Trunc(result.Text, 160)
-            : pdf != null && pdfFailure.Length == 0 ? "הסיכום של ההרצאה מוכן ✨"
-            : pdf != null ? "הסיכום מוכן ✨ (" + pdfFailure + ")"
-            : pageReady ? "הסיכום מוכן, אבל קובץ ה-PDF לא נוצר (" + pdfFailure + "). אפשר לפתוח את הסיכום, ולנסות שוב אחר כך."
+            : pdf != null && warning.Length == 0 ? "הסיכום של ההרצאה מוכן ✨"
+            : pdf != null ? "הסיכום מוכן ✨ (" + warning + ")"
+            : pageReady ? "הסיכום מוכן, אבל קובץ ה-PDF לא נוצר (" + warning + "). אפשר לפתוח את הסיכום, ולנסות שוב אחר כך."
             : "הסתיים בלי סיכום - נסה שוב";
         SectionStatus(course, num, status, false, result.Error || !pageReady);
         SendSectionLocal(course, num);
@@ -169,6 +173,11 @@ partial class HitStudent
     // Study page (+ the homework sheets) -> one PDF. Returns its path, or null (and says why in pdfFailure).
     async Task<string> BuildLecturePdf(string course, int num)
     {
+        await printGate.WaitAsync();
+        try { return await BuildLecturePdfCore(course, num); } finally { printGate.Release(); }
+    }
+    async Task<string> BuildLecturePdfCore(string course, int num)
+    {
         pdfFailure = "";
         string page = StudyPagePath(course, num);
         string outPdf = LecturePdfPath(course, num);
@@ -178,6 +187,7 @@ partial class HitStudent
         string printable = Path.Combine(Path.GetDirectoryName(page), ".print-" + num + ".html");
         try
         {
+            PrepareStudyPage(page);
             string html = File.ReadAllText(page, Encoding.UTF8);
             const string extra = "<style>@media print{details>summary .chev,button,input[type=checkbox],.no-print{display:none!important}"
                 + "details,.card,.fx{break-inside:avoid-page} h2{break-after:avoid} body{background:#fff}}</style>"
@@ -236,10 +246,10 @@ partial class HitStudent
         {
             core.Navigate(new Uri(htmlPath).AbsoluteUri);
             if (await Task.WhenAny(loaded.Task, Task.Delay(60000)) != loaded.Task || !loaded.Task.Result) { pdfFailure = "דף הסיכום לא נטען"; return false; }
-            // Fonts and formulas finish a moment after the page loads (the formulas come from the internet).
+            // Wait for the local math renderer and fonts before printing.
             for (int i = 0; i < 24; i++)
             {
-                string ready = await core.ExecuteScriptAsync("(document.readyState==='complete'&&document.fonts&&document.fonts.status==='loaded'&&(!/[$]|\\\\[(\\[]/.test(document.body.innerText)||!!document.querySelector('.katex')))?'1':'0'");
+                string ready = await core.ExecuteScriptAsync("(document.readyState==='complete'&&document.fonts&&document.fonts.status==='loaded'&&document.documentElement.dataset.sumitMath==='ready')?'1':'0'");
                 if (ready == "\"1\"" && i >= 4) break;
                 await Task.Delay(500);
             }

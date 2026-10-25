@@ -531,7 +531,7 @@ return out;";
         "(מבחן|מבחנ|בחינ|מועד [אבג]|שנים קודמות|\\bexam|midterm|\\bfinal)",
         RegexOptions.IgnoreCase);
     static readonly Regex SyllabusName = new Regex(
-        "(סילבוס|syllabus|תכנית הקורס|מידע על הקורס|דרישות הקורס|מבנה הציון)",
+        "(סילבוס|סילב|syllabus|syllabi|סילאבוס|course outline|course description|תוכנית הקורס|תכנית הקורס|מידע על הקורס|דרישות הקורס|מבנה הציון)",
         RegexOptions.IgnoreCase);
 
     static bool IsExercise(string name) { return ExerciseName.IsMatch(name ?? ""); }
@@ -716,7 +716,7 @@ return out;";
         return http;
     }
 
-    async Task<string> DownloadFile(HttpClient http, string url, string dir, bool keepImages)
+    async Task<string> DownloadFile(HttpClient http, string url, string dir, bool keepImages, long maxBytes = 0)
     {
         using (var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
         {
@@ -734,10 +734,19 @@ return out;";
 
             string path = Path.Combine(dir, name);
             long? length = resp.Content.Headers.ContentLength;
+            if (maxBytes > 0 && length > maxBytes) return null;
             if (File.Exists(path) && length.HasValue && new FileInfo(path).Length == length.Value) return path;
             Directory.CreateDirectory(dir);
             string temp = path + ".part";
-            using (var fs = File.Create(temp)) await resp.Content.CopyToAsync(fs);
+            try {
+                using (var input = await resp.Content.ReadAsStreamAsync()) using (var fs = File.Create(temp)) {
+                    byte[] buffer = new byte[81920]; long total = 0; int read;
+                    while ((read = await input.ReadAsync(buffer, 0, buffer.Length)) > 0) {
+                        total += read; if (maxBytes > 0 && total > maxBytes) throw new IOException("קובץ גדול מדי לבדיקה אוטומטית; אפשר להוריד ידנית");
+                        await fs.WriteAsync(buffer, 0, read);
+                    }
+                }
+            } catch { if (File.Exists(temp)) File.Delete(temp); throw; }
             if (File.Exists(path)) File.Delete(path);
             File.Move(temp, path);
             return path;

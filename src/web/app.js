@@ -320,17 +320,21 @@ function renderProviders() {
 // ---------- Timetable (from the portal export) ----------
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 // Four numbers at the top of the home page.
+function homeEvents() {
+  const tasks=(S.tasks||[]).filter(t=>!t.done).map(t=>({name:t.title,course:t.course||'מטלה אישית',when:t.due?new Date(t.due+'T23:59:00').getTime()/1000:null,manual:true,id:t.id,overdue:t.due?new Date(t.due+'T23:59:00').getTime()<Date.now():false}));
+  return [...(S.events||[]),...tasks].sort((a,b)=>(a.when||Infinity)-(b.when||Infinity));
+}
 function renderStats() {
   const box = $('stats'); if (!box) return;
   const cur = (S.courses || []).filter(c => c.current);
   const openTasks = (S.tasks || []).filter(t => !t.done).length;
-  const week = (S.events || []).filter(e => !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000).length;
+  const week = homeEvents().filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000).length;
   const exams = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && new Date(x.date + 'T12:00:00') >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
   const days = exams.length ? Math.max(0, Math.round((new Date(exams[0].date + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000)) : null;
   const tile = (ic, cls, value, label) => `<div class="stat-tile"><span class="ic ${cls}" data-ic="${ic}"></span><div><b>${value}</b><small>${label}</small></div></div>`;
   box.innerHTML = tile('book', 'file', S.courses ? cur.length : '·', 'קורסים בסמסטר')
     + tile('check', 'assign', openTasks, openTasks === 1 ? 'מטלה פתוחה שלי' : 'מטלות פתוחות שלי')
-    + tile('calendar', 'zoom', S.events ? week : '·', 'מטלות השבוע')
+    + tile('calendar', 'zoom', S.events || (S.tasks||[]).length ? week : '·', 'מטלות השבוע')
     + tile('exam', 'other', days == null ? '—' : days, days == null ? 'אין מבחן בלוח' : days === 1 ? 'יום למבחן הבא' : 'ימים למבחן הבא');
   icons(box);
 }
@@ -464,25 +468,25 @@ function renderHome() {
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
   $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
-  const ev = (S.events || []).filter(e => !e.overdue || Date.now() / 1000 - e.when < 3 * 86400);
-  const week = ev.filter(e => e.when * 1000 - Date.now() < 7 * 86400000);
-  $('heroLine').textContent = S.events == null ? (S.moodle === 'login' ? 'התחבר ל-Moodle כדי לראות מה מחכה לך.' : 'טוען את מה שמחכה לך השבוע...')
+  const ev = homeEvents().filter(e => e.manual || !e.overdue || Date.now() / 1000 - e.when < 3 * 86400);
+  const week = ev.filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000);
+  $('heroLine').textContent = S.events == null && !ev.length ? (S.moodle === 'login' ? 'התחבר ל-Moodle כדי לראות מה מחכה לך.' : 'טוען את מה שמחכה לך השבוע...')
     : week.length ? `יש לך ${week.length} ${week.length === 1 ? 'משימה' : 'משימות'} בשבוע הקרוב. אפשר להתחיל ממה שהכי דחוף.`
     : 'אין מטלות בשבוע הקרוב. זמן מצוין לחזור על החומר.';
-  $('deadlineCount').textContent = S.events ? ev.length + ' קרובות' : '';
+  $('deadlineCount').textContent = ev.length + ' מטלות';
 
   const box = $('deadlines'); box.innerHTML = '';
-  if (S.events == null) {
+  if (S.events == null && !ev.length) {
     for (let i = 0; i < 4; i++) box.append(h('<div class="deadline"><div class="cal skeleton"></div><div class="info"><div class="skeleton" style="height:12px;width:60%"></div><div class="skeleton" style="height:10px;width:40%;margin-top:8px"></div></div></div>'));
   } else if (!ev.length) {
     box.append(h(`<div class="empty" style="border:none;padding:16px">${ART.calendar().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>אין מטלות פתוחות בשבועות הקרובים.</div>`));
   } else {
     ev.slice(0, 7).forEach((e, i) => {
       const d = new Date(e.when * 1000);
-      const soon = e.when * 1000 - Date.now() < 2 * 86400000;
-      const el = h(`<div class="deadline${e.overdue ? ' over' : soon ? ' soon' : ''}" style="--i:${i}"><div class="cal"><b>${d.getDate()}</b><small>${esc(monFmt.format(d))}</small></div>
-        <div class="info"><div class="name" dir="auto">${esc(e.name)}</div><div class="course" dir="auto">${esc(e.course)}${hwNote(e)}</div></div><span class="chip${e.overdue ? ' bad' : soon ? ' warn' : ''}">${esc(relDay(e.when))}</span></div>`);
-      el.onclick = () => openSite('moodle', e.url);
+      const soon = e.when && e.when * 1000 - Date.now() < 2 * 86400000;
+      const el = h(`<div class="deadline${e.overdue ? ' over' : soon ? ' soon' : ''}" style="--i:${i}"><div class="cal"><b>${e.when ? d.getDate() : '—'}</b><small>${e.when ? esc(monFmt.format(d)) : 'ללא מועד'}</small></div>
+        <div class="info"><div class="name" dir="auto">${esc(e.name)}</div><div class="course" dir="auto">${esc(e.course)}${hwNote(e)}</div></div><span class="chip${e.overdue ? ' bad' : soon ? ' warn' : ''}">${e.when ? esc(relDay(e.when)) : 'ללא תאריך'}</span></div>`);
+      el.onclick = () => e.manual ? show('tasks') : openSite('moodle', e.url);
       box.append(el);
     });
   }
@@ -1551,7 +1555,7 @@ function onMessage(m) {
   switch (m.type) {
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
-      if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderStats();
+      if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
       if (!m.onboarded && $('wizard').hidden) openWizard(0);
@@ -1958,7 +1962,7 @@ function lectureCalendarEditor() {
 // ---------- My tasks ----------
 // The student's own to-do list (not from Moodle): a title, an optional course and date. Kept in the app's settings.
 S.tasks = S.tasks || [];
-function saveTasks() { send({ type: 'saveTasks', tasks: S.tasks }); renderStats(); if (S.view === 'tasks') renderTasks($('tasksPage')); }
+function saveTasks() { send({ type: 'saveTasks', tasks: S.tasks }); renderHome(); if (S.view === 'tasks') renderTasks($('tasksPage')); }
 function renderTasks(box) {
   if (!box) return;
   const keep = box.querySelector('[data-t-title]'); const draft = keep ? keep.value : '';
