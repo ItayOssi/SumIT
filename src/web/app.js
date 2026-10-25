@@ -151,7 +151,7 @@ function show(view) {
 document.querySelectorAll('.nav-item[data-view]').forEach(n => n.onclick = () => show(n.dataset.view));
 // Sites open full-size inside the app, without a toolbar. Anything downloaded there goes straight into the course
 // that's open (or the "הורדות" folder), to the folder that fits the site.
-const siteFolder = { moodle: 'כללי', portal: 'מידע על הקורס', cs24: 'CS24', notability: 'מחברת', notebooklm: 'CS24' };
+const siteFolder = { moodle: 'כללי', portal: 'מידע על הקורס', cs24: 'CS24', notability: 'מחברת', notebooklm: 'CS24', outlook: '', onedrive: '' };
 document.querySelectorAll('.nav-item[data-site-link]').forEach(n => n.onclick = () => {
   const site = n.dataset.siteLink;
   const active = [...S.open].filter(num => num > 0).at(-1) || (S.course && S.sections.length ? Math.max(...S.sections.map(s => s.num)) : 0);

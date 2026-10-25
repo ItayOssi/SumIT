@@ -149,11 +149,48 @@ partial class HitStudent
     // Zoom recording page reached this way works like any other page.
     internal void OpenSitePopup(object sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
-        e.Handled = true;
         var core = sender as CoreWebView2;
         Uri u;
         if (core != null && Uri.TryCreate(e.Uri, UriKind.Absolute, out u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp || u.Scheme == "blob"))
-            core.Navigate(e.Uri);
+        { e.Handled = true; core.Navigate(e.Uri); return; }
+        // Many pages open an empty window and set its address a moment later (window.open("") and then .location = ...). The page needs a real
+        // window for that: a small hidden one is given, and whatever address it is sent to is opened in the view the student is looking at.
+        if (core == null || env == null) { e.Handled = true; return; }
+        var deferral = e.GetDeferral();
+        var ctx = System.Threading.SynchronizationContext.Current;
+        try
+        {
+            var holder = new Form { ShowInTaskbar = false, FormBorderStyle = FormBorderStyle.None, StartPosition = FormStartPosition.Manual, Location = new System.Drawing.Point(-32000, -32000), ClientSize = new System.Drawing.Size(10, 10) };
+            var view = new Microsoft.Web.WebView2.WinForms.WebView2();
+            holder.Controls.Add(view);
+            holder.Show();
+            Action closeLater = () => { if (ctx != null) ctx.Post(_ => { try { holder.Close(); } catch { } }, null); };
+            view.EnsureCoreWebView2Async(env).ContinueWith(t =>
+            {
+                try
+                {
+                    var popupCore = view.CoreWebView2;
+                    popupCore.NavigationStarting += (s2, e2) =>
+                    {
+                        if (Environment.GetEnvironmentVariable("SUMIT_DEBUG_POPUP") != null) Console.WriteLine("popup navigation: " + e2.Uri);
+                        Uri target;
+                        if (Uri.TryCreate(e2.Uri, UriKind.Absolute, out target) && (target.Scheme == Uri.UriSchemeHttps || target.Scheme == Uri.UriSchemeHttp))
+                        { e2.Cancel = true; core.Navigate(e2.Uri); closeLater(); }
+                    };
+                    popupCore.NewWindowRequested += OpenSitePopup;
+                    popupCore.DownloadStarting += OnSiteDownload; popupCore.PermissionRequested += OnDownloadPermission;
+                    e.NewWindow = popupCore; e.Handled = true;
+                    if (Environment.GetEnvironmentVariable("SUMIT_DEBUG_POPUP") != null) Console.WriteLine("popup window given");
+                }
+                catch { e.Handled = true; }
+                finally { deferral.Complete(); }
+                // A window that never goes anywhere is closed after a while.
+                var closer = new System.Windows.Forms.Timer { Interval = 30000 };
+                closer.Tick += delegate { closer.Stop(); try { holder.Close(); } catch { } };
+                closer.Start();
+            }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+        }
+        catch { e.Handled = true; try { deferral.Complete(); } catch { } }
     }
 
     // ---------- Saving from the sites ----------

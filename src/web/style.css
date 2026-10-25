@@ -824,14 +824,15 @@ html[data-theme=dark] .card { border-color: #274a82; }
 
 /* Infinity stones: the splash, the floating field in the settings, and the snap */
 .splash .gauntlet-stage { margin: 6px auto 0; }
-.gauntlet-stage { position: relative; width: 230px; height: 172px; }
+.gauntlet-stage { position: relative; width: 170px; height: 204px; }
 .gauntlet-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .45)); }
-.infinity-stone, .stone-missing { position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; }
+.infinity-stone, .stone-missing { display: none; position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; }
 .infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%); box-shadow: 0 0 10px 3px var(--c), 0 0 30px 7px color-mix(in srgb, var(--c) 45%, transparent); }
 .stone-missing { border: 1.5px dashed color-mix(in srgb, var(--c) 70%, #888); opacity: .55; }
 #stoneField { position: fixed; z-index: 15; pointer-events: none; overflow: hidden; }
-.gf-gauntlet { position: absolute; width: 170px; height: 128px; pointer-events: auto; animation: gfBob 6s ease-in-out infinite; filter: drop-shadow(0 14px 24px rgba(0, 0, 0, .45)); opacity: .95; }
+.gf-gauntlet { position: absolute; width: 170px; height: 204px; pointer-events: auto; animation: gfBob 6s ease-in-out infinite; filter: drop-shadow(0 14px 24px rgba(0, 0, 0, .45)); opacity: .95; }
 .gf-gauntlet .gauntlet { width: 100%; height: 100%; }
+.gf-gauntlet { animation: none; }
 .gf-gauntlet.ready { cursor: pointer; filter: drop-shadow(0 0 22px rgba(247, 197, 45, .75)); animation: gfReady 1.6s ease-in-out infinite; }
 .gf-hint { position: absolute; bottom: -26px; left: 0; right: 0; text-align: center; font-weight: 700; color: #ffd966; text-shadow: 0 0 10px #f7c52d; }
 @keyframes gfBob { 50% { transform: translateY(-12px) rotate(-1.5deg); } }
@@ -840,7 +841,12 @@ html[data-theme=dark] .card { border-color: #274a82; }
   background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%);
   box-shadow: 0 0 14px 4px var(--c), 0 0 44px 10px color-mix(in srgb, var(--c) 45%, transparent);
   animation: stoneFloat 9s ease-in-out infinite; transition: left 1.4s var(--ease), top 1.4s var(--ease), transform .2s; }
-.float-stone.docked { animation: none; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; }
+.float-stone.docked { animation: none; width: 8.4%; aspect-ratio: 1; height: auto; margin: 0; transform: translate(-50%, -50%); }
+.float-stone.docked.off { background: none; box-shadow: none; border: 1.5px dashed color-mix(in srgb, var(--c) 55%, #6b4a10); opacity: .75; }
+.float-stone.docked:hover { transform: translate(-50%, -50%) scale(1.5); }
+.gauntlet .seam { fill: none; stroke: #7a4a08; stroke-width: 3; }
+.gauntlet .gem-on { filter: drop-shadow(0 0 7px #ffe27a); }
+.infinity-stone { width: 8.4%; aspect-ratio: 1; height: auto; margin: 0; transform: translate(-50%, -50%); }
 .float-stone::after { content: attr(data-label); position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 3px 10px; border-radius: 9px; font: 700 12px "Segoe UI", sans-serif;
   background: rgba(8, 14, 30, .92); color: #fff; border: 1px solid var(--c); box-shadow: 0 0 14px var(--c); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .float-stone:hover { transform: scale(1.5); box-shadow: 0 0 24px 10px var(--c), 0 0 70px 20px var(--c); z-index: 3; }

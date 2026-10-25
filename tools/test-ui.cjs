@@ -202,14 +202,16 @@ const assert = require('assert/strict');
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'',openai:'',order:[]}});renderLectures();});
  assert.equal(await page.getByRole('button',{name:'בדיקה שנייה עם AI נוסף',exact:true}).count(),0);
  await page.screenshot({path:path.resolve(__dirname,'../build/timetable-ui.png'),fullPage:true,animations:'disabled'});
+ // Outlook and OneDrive of HIT are in the side menu and in the site tabs.
+ assert.equal(await page.locator('.nav-item[data-site-link=outlook]').count()+await page.locator('.nav-item[data-site-link=onedrive]').count()+await page.locator('#siteTabs [data-site=outlook]').count()+await page.locator('#siteTabs [data-site=onedrive]').count(),4);
  // Infinity stones: with only some connected the gauntlet is not ready; with all five the stones dock, the gauntlet can be clicked and snaps.
  await page.evaluate(()=>{S.moodle='ready';S.ai=Object.assign({},S.ai,{claude:{loggedIn:true},helpers:{gemini:'account',openai:'',order:['gemini']}});S.settings=Object.assign({},S.settings,{snapSeen:false});localStorage.removeItem('sumit.snap');show('settings');});
  await page.waitForSelector('#stoneField .gf-gauntlet');
- assert.equal(await page.locator('#stoneField .float-stone').count(),4);
+ assert.equal(await page.locator('#stoneField .float-stone:not(.off)').count(),4);
  assert.equal(await page.locator('#stoneField .gf-gauntlet.ready').count(),0);
  assert.equal(await page.locator('#stoneField .float-stone[data-label="Power Stone · CS24"]').count(),1);
  await page.evaluate(()=>{S.ai=Object.assign({},S.ai,{helpers:{gemini:'account',openai:'account',order:['gemini','openai']}});renderStoneField();});
- assert.equal(await page.locator('#stoneField .float-stone').count(),5);
+ assert.equal(await page.locator('#stoneField .float-stone:not(.off)').count(),5);
  assert.equal(await page.locator('#stoneField .gf-gauntlet.ready').count(),1);
  await page.locator('#stoneField .gf-gauntlet').click();
  await page.waitForFunction(()=>document.body.classList.contains('snapped'),null,{timeout:8000});

@@ -28,6 +28,8 @@ const IC = {
   info: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.3"/>'),
   note: svgI('<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>'),
   play: svgI('<path d="M7 5v14l12-7z"/>'),
+  mail: svgI('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7.5l8.5 6 8.5-6"/>'),
+  cloud: svgI('<path d="M7 18.5a4.5 4.5 0 010-9 5.5 5.5 0 0110.6-1.4A4 4 0 0117 18.5z"/>'),
   user: svgI('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
   send: svgI('<path d="M20 12H5"/><path d="m11 6-6 6 6 6"/>'),
   clock: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),

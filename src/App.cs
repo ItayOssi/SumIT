@@ -31,6 +31,8 @@ partial class HitStudent : Form
         { "moodle", "https://md.hit.ac.il/my/" },
         { "portal", "https://portal.hit.ac.il/" },
         { "cs24", "https://cs24.co.il/drive?d=e47d12" },
+        { "outlook", "https://outlook.office365.com/mail/" },
+        { "onedrive", "https://hitacil-my.sharepoint.com/_layouts/15/onedrive.aspx" },
         { "notability", "https://notability.com/" },
         { "notebooklm", "https://notebooklm.google.com/" },
         { "calendar", "https://webrashim.hit.ac.il/Portals/student/schedule" }
