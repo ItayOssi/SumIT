@@ -1514,6 +1514,7 @@ function goStep(n) {
   document.querySelectorAll('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
   document.querySelectorAll('#wizDots i').forEach((d, i) => d.classList.toggle('on', i === n));
   $('wizArt').innerHTML = ART[wizArt[n]]();
+  if (window.mountWizGauntlet) window.mountWizGauntlet($('wizArt'));   // the stones fly into the gauntlet as things get connected
   $('wizNext').textContent = wizNext[n];
   $('wizBack').hidden = n === 0 || n === LAST;
   $('wizSkip').hidden = n === LAST;
@@ -1779,10 +1780,7 @@ function maybeHideSplash(force) {
   const remaining = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 2000 - (performance.now() - launchStarted);
   if (remaining > 0) { clearTimeout(splashFinishTimer); splashFinishTimer = setTimeout(() => maybeHideSplash(force), remaining); return; }
   clearInterval(tipTimer);
-  const hide = () => { if ($('splash')) $('splash').classList.add('hide'); };
-  // At start-up the stones of what is connected fly into the gauntlet, and then the app shows.
-  if (window.splashFinale && !DEMO && $('gauntletStage')) { if (S.splashStarted) return; S.splashStarted = true; setTimeout(hide, 12000); window.splashFinale(hide); return; }
-  hide();
+  if ($('splash')) $('splash').classList.add('hide');
 }
 setTimeout(() => maybeHideSplash(true), 7000);
 
@@ -1792,7 +1790,7 @@ function start() {
   host.addEventListener('message', e => onMessage(e.data));
   icons();
   $('splashLogo').innerHTML = ART.mascot(); $('navLogo').innerHTML = ART.mascot();
-  if (!DEMO && window.gauntletStage && !(localStorage.getItem('sumit.snap') === '1')) { const box = document.createElement('div'); box.innerHTML = window.gauntletStage(); $('splashLogo').after(box.firstChild); }
+
   renderHome(); renderTimetable(); refreshJobs(); renderStatus();
   send({ type: 'ready' });
 }

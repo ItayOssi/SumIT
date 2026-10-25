@@ -33,18 +33,20 @@ partial class HitStudent
     double EstimatedSummarySeconds(string course)
     {
         var meta = LoadMeta(course);
-        var list = meta.ContainsKey("summarySeconds") ? meta["summarySeconds"] as ArrayList : null;
-        if (list == null || list.Count == 0) return Provider == "gemini" ? 900 : 420;
-        return Math.Max(120, list.Cast<object>().Reverse().Take(3).Select(Convert.ToDouble).Average());
+        string key = Provider == "gemini" ? "summarySecondsGemini" : "summarySeconds";   // Gemini writes slower than Claude: its own history
+        var list = meta.ContainsKey(key) ? meta[key] as ArrayList : null;
+        if (list == null || list.Count == 0) return Provider == "gemini" ? 1200 : 420;
+        return Math.Max(Provider == "gemini" ? 600 : 120, list.Cast<object>().Reverse().Take(3).Select(Convert.ToDouble).Average());
     }
 
     void RememberSummarySeconds(string course, double seconds)
     {
         var meta = LoadMeta(course);
-        var list = (meta.ContainsKey("summarySeconds") ? meta["summarySeconds"] as ArrayList : null) ?? new ArrayList();
+        string key = Provider == "gemini" ? "summarySecondsGemini" : "summarySeconds";
+        var list = (meta.ContainsKey(key) ? meta[key] as ArrayList : null) ?? new ArrayList();
         list.Add((int)seconds);
         while (list.Count > 5) list.RemoveAt(0);
-        meta["summarySeconds"] = list;
+        meta[key] = list;
         SaveMeta(course, meta);
     }
 
@@ -57,7 +59,8 @@ partial class HitStudent
             double pct = 93 * (1 - Math.Exp(-t / (estimate / 2.3)));
             if (printing()) pct = Math.Max(pct, 95);
             double left = printing() ? 15 : Math.Max(25, estimate - t);
-            var snapshot = new { pct = (int)Math.Min(99, pct), eta = t > estimate * 1.7 ? -1 : (int)left, text = phase() };
+            string elapsed = t > 240 ? " (" + (int)(t / 60) + " דקות)" : "";   // a long write is shown as long, not as "almost there"
+            var snapshot = new { pct = (int)Math.Min(99, pct), eta = t > estimate * 1.7 ? -1 : (int)left, text = phase() + elapsed };
             summaryProgress[course + "|" + num] = snapshot;
             Send(new { type = "sectionProgress", course = course, num = num, pct = snapshot.pct, eta = snapshot.eta, text = snapshot.text });
             await Task.Delay(2000);
