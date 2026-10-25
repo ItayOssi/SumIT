@@ -1363,6 +1363,7 @@ $('siteDownloads').onclick = () => send({type:'siteAction',action:'downloads'});
 $('siteExternal').onclick = () => send({ type: 'siteAction', action: 'external' });
 $('sitePrint').onclick = () => send({ type: 'siteAction', action: 'savepdf' });
 $('siteCopy').onclick = () => send({ type: 'siteAction', action: 'copylink' });
+if ($('checkUpdate')) $('checkUpdate').onclick = () => send({ type: 'checkUpdate' });
 $('portalUpdate').onclick = () => { send({ type: 'importTimetable', fromFolder: true }); toast('קורא את הקבצים מתיקיית מערכת שעות...'); };
 function syncDownloadTarget() { send({ type: 'setDownloadTarget', course: $('dlCourse').value, folder: $('dlFolder').value }); $('dlFolder').disabled = !$('dlCourse').value; }
 // The bar above a site always shows the course and the lecture that files are saved into.
@@ -1720,6 +1721,7 @@ function onMessage(m) {
       break;
     }
     case 'toast': toast(m.text, { error: m.error }); break;
+    case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }
     case 'update': S.update = m; renderBanners(); break;
     case 'updateProgress': S.update = Object.assign(S.update || {}, { progress: m.text, error: m.error }); renderBanners(); break;
     case 'updateReady': S.updateReady = m.version; renderBanners(); toast(`העדכון לגרסה ${m.version} מוכן. הוא ייכנס בפעם הבאה שהאפליקציה נפתחת, או עכשיו:`, { action: 'הפעל מחדש', onAction: () => send({ type: 'restartForUpdate' }), ms: 15000 }); break;

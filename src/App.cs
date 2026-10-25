@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.1";
+    public const string Version = "1.0.2";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -415,6 +415,7 @@ partial class HitStudent : Form
                 foreach (var j in jobs) SendJob(j);
                 CheckClipboard(false);
                 SendTimetable(); SendAcademic();
+                if (pendingUpdate != null) Send(pendingUpdate); else if (!updating) CheckForUpdate();
                 var ignored = PollStatus(true);
                 break;
             case "finishOnboarding":
@@ -437,6 +438,7 @@ partial class HitStudent : Form
                 }
                 break;
             case "installUpdate": InstallUpdate(); break;
+            case "checkUpdate": Send(new { type = "updateCheck", text = "בודק..." }); CheckForUpdate(true); break;
             case "restartForUpdate": RestartIntoUpdate(); break;
             case "addRecording":
                 string rec = Str(m, "url").Trim();
@@ -696,7 +698,7 @@ partial class HitStudent : Form
     bool updating, restartingForUpdate;
     DateTime lastUpdateCheck = DateTime.MinValue;
 
-    async void CheckForUpdate()
+    async void CheckForUpdate(bool manual = false)
     {
         lastUpdateCheck = DateTime.Now;
         if (stagedUpdateDir != null || updating) return;
@@ -709,7 +711,7 @@ partial class HitStudent : Form
                 var rel = json.Deserialize<Dictionary<string, object>>(body);
                 string tag = Str(rel, "tag_name").TrimStart('v');
                 System.Version latest, mine;
-                if (!System.Version.TryParse(tag, out latest) || !System.Version.TryParse(Version, out mine) || latest <= mine) return;
+                if (!System.Version.TryParse(tag, out latest) || !System.Version.TryParse(Version, out mine) || latest <= mine) { pendingUpdate = null; Send(new { type = "updateCheck", text = "יש לך את הגרסה האחרונה (" + Version + "). נבדק " + DateTime.Now.ToString("HH:mm") }); return; }
                 updateVersion = tag;
                 updatePage = Str(rel, "html_url");
                 updateZipUrl = updateShaUrl = null;
@@ -721,12 +723,13 @@ partial class HitStudent : Form
                     if (Str(a, "name") == "SumIT.zip.sha256") updateShaUrl = url;
                 }
                 bool canAuto = updateZipUrl != null && updateShaUrl != null;
-                Send(new { type = "update", version = tag, url = updatePage, canAuto = canAuto, notes = Trunc(Str(rel, "body"), 600) });
+                pendingUpdate = new { type = "update", version = tag, url = updatePage, canAuto = canAuto, notes = Trunc(Str(rel, "body"), 600) }; Send(pendingUpdate);
                 // Download only after the student clicks the update button.
             }
         }
-        catch { }
+        catch (Exception ex) { Send(new { type = "updateCheck", text = "לא הצלחתי לבדוק עדכונים: " + ex.Message }); }
     }
+    object pendingUpdate;
 
     async void InstallUpdate()
     {
