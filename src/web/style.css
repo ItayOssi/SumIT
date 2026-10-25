@@ -821,3 +821,40 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .nav-item.active { background: var(--accent-soft); }
 @media (max-width: 1180px) { .hero .illus { width: 190px; height: 190px; } }
 @media (max-width: 680px) { .hero .illus { width: 170px; height: 170px; } }
+
+/* Infinity stones: the splash, the floating field in the settings, and the snap */
+.splash .gauntlet-stage { margin: 6px auto 0; }
+.gauntlet-stage { position: relative; width: 230px; height: 172px; }
+.gauntlet-stage .gauntlet { width: 100%; height: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .45)); }
+.infinity-stone, .stone-missing { position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; }
+.infinity-stone { background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%); box-shadow: 0 0 10px 3px var(--c), 0 0 30px 7px color-mix(in srgb, var(--c) 45%, transparent); }
+.stone-missing { border: 1.5px dashed color-mix(in srgb, var(--c) 70%, #888); opacity: .55; }
+#stoneField { position: fixed; z-index: 15; pointer-events: none; overflow: hidden; }
+.gf-gauntlet { position: absolute; width: 170px; height: 128px; pointer-events: auto; animation: gfBob 6s ease-in-out infinite; filter: drop-shadow(0 14px 24px rgba(0, 0, 0, .45)); opacity: .95; }
+.gf-gauntlet .gauntlet { width: 100%; height: 100%; }
+.gf-gauntlet.ready { cursor: pointer; filter: drop-shadow(0 0 22px rgba(247, 197, 45, .75)); animation: gfReady 1.6s ease-in-out infinite; }
+.gf-hint { position: absolute; bottom: -26px; left: 0; right: 0; text-align: center; font-weight: 700; color: #ffd966; text-shadow: 0 0 10px #f7c52d; }
+@keyframes gfBob { 50% { transform: translateY(-12px) rotate(-1.5deg); } }
+@keyframes gfReady { 50% { filter: drop-shadow(0 0 38px rgba(247, 197, 45, 1)); } }
+.float-stone { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; pointer-events: auto; cursor: help;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--c) 45%, rgba(0, 0, 0, .55) 140%);
+  box-shadow: 0 0 14px 4px var(--c), 0 0 44px 10px color-mix(in srgb, var(--c) 45%, transparent);
+  animation: stoneFloat 9s ease-in-out infinite; transition: left 1.4s var(--ease), top 1.4s var(--ease), transform .2s; }
+.float-stone.docked { animation: none; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; }
+.float-stone::after { content: attr(data-label); position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 3px 10px; border-radius: 9px; font: 700 12px "Segoe UI", sans-serif;
+  background: rgba(8, 14, 30, .92); color: #fff; border: 1px solid var(--c); box-shadow: 0 0 14px var(--c); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.float-stone:hover { transform: scale(1.5); box-shadow: 0 0 24px 10px var(--c), 0 0 70px 20px var(--c); z-index: 3; }
+.float-stone:hover::after { opacity: 1; transform: translateX(-50%) scale(.67); }
+@keyframes stoneFloat { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(22px, -16px); } 50% { transform: translate(-14px, -28px); } 75% { transform: translate(-24px, 12px); } }
+.float-stone.charged { animation: stoneCharge .35s ease-in-out infinite; }
+@keyframes stoneCharge { 50% { transform: scale(2.1); box-shadow: 0 0 40px 18px var(--c), 0 0 120px 40px var(--c); } }
+.gf-gauntlet.snap { animation: gfSnap .5s ease-in-out .7s both; }
+@keyframes gfSnap { 0% { transform: scale(1); } 40% { transform: scale(1.18) rotate(-5deg); } 100% { transform: scale(1) rotate(2deg); } }
+.snap-flash { position: fixed; inset: 0; z-index: 9999; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
+.snap-flash.on { opacity: 1; }
+.dusted { pointer-events: none !important; animation: dustAway 1.9s ease-in var(--delay, 0s) forwards; }
+@keyframes dustAway { 0% { opacity: 1; filter: blur(0); transform: none; } 100% { opacity: 0; filter: blur(9px) grayscale(1); transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.55); } }
+.brand-sad { opacity: 0; transition: opacity .5s; }
+.snapped .brand-sad { opacity: 1; }
+.snapped .brand-art, .snapped .brand .logo { animation: sadAway 2.4s ease-in 1.6s forwards !important; }
+@keyframes sadAway { 0% { opacity: 1; filter: none; } 100% { opacity: 0; filter: grayscale(1) blur(8px); transform: translateY(-30px) scale(.8); } }

@@ -10,7 +10,7 @@ using Microsoft.Web.WebView2.Core;
 
 // The main thing the student gets for each lecture: one PDF with a full, focused summary of the lecture followed by
 // its homework, where every question says which part of the summary it uses and how this lecturer expects it solved.
-// The AI builds the summary page with the study skill; the app prints it to PDF in its own hidden browser and joins
+// The AI builds the summary page with the study method; the app prints it to PDF in its own hidden browser and joins
 // it with the homework sheets. Both files are saved inside the lecture's folder ("סיכום הרצאה.html" / ".pdf").
 partial class HitStudent
 {
@@ -34,7 +34,7 @@ partial class HitStudent
     {
         var meta = LoadMeta(course);
         var list = meta.ContainsKey("summarySeconds") ? meta["summarySeconds"] as ArrayList : null;
-        if (list == null || list.Count == 0) return 420;
+        if (list == null || list.Count == 0) return Provider == "gemini" ? 900 : 420;
         return Math.Max(120, list.Cast<object>().Reverse().Take(3).Select(Convert.ToDouble).Average());
     }
 

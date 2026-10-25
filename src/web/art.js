@@ -61,6 +61,7 @@ const ART = {
         <ellipse cx="548" cy="590" rx="402" ry="382" fill="url(#${id}-halo)"/>
         <image href="images/brand.png" width="1024" height="1024" mask="url(#${id}-body)"/>
         <g class="brand-arm"><image href="images/brand.png" width="1024" height="1024" clip-path="url(#${id}-arm)"/></g>
+        <g class="brand-sad"><ellipse cx="520" cy="372" rx="108" ry="46" fill="#f7dcb8"/><path d="M455 400 Q520 340 585 400" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round" fill="none"/><path d="M468 322 q-14 24 0 38 q14 -14 0 -38z" fill="#5ec8ff" stroke="#1a1a1a" stroke-width="3"/></g>
         <g class="brand-tooth-glint" transform="translate(548 375)"><path d="M0 -24 L5 -5 L24 0 L5 5 L0 24 L-5 5 L-24 0 L-5 -5Z" fill="white"/><circle r="4" fill="#d8ffff"/></g>
       </g>
     </svg>`;

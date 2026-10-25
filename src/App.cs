@@ -370,7 +370,7 @@ partial class HitStudent : Form
     {
         Send(new
         {
-            hitOneDrive = HitOneDrive(), studyInHitOneDrive = HitOneDrive().Length > 0 && StudyRoot.StartsWith(HitOneDrive().TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase),
+            snapSeen = Bool(settings, "snapSeen"), hitOneDrive = HitOneDrive(), studyInHitOneDrive = HitOneDrive().Length > 0 && StudyRoot.StartsWith(HitOneDrive().TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase),
             tasks = settings.ContainsKey("tasks") ? settings["tasks"] : new System.Collections.ArrayList(),
             type = "settings", studyRoot = StudyRoot, recordingsDir = RecordingsDir, notabilityDir = NotabilityDir,
             aiProvider = Provider, hasGeminiKey = Str(settings, "geminiKey").Length > 0, hasOpenAiKey = Str(settings, "openaiKey").Length > 0,
@@ -551,6 +551,7 @@ partial class HitStudent : Form
 
             // Folders
             case "chooseFolder": ChooseFolder(Str(m, "which")); break;
+            case "snapDone": settings["snapSeen"] = true; SaveSettings(); break;
             case "useHitOneDrive":
                 string hitOd = HitOneDrive();
                 if (hitOd.Length == 0) { Toast("לא מצאתי OneDrive של HIT במחשב", true); break; }

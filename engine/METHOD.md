@@ -1,5 +1,5 @@
 ---
-name: course-study-builder
+name: sumit-study
 description: Turn a university course's weekly lecture slides, exercise sheets, solutions and past exams (PDFs, incl. handwritten) into exam-focused study material - one interactive HTML study page per week built from the lecturer's own worked solutions (every formula he uses, explained inside its topic section, must-know vs skip, gap-filling explanations, question patterns, errata in official solutions, and a final 'use in exercises' section with a solving hint per exercise) plus copies of the exercise PDFs with red margin pointers next to each question linking to its hint and to the sections it needs (never answers). Use when the user uploads course material for a week ("שיעור N", "week N"), asks for a study page / summary sheet for a course, asks to annotate exercise PDFs with where-to-look hints, or uploads past exams to re-weight the material. Hebrew-first (RTL), works for any language.
 ---
 

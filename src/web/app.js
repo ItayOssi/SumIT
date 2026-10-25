@@ -145,6 +145,7 @@ function show(view) {
   }
   if (view === 'home') renderHome();
   if (view === 'tasks') renderTasks($('tasksPage'), false);
+  if (view === 'settings' && window.renderStoneField) setTimeout(renderStoneField, 120); else { const sf = document.getElementById('stoneField'); if (sf) sf.remove(); }
   if (view === 'courses' && !S.courses) loadCourses();
 }
 document.querySelectorAll('.nav-item[data-view]').forEach(n => n.onclick = () => show(n.dataset.view));
@@ -1539,7 +1540,7 @@ function renderWizardMoodle() {
   const ok = S.moodle === 'ready';
   $('wizMoodle').classList.toggle('ok', ok);
   $('wizMoodleTitle').textContent = ok ? `מחובר${S.userName ? ' · ' + S.userName : ''}` : S.moodle === 'connecting' ? 'מתחבר...' : 'עוד לא מחובר';
-  $('wizMoodleSub').textContent = ok ? 'Moodle מחובר, ואפשר להמשיך. ל-Zoom ולפורטל תתחבר כשתפתח אותם בפעם הראשונה.' : 'לחץ על "התחבר". חלון ההתחברות של HIT ייפתח כאן באפליקציה.';
+  $('wizMoodleSub').textContent = ok ? 'ההתחברות ל-Moodle הושלמה, ואפשר להמשיך.' : 'לחץ על "התחבר". חלון ההתחברות של HIT ייפתח כאן באפליקציה.';
   $('wizMoodleBtn').hidden = ok;
 }
 
@@ -1778,7 +1779,10 @@ function maybeHideSplash(force) {
   const remaining = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 2000 - (performance.now() - launchStarted);
   if (remaining > 0) { clearTimeout(splashFinishTimer); splashFinishTimer = setTimeout(() => maybeHideSplash(force), remaining); return; }
   clearInterval(tipTimer);
-  if ($('splash')) $('splash').classList.add('hide');
+  const hide = () => { if ($('splash')) $('splash').classList.add('hide'); };
+  // At start-up the stones of what is connected fly into the gauntlet, and then the app shows.
+  if (window.splashFinale && !DEMO && $('gauntletStage')) { if (S.splashStarted) return; S.splashStarted = true; setTimeout(hide, 12000); window.splashFinale(hide); return; }
+  hide();
 }
 setTimeout(() => maybeHideSplash(true), 7000);
 
@@ -1788,6 +1792,7 @@ function start() {
   host.addEventListener('message', e => onMessage(e.data));
   icons();
   $('splashLogo').innerHTML = ART.mascot(); $('navLogo').innerHTML = ART.mascot();
+  if (!DEMO && window.gauntletStage && !(localStorage.getItem('sumit.snap') === '1')) { const box = document.createElement('div'); box.innerHTML = window.gauntletStage(); $('splashLogo').after(box.firstChild); }
   renderHome(); renderTimetable(); refreshJobs(); renderStatus();
   send({ type: 'ready' });
 }
