@@ -4,7 +4,9 @@ $out = Join-Path $repo 'build\regression'
 New-Item -ItemType Directory -Force $out | Out-Null
 $lib = Join-Path $repo 'build\webview2-1.0.4314.35\pkg\lib\net462'
 Copy-Item "$lib\Microsoft.Web.WebView2.Core.dll", "$lib\Microsoft.Web.WebView2.WinForms.dll" $out -Force
-Remove-Item (Join-Path $out 'web') -Recurse -Force -ErrorAction SilentlyContinue
+$testWeb = [IO.Path]::GetFullPath((Join-Path $out 'web'))
+if (-not $testWeb.StartsWith([IO.Path]::GetFullPath($repo) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test directory' }
+Remove-Item -LiteralPath $testWeb -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item (Join-Path $repo 'src\web') (Join-Path $out 'web') -Recurse -Force
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $sources = (Get-ChildItem (Join-Path $repo 'src') -Filter *.cs).FullName

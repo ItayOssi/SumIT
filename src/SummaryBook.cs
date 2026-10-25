@@ -14,7 +14,7 @@ partial class HitStudent
             if (!File.Exists(page)) return;
             string dir = Path.Combine(Path.GetDirectoryName(page), ".sumit-math");
             Directory.CreateDirectory(dir);
-            foreach (string f in new[] { "study-book.js", "study-book.css" }) File.Copy(Path.Combine(WebDir, f), Path.Combine(dir, f), true);
+            foreach (string f in new[] { "study-book.js", "study-book.css", "study-diagrams.js" }) File.Copy(Path.Combine(WebDir, f), Path.Combine(dir, f), true);
             string html = File.ReadAllText(page, Encoding.UTF8), orig = html;
             // The first version of the book was written into the page itself.
             html = Regex.Replace(html, "<style id=\"sumit-book\">.*?</style>", "", RegexOptions.Singleline);
@@ -24,6 +24,11 @@ partial class HitStudent
                 const string tags = "<link rel=\"stylesheet\" href=\".sumit-math/study-book.css\" data-sumit-book><script defer src=\".sumit-math/study-book.js\" data-sumit-book></script>";
                 int h = html.LastIndexOf("</head>", StringComparison.OrdinalIgnoreCase);
                 html = h >= 0 ? html.Insert(h, tags) : tags + html;
+            }
+            if (!html.Contains("data-sumit-diagrams")) {
+                const string diagrams = "<script defer src=\".sumit-math/study-diagrams.js\" data-sumit-diagrams></script>";
+                int end = html.LastIndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+                html = end >= 0 ? html.Insert(end, diagrams) : diagrams + html;
             }
             if (html != orig) File.WriteAllText(page, html, new UTF8Encoding(false));
         }

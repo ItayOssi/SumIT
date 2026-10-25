@@ -107,6 +107,12 @@ partial class HitStudent
         app.summaryWorkOverride = (course, num) => { app.shuttingDown = true; File.WriteAllText(previous, "interrupted on close"); return System.Threading.Tasks.Task.FromResult(new AiResult { Error = true }); };
         Run(() => app.LecturePdfAsync("queue-a", 1, "one", false, true)); app.shuttingDown = false;
         check("closing retains a durable pending job and the previous page", File.Exists(app.PendingSummary("queue-a",1)) && File.ReadAllText(previous).Contains("complete"));
+        app.summaryWorkOverride = (course, num) => System.Threading.Tasks.Task.FromResult(new AiResult { Error = true, Text = "test only" });
+        var notesMessage = new Dictionary<string, object> { { "course", "queue-a" }, { "num", 1 }, { "title", "one" }, { "notes", "רק שאלות 1–2; לפרט את השיטה" } };
+        app.StartLectureSummary(notesMessage);
+        check("summary notes saved per lecture without leaking to other courses", app.SummaryNotes("queue-a",1).Contains("1–2") && app.SummaryNotes("queue-b",1) == "");
+        notesMessage["notes"] = ""; app.StartLectureSummary(notesMessage);
+        check("summary notes can be cleared", app.SummaryNotes("queue-a",1) == "");
         app.summaryWorkOverride = null;
         string fixture = Path.Combine(root, "math", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(fixture));
         File.WriteAllText(fixture, "<html><head><script src='https://cdn.example/katex.min.js'></script></head><body dir='rtl'>מהירות $v^2-v_0^2=2a\\Delta x$ וגם \\(x+1\\) <details><summary>פתרון</summary>עברית ואנגלית</details></body></html>");
@@ -117,6 +123,7 @@ partial class HitStudent
         File.WriteAllText(bookPage, "<!doctype html><html dir=\"rtl\"><head><meta charset=\"utf-8\"></head><body><div class=\"wrap\"><header class=\"top\"><h1>נושא</h1></header><nav class=\"toc\"><a href=\"#must\">חובה</a><a href=\"#core\">ליבה</a><a href=\"#use\">תרגילים</a></nav><h2 id=\"must\">🎯 מה חובה</h2><p>מהירות $v=x/t$</p><h2 id=\"core\">הסבר</h2><p>$$a=\\frac{\\Delta v}{\\Delta t}$$</p><h2 id=\"use\">🎯 שימוש בתרגילים</h2><p>שאלה 1</p><footer>f</footer></div></body></html>", new System.Text.UTF8Encoding(false));
         app.PrepareStudyPage(bookPage); app.PrepareStudyPage(bookPage);
         string bookHtml = File.ReadAllText(bookPage);
+        check("diagram support is offline and added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "data-sumit-diagrams").Count == 1 && File.Exists(Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math", "study-diagrams.js")));
         check("the study page becomes a book, added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "data-sumit-book").Count == 2 && File.Exists(Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math", "study-book.js")) && bookHtml.Contains("sumit-render-start"));        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
         if (!string.IsNullOrEmpty(sample) && File.Exists(sample)) {
             string actual = Path.Combine(root, "actual-study", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(actual));

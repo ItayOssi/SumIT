@@ -47,3 +47,21 @@
 .booktheme:hover{color:var(--text,#111);border-style:solid}
 .booktheme.floating{position:fixed;top:12px;left:12px;z-index:20;width:auto;background:var(--surface,#fff)}
 @media print{.booktheme{display:none!important}}
+
+/* A calm reading rhythm, shared by new and existing study pages. */
+.bookmain { min-width:0; }
+.bookpage { line-height:1.85; }
+.bookpage > p, .bookpage > ul, .bookpage > ol { margin-block:18px; }
+.bookpage h2 { margin-block:38px 18px; line-height:1.45; }
+.bookpage h3 { margin-block:26px 12px; line-height:1.5; }
+.bookpage details.q { margin-block:14px; }
+.bookpage details.q > summary { padding:16px 18px; line-height:1.7; }
+.bookpage details.q p, .bookpage details.q li { margin-block:14px; line-height:1.9; }
+.bookpage .katex-display { margin-block:20px; }
+.diagram-scroll { max-width:100%; overflow-x:auto; padding:12px 0; direction:ltr; }
+.diagram-scroll svg { display:block; margin:auto; }
+.diagram-legend { list-style:none; padding:0; margin:12px 0 22px; text-align:start; }
+.diagram-legend li { display:flex; gap:10px; align-items:baseline; line-height:1.8; margin:10px 0; }
+.diagram-legend bdi { min-width:0; overflow-wrap:anywhere; }
+.diagram-key { flex:none; display:inline-grid; place-items:center; min-width:25px; height:25px; border:1px solid var(--line,#aaa); border-radius:50%; font-weight:700; }
+@media print { .diagram-scroll { overflow:visible; } .diagram-scroll svg { max-width:100%!important; } .diagram-legend { break-inside:avoid; } }

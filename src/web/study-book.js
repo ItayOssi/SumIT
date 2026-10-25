@@ -28,14 +28,19 @@
   }
   function isNotYet(el) {
     if (!el.classList) return false;
-    if (el.classList.contains('notyet')) return true;
     if (el.tagName === 'DETAILS' || el.tagName === 'H2' || el.querySelector('details')) return false;
+    if (el.classList.contains('notyet')) return true;
     return /לא לעשות עדיין/.test((el.textContent || '').slice(0, 200)) && /callout|alert|note|warn|err/.test(el.className || '');
-  }  function numbersIn(text) {
-    var out = {}, re = /שאל(?:ה|ות)\s*((?:\d+\s*(?:,|ו-?|-|–)?\s*)+)/g, m, d;
-    while ((m = re.exec(text))) { var ds = m[1].match(/\d+/g) || []; for (d = 0; d < ds.length; d++) out[ds[d]] = true; }
+  }
+  // Only a direct deferral statement identifies a deferred question. Other numbers in its explanation are not scope.
+  function deferredNumbers(el) {
+    var out = {}, explicit = el.getAttribute('data-deferred-questions');
+    if (explicit && /^\d+(?:\s*,\s*\d+)*$/.test(explicit)) { explicit.split(',').forEach(function(n){out[String(Number(n.trim()))]=true;}); return out; }
+    var text = el.textContent || '', re = /שאלה\s*(\d+)\s*(?:\([^)]{0,100}\))?\s*[:–—-]?\s*(?:לא לעשות עדיין|נדחתה|לא להרצאה הזו)/g, m;
+    while ((m = re.exec(text))) out[m[1]] = true;
     return out;
   }
+
 
   function build() {
     var wrap = document.querySelector('.wrap');
@@ -138,7 +143,7 @@
   // (the lecturer said to skip it, or it needs what has not been taught yet) is set apart and says so.
   function groupQuestions(page, notyet) {
     var later = {};
-    notyet.forEach(function (e) { var n = numbersIn(e.textContent || ''); for (var k in n) later[k] = true; });
+    notyet.forEach(function (e) { var n = deferredNumbers(e); for (var k in n) later[k] = true; });
     var items = Array.prototype.slice.call(page.querySelectorAll('details.q')), groups = {}, any = false;
     items.forEach(function (d) {
       var t = (d.querySelector('summary') || d).textContent || '', m = /שאלה\s*(\d+)/.exec(t);
@@ -146,12 +151,18 @@
       any = true;
       var n = m[1], gr = groups[n];
       if (!gr) {
-        gr = document.createElement('section'); gr.className = 'qgroup' + (later[n] || d.classList.contains('notyet') ? ' later' : '');
+        gr = document.createElement('section'); gr.className = 'qgroup'; gr.dataset.question = n;
         var h = document.createElement('h3'); h.className = 'qghead'; h.textContent = 'שאלה ' + n;
-        if (gr.classList.contains('later')) { var bd = document.createElement('span'); bd.className = 'qbadge'; bd.textContent = 'לא להרצאה הזו'; h.appendChild(bd); }
+
         gr.appendChild(h); d.parentNode.insertBefore(gr, d); groups[n] = gr;
       }
       gr.appendChild(d);
+    });
+    Object.keys(groups).forEach(function(n) {
+      var gr=groups[n], parts=Array.prototype.slice.call(gr.querySelectorAll('details.q'));
+      // One deferred subpart must not mark the entire question as deferred.
+      var allDeferred=parts.length && parts.every(function(d){return d.classList.contains('notyet')||d.dataset.homeworkStatus==='deferred';});
+      if(later[n] || allDeferred) { gr.classList.add('later');var badge=document.createElement('span');badge.className='qbadge';badge.textContent='לא לעשות עדיין';gr.querySelector('.qghead').appendChild(badge); }
     });
   }
 

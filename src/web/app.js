@@ -926,6 +926,15 @@ function renderCourseHeader() {
 // A summary that is being made: kept on the app's side, so it is still there when the student comes back to the course.
 const lectureState = (row) => ({ aiBusy: !!row.running, pct: row.progress ? row.progress.pct : null, eta: row.progress ? row.progress.eta : null, pctText: row.progress ? row.progress.text : '' });
 
+function requestLectureSummary(course, lecture, force=false) {
+  if (document.querySelector('.summary-options')) return;
+  const dialog=h(`<dialog class="summary-options" dir="rtl" aria-labelledby="summaryOptionsTitle"><form method="dialog"><h2 id="summaryOptionsTitle">${force?'בנייה מחדש':'יצירת סיכום'} · הרצאה ${esc(String(lecture.num))}</h2><p class="muted">הסיכום יחבר בין ההסברים, הדוגמאות ושיעורי הבית. אפשר להוסיף דגשים לפני שמתחילים.</p><label>הערות לסיכום <small class="muted">(לא חובה)</small><textarea name="notes" rows="6" maxlength="4000" placeholder="למשל: המרצה ביקשה לפתור רק את שאלות 1–2; להסביר לאט את בחירת השיטה."></textarea></label><p class="muted">ההערות נשמרות להרצאה. שינוי בהן יילקח בחשבון גם אם קבצי ההרצאה לא השתנו.</p><div class="row"><button type="submit" class="primary">${force?'בנה מחדש':'צור סיכום'}</button><button type="button" class="ghost" data-cancel>ביטול</button></div></form></dialog>`);
+  dialog.querySelector('textarea').value=lecture.summaryNotes||'';
+  dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+  dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const notes=dialog.querySelector('textarea').value.trim();lecture.summaryNotes=notes;send({type:'lecturePdf',course:course.name,num:lecture.num,title:lecture.title,force,notes});dialog.close();};
+  dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();dialog.querySelector('textarea').focus();
+}
+
 function renderLectures() {
   const box = $('lectures'); box.innerHTML = '';
   if (examsIntroNeeded()) box.append(examsIntroCard());
@@ -1017,12 +1026,12 @@ function fillLecture(el, s) {
     // The summary opens inside the app (with the chat next to it for questions); the PDF is a file in the lecture's folder.
     btn('book', 'פתח את הסיכום', 'primary', () => openViewer(L.studyPage || L.lecturePdf, `הרצאה ${s.num} · סיכום`, L.lecturePdf, s.num));
     if (L.lecturePdf) btn('file', 'פתח כ-PDF', 'soft', () => send({ type: 'openPath', path: L.lecturePdf }));
-    btn('sparkles', 'עדכן סיכום אם החומר השתנה', 'soft', () => send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title }), s.busy);
+    btn('sparkles', 'עדכן סיכום אם החומר השתנה', 'soft', () => requestLectureSummary(course, s), s.busy);
     // Another AI (ChatGPT / Gemini on the student's account) checks every solution in the summary and adds its notes at the end.
     if (helpersConnected()) btn('check', 'בדיקה שנייה עם AI נוסף', 'soft', () => send({ type: 'secondOpinion', course: course.name, num: s.num }), s.busy);
-    btn('refresh', 'בנה מחדש מההתחלה', 'ghost', () => send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title, force: true }), s.busy);
+    btn('refresh', 'בנה מחדש מההתחלה', 'ghost', () => requestLectureSummary(course, s, true), s.busy);
   } else if (s.num > 0) btn('sparkles', 'צור סיכום PDF של ההרצאה', L.files || L.transcripts ? 'primary' : 'soft',
-    () => { send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title }); }, s.busy || !(L.files || L.transcripts));
+    () => requestLectureSummary(course, s), s.busy || !(L.files || L.transcripts));
   if (L.exists) btn('folder', 'תיקייה', 'ghost', () => send({ type: 'openPath', path: L.dir }));
   if (s.num > 0) btn('chat', 'שאל על השיעור', 'ghost', () => setChatScope('lesson:' + s.num));
 
