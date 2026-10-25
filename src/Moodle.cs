@@ -528,7 +528,7 @@ return out;";
         "(תרגיל|תרגול|פתרון|פתרונות|שיעורי בית|מטלה|ש\"ב|targ|tirgul|solut|homework|\\bhw|exercise|assignment|\\bsol)",
         RegexOptions.IgnoreCase);
     static readonly Regex ExamName = new Regex(
-        "(מבחן|בחינה|בחינות|מועד [אבג]|\\bexam|midterm|final)",
+        "(מבחן|מבחנ|בחינ|מועד [אבג]|שנים קודמות|\\bexam|midterm|\\bfinal)",
         RegexOptions.IgnoreCase);
     static readonly Regex SyllabusName = new Regex(
         "(סילבוס|syllabus|תכנית הקורס|מידע על הקורס|דרישות הקורס|מבנה הציון)",

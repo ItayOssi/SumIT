@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 // whole course - every past exam with its solutions, or the syllabus (which it then reads into the course information).
 partial class HitStudent
 {
-    static readonly Regex ExamSectionName = new Regex("(מבחנ|בחינ|מועד [אבג]|exam|midterm)", RegexOptions.IgnoreCase);
+    static readonly Regex ExamSectionName = new Regex("(מבחן|מבחנ|בחינ|מועד [אבג]|exam|midterm)", RegexOptions.IgnoreCase);
     static readonly string[] SkippedMods = { "forum", "quiz", "label", "choice", "feedback", "lti", "h5pactivity", "zoom", "url" };
     readonly HashSet<string> moodleDownloading = new HashSet<string>();
 
@@ -31,6 +31,30 @@ partial class HitStudent
             }
         }
         return picked;
+    }
+
+    // A zip of past exams ("מבחנים משנים קודמות") is opened into the same folder: only documents, flat names, nothing outside the folder.
+    // Returns how many files came out (the zip itself is then removed).
+    static readonly string[] ZipKeep = { ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".png", ".jpg", ".jpeg", ".txt", ".html", ".htm", ".xlsx" };
+    int UnpackZip(string zipPath, string dest)
+    {
+        if (!string.Equals(Path.GetExtension(zipPath), ".zip", StringComparison.OrdinalIgnoreCase)) return 0;
+        int n = 0;
+        try
+        {
+            using (var za = System.IO.Compression.ZipFile.OpenRead(zipPath))
+                foreach (var en in za.Entries)
+                {
+                    if (string.IsNullOrEmpty(en.Name) || en.Length > 200L * 1024 * 1024) continue;
+                    string ext = Path.GetExtension(en.Name).ToLowerInvariant();
+                    if (!ZipKeep.Contains(ext)) continue;
+                    string path = UniquePathIn(dest, SafeName(en.Name));
+                    using (var inp = en.Open()) using (var outp = File.Create(path)) inp.CopyTo(outp); n++;
+                }
+            File.Delete(zipPath);
+        }
+        catch { }
+        return n > 0 ? n - 1 : 0;
     }
 
     // what = "exams" | "syllabus"
@@ -69,9 +93,9 @@ partial class HitStudent
                     try
                     {
                         if (!IsMoodleUrl(url)) continue;
-                        if (mod == "resource") { if (await DownloadFile(http, url + (url.Contains("?") ? "&" : "?") + "redirect=1", dest, true) != null) saved++; }
-                        else if (mod == "file") { if (await DownloadFile(http, url, dest, true) != null) saved++; }
-                        else foreach (string f in await PluginFiles(http, url)) if (await DownloadFile(http, f, dest, true) != null) saved++;
+                        if (mod == "resource") { var rp = await DownloadFile(http, url + (url.Contains("?") ? "&" : "?") + "redirect=1", dest, true); if (rp != null) saved += 1 + UnpackZip(rp, dest); }
+                        else if (mod == "file") { var fp = await DownloadFile(http, url, dest, true); if (fp != null) saved += 1 + UnpackZip(fp, dest); }
+                        else foreach (string f in await PluginFiles(http, url)) { var pp = await DownloadFile(http, f, dest, true); if (pp != null) saved += 1 + UnpackZip(pp, dest); }
                     }
                     catch (Exception ex) { failed++; Toast(Trunc(name, 40) + ": " + ex.Message, true); }
                 }

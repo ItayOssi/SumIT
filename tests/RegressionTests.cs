@@ -69,7 +69,18 @@ partial class HitStudent
             check("an exam named inside a lecture section is taken too, the slides are not", !exams.Any(i => Str(i, "url") == "u6"));
             var syllabus = HitStudent.PickMoodleItems(sections, "syllabus");
             check("only the syllabus is taken for the course information", syllabus.Count == 1 && Str(syllabus[0], "url") == "u1");
-            RunHelperTests(app, root, check);
+            // A zip of past exams inside the intro section ("מבחנים משנים קודמות") is found by its name and opened into the exams folder.
+            var intro = app.json.Deserialize<List<Dictionary<string, object>>>("[{\"num\":0,\"title\":\"מבוא\",\"items\":[{\"mod\":\"resource\",\"name\":\"מבחנים משנים קודמות\",\"url\":\"z1\"},{\"mod\":\"resource\",\"name\":\"מצגת\",\"url\":\"z2\"}]}]");
+            var introPicked = HitStudent.PickMoodleItems(intro, "exams");
+            check("an item named like the plural 'past exams' is taken from any section", introPicked.Count == 1 && Str(introPicked[0], "url") == "z1");
+            string zdir = Path.Combine(root, "zip-exams"); Directory.CreateDirectory(zdir);
+            string zpath = Path.Combine(zdir, "exams.zip");
+            using (var za = System.IO.Compression.ZipFile.Open(zpath, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                foreach (string en in new[] { "2023/exam a.pdf", "2023/solution a.pdf", "../evil.exe", "run.bat" }) { var ze = za.CreateEntry(en); using (var w = new StreamWriter(ze.Open())) w.Write("x"); }
+            }
+            int unpacked = app.UnpackZip(zpath, zdir);
+            check("zip opened: documents only, the zip is removed", unpacked == 1 && File.Exists(Path.Combine(zdir, "exam a.pdf")) && File.Exists(Path.Combine(zdir, "solution a.pdf")) && !File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));            RunHelperTests(app, root, check);
             RunBrainTests(app, root, check);
             Console.WriteLine("Offline regression checks complete. Fixtures: " + root);
         }
