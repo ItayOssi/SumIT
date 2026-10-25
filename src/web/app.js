@@ -1018,19 +1018,19 @@ function fillLecture(el, s) {
     if (helpersConnected()) btn('check', 'בדיקה שנייה עם AI נוסף', 'soft', () => send({ type: 'secondOpinion', course: course.name, num: s.num }), s.busy);
     btn('refresh', 'בנה מחדש מההתחלה', 'ghost', () => send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title, force: true }), s.busy);
   } else if (s.num > 0) btn('sparkles', 'צור סיכום PDF של ההרצאה', L.files || L.transcripts ? 'primary' : 'soft',
-    () => { if (hasHomework && !hasSolutions && !confirm('יש שיעורי בית אבל לא זוהו פתרונות.\nעם הפתרונות הסיכום מדויק יותר ובלי טעויות.\n\nליצור את הסיכום בכל זאת?')) return; send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title }); }, s.busy || !(L.files || L.transcripts));
+    () => { send({ type: 'lecturePdf', course: course.name, num: s.num, title: s.title }); }, s.busy || !(L.files || L.transcripts));
   if (L.exists) btn('folder', 'תיקייה', 'ghost', () => send({ type: 'openPath', path: L.dir }));
   if (s.num > 0) btn('chat', 'שאל על השיעור', 'ghost', () => setChatScope('lesson:' + s.num));
 
   // Notebooks come from the student's own app: they export a PDF into the lecture's folder in OneDrive and it is noticed there.
   const hint = el.querySelector('.notebook-hint'); hint.innerHTML = '';
   // Homework: say why the solutions matter, and whether they are there.
-  const hw = h(`<div class="hw-hint ${hasHomework && hasSolutions ? 'ok' : 'warn'}"><span class="ic" data-ic="${hasHomework && hasSolutions ? 'check' : 'alert'}"></span><div class="grow"></div></div>`);
+  const hw = h(`<div class="hw-hint ${hasHomework ? 'ok' : 'warn'}"><span class="ic" data-ic="${hasHomework ? 'check' : 'alert'}"></span><div class="grow"></div></div>`);
   const hwText = hw.querySelector('.grow');
   if (!hasHomework) hwText.innerHTML = '<b>יש שיעורי בית להרצאה הזו?</b> הוסף אותם <b>יחד עם הפתרונות</b> (של המרצה או המתרגל). הפתרונות הם מה שמאפשר לסכם את שיעורי הבית בלי טעויות, וללמוד איך המרצה שלך עונה.';
-  else if (!hasSolutions) hwText.innerHTML = '<b>יש שיעורי בית, אבל לא זוהו פתרונות.</b> עם הפתרונות הרשמיים הסיכום מדויק יותר ובלי טעויות. בלעדיהם ה-AI פותר לבד, ומסמן שהפתרון לא אומת. הפתרונות בדרך כלל באותו מקום ב-Moodle, בשם שמכיל "פתרון".';
+  else if (!hasSolutions) hwText.innerHTML = '<b>זוהו שיעורי בית.</b> אם בין הקבצים יש גם פתרונות של המרצה או המתרגל (גם אם השם שלהם לא מכיל "פתרון"), ה-AI ישתמש בהם ויתאים אליהם את הסיכום. אם אין, הוא יפתור לבד ויסמן שהפתרון לא אומת מול פתרון רשמי.';
   else hwText.innerHTML = '<b>זוהו שיעורי בית עם פתרונות ✓</b> הסיכום ייבדק מולם.';
-  if (!hasHomework || !hasSolutions) {
+  if (!hasHomework) {
     const row = h('<div class="row wrap" style="margin-top:8px"></div>');
     const b1 = h('<button class="soft small"><span data-ic="book"></span>פתרונות מה-Moodle</button>'); b1.onclick = () => lectureSource(s.num, 'moodle', 'homework');
     const b2 = h('<button class="ghost small"><span data-ic="plus"></span>מהמחשב</button>'); b2.onclick = () => send({ type: 'addFiles', course: course.name, folder: String(s.num), kind: 'homework' });
