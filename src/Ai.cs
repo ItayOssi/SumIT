@@ -533,9 +533,25 @@ partial class HitStudent
         string taskDir = Path.Combine(cwd, SumitDir);
         Directory.CreateDirectory(taskDir);
         string taskFile = Path.Combine(taskDir, "agy-task-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".md");
+        // The AI is not allowed to run commands or start helpers in a program like this (the sign-in would stop it), so it gets the list of
+        // files up front and is told to use only the file tools.
+        var inventory = new StringBuilder();
+        try
+        {
+            int shown = 0;
+            foreach (string file in Directory.GetFiles(cwd, "*", SearchOption.AllDirectories).OrderBy(x => x))
+            {
+                string rel = file.Substring(cwd.Length).TrimStart('\\');
+                if (rel.StartsWith(SumitDir, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(file).StartsWith(".")) continue;
+                if (shown++ >= 400) { inventory.AppendLine("... (ועוד קבצים)"); break; }
+                inventory.AppendLine(rel);
+            }
+        }
+        catch { }
         string full = (system != null ? system + "\n\n---\n\n" : "") + prompt
-            + "\n\n---\nהערות טכניות: אי אפשר להריץ פקודות או תוכניות (גם לא Python), לכן דלג על כל שלב שדורש הרצת סקריפט (למשל יצירת קבצי PDF עם מפנים, בדיקת קישורים או הרכבה): כתוב ישירות את קבצי ה-HTML והטקסט. קבצי PDF ותמונות אפשר לקרוא ישירות. כתוב קבצים רק בתוך תיקיית העבודה.";
-        File.WriteAllText(taskFile, full, new UTF8Encoding(false));
+            + "\n\n---\nהערות טכניות (חשוב): אסור להריץ פקודות או תוכניות (לא PowerShell, לא Python, ולא תתי-סוכנים). השתמש רק בכלי הקבצים: קריאת קובץ, רשימת תיקייה וכתיבת קובץ. "
+            + "דלג על כל שלב בסקיל שדורש הרצת סקריפט (למשל יצירת קבצי PDF עם מפנים, בדיקת קישורים או הרכבה) וכתוב ישירות את קבצי ה-HTML והטקסט. קבצי PDF ותמונות אפשר לקרוא ישירות. כתוב קבצים רק בתוך תיקיית העבודה (צור תיקיות חסרות לפי הצורך).\n"
+            + "הקבצים שנמצאים בתיקיית העבודה (נתיבים יחסיים):\n" + inventory;        File.WriteAllText(taskFile, full, new UTF8Encoding(false));
         string args = "-p " + Q("Read the file " + SumitDir + "/" + Path.GetFileName(taskFile) + " in the current folder and carry out everything it says, completely and without asking questions. Reply with the answer or a one-line summary only.")
                     + " --mode accept-edits --output-format stream-json --add-dir " + Q(SkillDir);
         var envv = new Dictionary<string, string> { { "NO_COLOR", "1" } };

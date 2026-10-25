@@ -1451,6 +1451,18 @@ function renderSettings() {
   $('notabilityDir').textContent = st.notabilityDir || 'לא נבחרה';
   $('versionText').textContent = 'SumIT ' + (st.version || '');
   $('wizStudy').textContent = st.studyRoot;
+  // First run: the best place for the files is the OneDrive of HIT (up to 1TB for every student), so everything is also saved in the cloud.
+  const od = $('wizOneDrive');
+  if (od) {
+    od.innerHTML = '';
+    if (st.hitOneDrive && st.studyInHitOneDrive) od.append(h('<div class="check-row ok"><div class="ci" data-ic="check"></div><div class="grow"><b>OneDrive של HIT <span class="chip ok">מומלץ</span></b><small>מצאתי אותו, והחומר יישמר שם. יש לך שם עד 1TB, הכל מגובה בענן וזמין מכל מחשב.</small></div></div>'));
+    else if (st.hitOneDrive) {
+      const row = h('<div class="check-row"><div class="ci" data-ic="folder"></div><div class="grow"><b>OneDrive של HIT <span class="chip accent">מומלץ</span></b><small>עד 1TB של מקום בחינם, הכל מגובה בענן וזמין מכל מחשב. עדיף לשמור שם את כל החומר.</small></div><button class="primary" data-od>השתמש בו</button></div>');
+      row.querySelector('[data-od]').onclick = () => send({ type: 'useHitOneDrive' });
+      od.append(row);
+    } else od.append(h('<div class="check-row"><div class="ci" data-ic="alert"></div><div class="grow"><b>לא מצאתי OneDrive של HIT במחשב</b><small>מומלץ להתחבר ל-OneDrive עם החשבון של HIT (יש בו עד 1TB, והחומר יהיה גם בענן) ולהפעיל את האפליקציה מחדש, כדי שאציע אותו. אם לא, בחר למטה כונן או תיקייה אחרת.</small></div></div>'));
+    icons(od);
+  }
   $('wizNot').textContent = st.notabilityDir || 'אם Notability מגבה את המחברות לתיקייה במחשב, בחר אותה כאן';
   $('wizNotRow').classList.toggle('ok', !!st.notabilityDir);
   $('optFallback').checked = st.autoFallback !== false;

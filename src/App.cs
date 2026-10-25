@@ -262,6 +262,13 @@ partial class HitStudent : Form
     // courses are backed up and follow them; otherwise in Documents.
     static string DefaultStudyRoot(bool hasD, string docs)
     {
+        string od = HitOneDrive();
+        return od.Length > 0 ? Path.Combine(od, "HIT", "קורסים") : Path.Combine(docs, "HIT", "קורסים");
+    }
+
+    // The OneDrive of HIT on this PC ("OneDrive - Holon Institute of Technology"), or "" when it is not set up.
+    static string HitOneDrive()
+    {
         try
         {
             var candidates = new List<string>();
@@ -270,10 +277,10 @@ partial class HitStudent : Form
             candidates.AddRange(Directory.GetDirectories(Home, "OneDrive*"));
             foreach (string od in candidates)
                 if (Directory.Exists(od) && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(od.TrimEnd('\\')), "holon|\\bHIT\\b|institute of technology|הולון", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                    return Path.Combine(od, "HIT", "קורסים");
+                    return od;
         }
         catch { }
-        return Path.Combine(docs, "HIT", "קורסים");
+        return "";
     }
 
     internal static string DefaultStudyRootForTest() { return DefaultStudyRoot(true, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)); }
@@ -363,6 +370,7 @@ partial class HitStudent : Form
     {
         Send(new
         {
+            hitOneDrive = HitOneDrive(), studyInHitOneDrive = HitOneDrive().Length > 0 && StudyRoot.StartsWith(HitOneDrive().TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase),
             tasks = settings.ContainsKey("tasks") ? settings["tasks"] : new System.Collections.ArrayList(),
             type = "settings", studyRoot = StudyRoot, recordingsDir = RecordingsDir, notabilityDir = NotabilityDir,
             aiProvider = Provider, hasGeminiKey = Str(settings, "geminiKey").Length > 0, hasOpenAiKey = Str(settings, "openaiKey").Length > 0,
@@ -543,6 +551,13 @@ partial class HitStudent : Form
 
             // Folders
             case "chooseFolder": ChooseFolder(Str(m, "which")); break;
+            case "useHitOneDrive":
+                string hitOd = HitOneDrive();
+                if (hitOd.Length == 0) { Toast("לא מצאתי OneDrive של HIT במחשב", true); break; }
+                settings["studyRoot"] = Path.Combine(hitOd, "HIT", "קורסים");
+                settings["recordingsDir"] = Path.Combine(hitOd, "HIT", "הקלטות");
+                SaveSettings(); SendSettings();
+                break;
             case "openFolder":
                 string which = Str(m, "which");
                 string folder = which == "study" ? StudyRoot : which == "notability" ? NotabilityDir : RecordingsDir;

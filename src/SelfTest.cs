@@ -221,6 +221,38 @@ partial class HitStudent
                 }
                 check("Antigravity: Enter in its hidden console (a new folder too) starts the Google sign-in", started, "");
             }
+            // A whole lecture summary made by Gemini alone (no Claude): slides and an exercise sheet in, the study page and the PDF out.
+            if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGYSUMMARY") == "1" && FindAgy() != null)
+            {
+                settings["agyOk"] = true; claudeLoggedIn = false;
+                string root = Path.Combine(Path.GetTempPath(), "hit-student-agy-summary");
+                try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
+                Directory.CreateDirectory(root);
+                settings["studyRoot"] = root;
+                string course = "\u05E7\u05D5\u05E8\u05E1 \u05D1\u05D3\u05D9\u05E7\u05D4";
+                SaveLecture(course, new Dictionary<string, object> { { "num", 1 }, { "title", "\u05E0\u05D2\u05D6\u05E8\u05D5\u05EA" } });
+                string slides = Path.Combine(LectureDir(course, 1), LecturerNotes), exer = Path.Combine(LectureDir(course, 1), Exercises);
+                Directory.CreateDirectory(slides); Directory.CreateDirectory(exer);
+                string work = Path.Combine(root, "_src"); Directory.CreateDirectory(work);
+                File.WriteAllText(Path.Combine(work, "s.html"), "<html><body dir='rtl'><h1>\u05E0\u05D2\u05D6\u05E8\u05D5\u05EA</h1><p>\u05D4\u05E0\u05D2\u05D6\u05E8\u05EA \u05E9\u05DC x^2 \u05D4\u05D9\u05D0 2x. \u05D4\u05E0\u05D2\u05D6\u05E8\u05EA \u05E9\u05DC sin x \u05D4\u05D9\u05D0 cos x. \u05DB\u05DC\u05DC \u05D4\u05E9\u05E8\u05E9\u05E8\u05EA: (f(g(x)))' = f'(g(x))g'(x).</p></body></html>");
+                File.WriteAllText(Path.Combine(work, "e.html"), "<html><body dir='rtl'><h1>\u05EA\u05E8\u05D2\u05D9\u05DC 1</h1><p>1. \u05D7\u05E9\u05D1\u05D5 \u05D0\u05EA \u05D4\u05E0\u05D2\u05D6\u05E8\u05EA \u05E9\u05DC x^3 + sin(2x).</p><p>2. \u05D7\u05E9\u05D1\u05D5 \u05D0\u05EA \u05D4\u05E0\u05D2\u05D6\u05E8\u05EA \u05E9\u05DC (x^2+1)^5.</p></body></html>");
+                string edge = new[] { @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", @"C:\Program Files\Microsoft\Edge\Application\msedge.exe" }.FirstOrDefault(File.Exists);
+                if (edge != null)
+                {
+                    foreach (var pair in new[] { Tuple.Create("s.html", Path.Combine(slides, "slides.pdf")), Tuple.Create("e.html", Path.Combine(exer, "exercise 1.pdf")) })
+                    {
+                        var ep = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(edge, "--headless --disable-gpu \"--print-to-pdf=" + pair.Item2 + "\" \"" + new Uri(Path.Combine(work, pair.Item1)).AbsoluteUri + "\"") { UseShellExecute = false, CreateNoWindow = true });
+                        await Task.Run(() => ep.WaitForExit(30000));
+                    }
+                }
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var sum = await LecturePdfAsync(course, 1, "\u05E0\u05D2\u05D6\u05E8\u05D5\u05EA");
+                bool page = File.Exists(StudyPagePath(course, 1));
+                long len = page ? new FileInfo(StudyPagePath(course, 1)).Length : 0;
+                check("Gemini alone writes the lecture summary page", sum != null && !sum.Error && page && len > 2000, "error=" + (sum == null ? "null" : sum.Error + " " + Trunc(sum.Text, 160)) + " page=" + len + " bytes, " + (int)sw.Elapsed.TotalSeconds + "s");
+                check("Gemini alone: the PDF of the summary is made", File.Exists(LecturePdfPath(course, 1)), pdfFailure);
+            }
+
             // Gemini on the student's Google account (Antigravity), when asked for: it reads a course file and writes a file in the course folder.
             if (Environment.GetEnvironmentVariable("SUMIT_SELFTEST_AGY") == "1" && FindAgy() != null)
             {

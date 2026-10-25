@@ -162,7 +162,13 @@ const assert = require('assert/strict');
  assert.equal(await page.locator('#view-home #homeTasks').count(),0);
  await page.locator('#tasksPage .task-check').click();
  assert.equal(await page.evaluate(()=>S.tasks[0].done),true);
- // The timetable: update reads the saved portal pages, delete asks first, the portal shows how to download them (no "read the page" button).
+ // First run: the OneDrive of HIT is recommended as the place for the files (or a warning, if it is not on this PC).
+ await page.evaluate(()=>{onMessage(Object.assign({},S.settings,{type:'settings',onboarded:true,hitOneDrive:'C:\\\\Users\\\\x\\\\OneDrive - Holon Institute of Technology',studyInHitOneDrive:false}));openWizard(4);});
+ await page.locator('#wizOneDrive [data-od]').click();
+ assert.equal(await page.evaluate(()=>sent.at(-1).type),'useHitOneDrive');
+ await page.evaluate(()=>{onMessage(Object.assign({},S.settings,{type:'settings',onboarded:true,hitOneDrive:'',studyInHitOneDrive:false}));});
+ assert.equal((await page.locator('#wizOneDrive').textContent()).includes('לא מצאתי OneDrive של HIT'),true);
+ await page.evaluate(()=>{$('wizard').hidden=true;}); // The timetable: update reads the saved portal pages, delete asks first, the portal shows how to download them (no "read the page" button).
  page.on('dialog',d=>d.accept());
  await page.evaluate(()=>show('home'));
  await page.locator('#ttImport').click();
