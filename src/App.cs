@@ -254,7 +254,7 @@ partial class HitStudent : Form
             // Carry over the folder chosen in the old HIT Recordings app.
             string old = Path.Combine(AppDir, "save-folder.txt");
             string dir = File.Exists(old) ? File.ReadAllText(old, Encoding.UTF8).Trim() : "";
-            settings["recordingsDir"] = dir.Length > 0 ? dir : Path.Combine(Path.GetDirectoryName(Str(settings, "studyRoot").TrimEnd('\\')) ?? docs, "×”×§×œ×˜×•×ª");
+            settings["recordingsDir"] = dir.Length > 0 ? dir : Path.Combine(Path.GetDirectoryName(Str(settings, "studyRoot").TrimEnd('\\')) ?? docs, "הקלטות");
         }
         if (Str(settings, "aiProvider").Length == 0) settings["aiProvider"] = "claude";
         foreach (string opt in new[] { "autoSync", "autoRecordings", "autoUpdate", "autoFallback", "pdfDark" })
@@ -262,12 +262,12 @@ partial class HitStudent : Form
         settings["autoRecordings"] = false; settings["autoUpdate"] = false; settings["autoSync"] = false;
     }
 
-    // "HIT\×§×•×¨×¡×™×" inside the student's HIT OneDrive when there is one ("OneDrive - Holon Institute of Technology"), so the
+    // "HIT\קורסים" inside the student's HIT OneDrive when there is one ("OneDrive - Holon Institute of Technology"), so the
     // courses are backed up and follow them; otherwise in Documents.
     static string DefaultStudyRoot(bool hasD, string docs)
     {
         string od = HitOneDrive();
-        return od.Length > 0 ? Path.Combine(od, "HIT", "×§×•×¨×¡×™×") : Path.Combine(docs, "HIT", "×§×•×¨×¡×™×");
+        return od.Length > 0 ? Path.Combine(od, "HIT", "קורסים") : Path.Combine(docs, "HIT", "קורסים");
     }
 
     // The OneDrive of HIT on this PC ("OneDrive - Holon Institute of Technology"), or "" when it is not set up.
@@ -280,7 +280,7 @@ partial class HitStudent : Form
             if (!string.IsNullOrEmpty(commercial)) candidates.Add(commercial);
             candidates.AddRange(Directory.GetDirectories(Home, "OneDrive*"));
             foreach (string od in candidates)
-                if (Directory.Exists(od) && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(od.TrimEnd('\\')), "holon|\\bHIT\\b|institute of technology|×”×•×œ×•×Ÿ", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                if (Directory.Exists(od) && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(od.TrimEnd('\\')), "holon|\\bHIT\\b|institute of technology|הולון", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                     return od;
         }
         catch { }
@@ -289,8 +289,8 @@ partial class HitStudent : Form
 
     internal static string DefaultStudyRootForTest() { return DefaultStudyRoot(true, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)); }
 
-    // The courses live in "<HIT>\×§×•×¨×¡×™×"; the timetable and general downloads sit next to them, in "<HIT>".
-    string AppRoot { get { string r = StudyRoot.TrimEnd('\\'); return Path.GetFileName(r) == "×§×•×¨×¡×™×" ? Path.GetDirectoryName(r) : r; } }
+    // The courses live in "<HIT>\קורסים"; the timetable and general downloads sit next to them, in "<HIT>".
+    string AppRoot { get { string r = StudyRoot.TrimEnd('\\'); return Path.GetFileName(r) == "קורסים" ? Path.GetDirectoryName(r) : r; } }
 
     bool Option(string name) { return Bool(settings, name); }
 
@@ -440,16 +440,16 @@ partial class HitStudent : Form
                 }
                 break;
             case "installUpdate": InstallUpdate(); break;
-            case "checkUpdate": Send(new { type = "updateCheck", text = "×‘×•×“×§..." }); CheckForUpdate(true); break;
+            case "checkUpdate": Send(new { type = "updateCheck", text = "בודק..." }); CheckForUpdate(true); break;
             case "restartForUpdate": RestartIntoUpdate(); break;
             case "addRecording":
                 string rec = Str(m, "url").Trim();
-                if (!IsZoomUrl(rec)) { Toast("×–×” ×œ× ×§×™×©×•×¨ ×œ×”×§×œ×˜×ª Zoom", true); return; }
-                if (!QueueRecording(course, Int(m, "num"), rec, true, Str(m, "name"))) Toast("×”×”×§×œ×˜×” ×”×–×• ×›×‘×¨ ×‘×”×•×¨×“×” ××• ×”×•×¨×“×”", false);
+                if (!IsZoomUrl(rec)) { Toast("זה לא קישור להקלטת Zoom", true); return; }
+                if (!QueueRecording(course, Int(m, "num"), rec, true, Str(m, "name"))) Toast("ההקלטה הזו כבר בהורדה או הורדה", false);
                 break;
             case "addLectureRecording":
                 string lrec = Str(m, "url").Trim();
-                if (!IsZoomUrl(lrec)) { Toast("×–×” ×œ× ×§×™×©×•×¨ ×œ×”×§×œ×˜×ª Zoom", true); return; }
+                if (!IsZoomUrl(lrec)) { Toast("זה לא קישור להקלטת Zoom", true); return; }
                 QueueLectureRecording(course, Int(m, "num"), lrec, Str(m, "name"));
                 break;
             case "addRecordingFile": AddRecordingFromPc(course, Int(m, "num"), Str(m, "name")); break;
@@ -560,9 +560,9 @@ partial class HitStudent : Form
             case "snapDone": settings["snapSeen"] = true; SaveSettings(); break;
             case "useHitOneDrive":
                 string hitOd = HitOneDrive();
-                if (hitOd.Length == 0) { Toast("×œ× ×ž×¦××ª×™ OneDrive ×©×œ HIT ×‘×ž×—×©×‘", true); break; }
-                settings["studyRoot"] = Path.Combine(hitOd, "HIT", "×§×•×¨×¡×™×");
-                settings["recordingsDir"] = Path.Combine(hitOd, "HIT", "×”×§×œ×˜×•×ª");
+                if (hitOd.Length == 0) { Toast("לא מצאתי OneDrive של HIT במחשב", true); break; }
+                settings["studyRoot"] = Path.Combine(hitOd, "HIT", "קורסים");
+                settings["recordingsDir"] = Path.Combine(hitOd, "HIT", "הקלטות");
                 SaveSettings(); SendSettings();
                 break;
             case "openFolder":
@@ -586,7 +586,7 @@ partial class HitStudent : Form
             case "clearProfileImage": SetProfileImage(true); break;
             case "setCourseBackground": SetCourseBackground(course, Str(m, "mode"), Str(m, "colors")); break;
             case "pasteTimetable":
-                if (!Clipboard.ContainsImage()) { Toast("×”×¢×ª×§ ×ª×ž×•× ×” ×©×œ ×ž×¢×¨×›×ª ×”×©×¢×•×ª ×•××– ×”×“×‘×§ ×›××Ÿ", true); break; }
+                if (!Clipboard.ContainsImage()) { Toast("העתק תמונה של מערכת השעות ואז הדבק כאן", true); break; }
                 string clipboardPath = Path.Combine(Path.GetTempPath(), "timetable-" + Guid.NewGuid().ToString("N") + ".png");
                 using (var clipboardImage = Clipboard.GetImage()) clipboardImage.Save(clipboardPath, System.Drawing.Imaging.ImageFormat.Png);
                 ImportTimetable(new[] { clipboardPath });
@@ -714,7 +714,7 @@ partial class HitStudent : Form
                 var rel = json.Deserialize<Dictionary<string, object>>(body);
                 string tag = Str(rel, "tag_name").TrimStart('v');
                 System.Version latest, mine;
-                if (!System.Version.TryParse(tag, out latest) || !System.Version.TryParse(Version, out mine) || latest <= mine) { pendingUpdate = null; Send(new { type = "updateCheck", text = "×™×© ×œ×š ××ª ×”×’×¨×¡×” ×”××—×¨×•× ×” (" + Version + "). × ×‘×“×§ " + DateTime.Now.ToString("HH:mm") }); return; }
+                if (!System.Version.TryParse(tag, out latest) || !System.Version.TryParse(Version, out mine) || latest <= mine) { pendingUpdate = null; Send(new { type = "updateCheck", text = "יש לך את הגרסה האחרונה (" + Version + "). נבדק " + DateTime.Now.ToString("HH:mm") }); return; }
                 updateVersion = tag;
                 updatePage = Str(rel, "html_url");
                 updateZipUrl = updateShaUrl = null;
@@ -730,7 +730,7 @@ partial class HitStudent : Form
                 // Download only after the student clicks the update button.
             }
         }
-        catch (Exception ex) { Send(new { type = "updateCheck", text = "×œ× ×”×¦×œ×—×ª×™ ×œ×‘×“×•×§ ×¢×“×›×•× ×™×: " + ex.Message }); }
+        catch (Exception ex) { Send(new { type = "updateCheck", text = "לא הצלחתי לבדוק עדכונים: " + ex.Message }); }
     }
     object pendingUpdate;
 
@@ -739,7 +739,7 @@ partial class HitStudent : Form
         if (updating || updateZipUrl == null || updateShaUrl == null) { if (updatePage != null) OpenExternal(updatePage); return; }
         if (stagedUpdateDir != null) { Send(new { type = "updateReady", version = updateVersion }); return; }
         updating = true;
-        Send(new { type = "updateProgress", version = updateVersion, text = "×ž×•×¨×™×“ ××ª ×”×¢×“×›×•×Ÿ..." });
+        Send(new { type = "updateProgress", version = updateVersion, text = "מוריד את העדכון..." });
         try
         {
             string work = Path.Combine(Path.GetTempPath(), "hit-student-update-" + updateVersion);
@@ -762,12 +762,12 @@ partial class HitStudent : Form
             using (var sha = System.Security.Cryptography.SHA256.Create())
             using (var fs = File.OpenRead(zip))
                 actual = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
-            if (actual != expected) throw new Exception("×”×§×•×‘×¥ ×©×”×•×¨×“ ×œ× ×ª×§×™×Ÿ (×‘×“×™×§×ª ×—×ª×™×ž×” × ×›×©×œ×”)");
+            if (actual != expected) throw new Exception("הקובץ שהורד לא תקין (בדיקת חתימה נכשלה)");
 
             string extracted = Path.Combine(work, "x");
             System.IO.Compression.ZipFile.ExtractToDirectory(zip, extracted);
             string root = File.Exists(Path.Combine(extracted, "SumIT.exe")) ? extracted : Path.Combine(extracted, "SumIT");
-            if (!File.Exists(Path.Combine(root, "SumIT.exe"))) throw new Exception("×”×¢×“×›×•×Ÿ ×œ× ×ž×›×™×œ ××ª ×”××¤×œ×™×§×¦×™×”");
+            if (!File.Exists(Path.Combine(root, "SumIT.exe"))) throw new Exception("העדכון לא מכיל את האפליקציה");
             // Make sure nothing in the package escapes the app folder.
             foreach (string f in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
                 if (!IsInside(f, root)) throw new Exception("bad package");
@@ -808,7 +808,7 @@ partial class HitStudent : Form
             Process.Start(new ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = false, WorkingDirectory = AppDir });
             Close();
         }
-        catch (Exception ex) { if (restart) Toast("×”×¢×“×›×•×Ÿ × ×›×©×œ: " + ex.Message, true); }
+        catch (Exception ex) { if (restart) Toast("העדכון נכשל: " + ex.Message, true); }
     }
 
     static void CleanUpOldFiles()
@@ -863,7 +863,7 @@ partial class HitStudent : Form
         else if (action == "reload") c.Reload();
         else if (action == "print") c.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
         else if (action == "savepdf") SavePageAsPdf();
-        else if (action == "copylink" && c.Source != null) { try { Clipboard.SetText(c.Source); Toast("×”×§×™×©×•×¨ ×”×•×¢×ª×§", false); } catch { } }
+        else if (action == "copylink" && c.Source != null) { try { Clipboard.SetText(c.Source); Toast("הקישור הועתק", false); } catch { } }
         else if (action == "downloads") c.OpenDefaultDownloadDialog();
         else if (action == "external" && c.Source != null) OpenExternal(c.Source);
     }
@@ -905,6 +905,6 @@ partial class HitStudent : Form
                     Send(new { type = "siteDownload", name = shown, dir = dir, state = "failed" });
             };
         }
-        catch (Exception ex) { e.Cancel = true; Toast("×œ× × ×™×ª×Ÿ ×œ×©×ž×•×¨ ××ª ×”×”×•×¨×“×”: " + ex.Message, true); }
+        catch (Exception ex) { e.Cancel = true; Toast("לא ניתן לשמור את ההורדה: " + ex.Message, true); }
     }
 }
