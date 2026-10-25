@@ -113,7 +113,11 @@ partial class HitStudent
         app.PrepareStudyPage(fixture); app.PrepareStudyPage(fixture);
         string repaired = File.ReadAllText(fixture);
         check("study page repair is offline, idempotent and preserves interaction", repaired.Contains(".sumit-math/katex.min.js") && !repaired.Contains("cdn.example") && System.Text.RegularExpressions.Regex.Matches(repaired,"sumit-render-start").Count == 1 && repaired.Contains("<details>"));
-        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
+        string bookPage = Path.Combine(root, "math", "book.html");
+        File.WriteAllText(bookPage, "<!doctype html><html dir=\"rtl\"><head><meta charset=\"utf-8\"></head><body><div class=\"wrap\"><header class=\"top\"><h1>נושא</h1></header><nav class=\"toc\"><a href=\"#must\">חובה</a><a href=\"#core\">ליבה</a><a href=\"#use\">תרגילים</a></nav><h2 id=\"must\">🎯 מה חובה</h2><p>מהירות $v=x/t$</p><h2 id=\"core\">הסבר</h2><p>$$a=\\frac{\\Delta v}{\\Delta t}$$</p><h2 id=\"use\">🎯 שימוש בתרגילים</h2><p>שאלה 1</p><footer>f</footer></div></body></html>", new System.Text.UTF8Encoding(false));
+        app.PrepareStudyPage(bookPage); app.PrepareStudyPage(bookPage);
+        string bookHtml = File.ReadAllText(bookPage);
+        check("the study page becomes a book, added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "id=\"sumit-book\"").Count == 1 && bookHtml.Contains("bookpage") && bookHtml.Contains("sumit-render-start"));        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
         if (!string.IsNullOrEmpty(sample) && File.Exists(sample)) {
             string actual = Path.Combine(root, "actual-study", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(actual));
             File.Copy(sample, actual, true); app.PrepareStudyPage(actual);

@@ -31,5 +31,6 @@ partial class HitStudent
         string temp = page + ".rendering";
         File.WriteAllText(temp, html, new UTF8Encoding(false));
         File.Copy(temp, page, true); File.Delete(temp);
+        AddBookLayout(page);
     }
 }
