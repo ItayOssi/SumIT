@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.1";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -826,6 +826,7 @@ partial class HitStudent : Form
         string url;
         if (!Sites.TryGetValue(key, out url)) return;
         PlaceSite(m);
+        if (key != "portal") CloseSitePopup();
         string current = site.Source == null ? "" : site.Source.ToString();
         string host = new Uri(url).Host;
         string deep = Str(m, "url");
@@ -849,16 +850,16 @@ partial class HitStudent : Form
 
     void SiteAction(string action)
     {
-        var c = site.CoreWebView2;
+        var c = ActiveSiteCore();
         if (c == null) return;
         if (action == "back" && c.CanGoBack) c.GoBack();
         else if (action == "forward" && c.CanGoForward) c.GoForward();
         else if (action == "reload") c.Reload();
         else if (action == "print") c.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
         else if (action == "savepdf") SavePageAsPdf();
-        else if (action == "copylink" && site.Source != null) { try { Clipboard.SetText(site.Source.ToString()); Toast("הקישור הועתק", false); } catch { } }
+        else if (action == "copylink" && c.Source != null) { try { Clipboard.SetText(c.Source); Toast("הקישור הועתק", false); } catch { } }
         else if (action == "downloads") c.OpenDefaultDownloadDialog();
-        else if (action == "external" && site.Source != null) OpenExternal(site.Source.ToString());
+        else if (action == "external" && c.Source != null) OpenExternal(c.Source);
     }
 
     void OnSiteDownload(object sender, CoreWebView2DownloadStartingEventArgs e)

@@ -298,7 +298,7 @@ function providerCard(kind) {
       if (actn === 'setupClaude') { send({ type: 'setProvider', provider: 'claude' }); send({ type: 'setupClaude' }); toast('מתחבר ל-Claude. אם נפתח דפדפן, אשר שם את ההתחברות.'); }
       if (actn === 'setupGemini') { send({ type: 'setProvider', provider: 'gemini' }); send({ type: 'setupGemini' }); }
       if (actn === 'getKey') send({ type: 'openGeminiKeyPage' });
-      if (actn === 'loginGemini') { send({ type: 'setProvider', provider: 'gemini' }); send({ type: 'loginGemini' }); toast('נפתח דפדפן להתחברות עם Google. אשר שם והאפליקציה תמשיך לבד.'); }
+      if (actn === 'loginGemini') { send({ type: 'setProvider', provider: 'gemini' }); send({ type: 'loginGemini' }); toast('ההתחברות ל-Gemini לוקחת קצת זמן. אשר בחלון שנפתח והאפליקציה תמשיך לבד.'); }
       if (actn === 'saveKey') { const v = el.querySelector('[data-key]').value.trim(); if (v.length < 20) return toast('המפתח נראה קצר מדי', { error: true }); send({ type: 'setGeminiKey', key: v }); send({ type: 'setProvider', provider: 'gemini' }); toast('המפתח נשמר בצורה מוצפנת'); }
       return;
     }
@@ -341,8 +341,7 @@ function renderNextUp() {
   box.innerHTML = '';
   const tt = S.timetable;
   if (!tt || !((tt.classes || []).length || (tt.exams || []).length)) {
-    const e = h('<div class="empty" style="border:none;padding:6px"><b>עוד אין מערכת</b>אפשר לטעון אותה מהפורטל, והאפליקציה תראה כאן מה הבא בתור.<div class="row"><button class="primary" data-p>פתח את הפורטל</button></div></div>');
-    e.querySelector('[data-p]').onclick = () => { setSaveTarget('', ''); openSite('portal'); };
+    const e = h('<div class="empty" style="border:none;padding:6px"><b>עוד אין מערכת</b>אפשר לטעון אותה מהפורטל, והאפליקציה תראה כאן מה הבא בתור.</div>');
     box.append(e); return;
   }
   const toMin = (t) => { const m = /(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };

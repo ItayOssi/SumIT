@@ -152,7 +152,8 @@ partial class HitStudent
         var core = sender as CoreWebView2;
         // The personal portal (and the pages it leads to) work like in a browser: a link that opens a window gets a real window, with its own
         // session link back to the page, so sign-in hand-offs and forms work. Everything else opens in the view the student is looking at.
-        if (core != null && env != null && IsPortalPage(core.Source)) { OpenRealPopup(core, e); return; }        Uri u;
+        if (core != null && env != null && IsPortalPage(core.Source)) { OpenRealPopup(core, e); return; }
+        Uri u;
         if (core != null && Uri.TryCreate(e.Uri, UriKind.Absolute, out u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp || u.Scheme == "blob"))
         { e.Handled = true; core.Navigate(e.Uri); return; }
         // Many pages open an empty window and set its address a moment later (window.open("") and then .location = ...). The page needs a real
@@ -201,16 +202,26 @@ partial class HitStudent
         return Uri.TryCreate(url ?? "", UriKind.Absolute, out u) && (u.Host.Equals("portal.hit.ac.il", StringComparison.OrdinalIgnoreCase) || u.Host.Equals("webrashim.hit.ac.il", StringComparison.OrdinalIgnoreCase));
     }
 
-    // A real window for a page that asked for one (a normal window of the app, with the same sign-in as the site view).
+    // The page the portal opens (the student information station, ...) appears in the same place as the other sites, not in a window of its own:
+    // it still is the window the page asked for (so its sign-in hand-off works), but the files saved from it land in the timetable folder.
+    WebView2 popupView;
+    CoreWebView2 ActiveSiteCore() { return popupView != null && popupView.CoreWebView2 != null ? popupView.CoreWebView2 : (site != null ? site.CoreWebView2 : null); }
+    void CloseSitePopup()
+    {
+        var pv = popupView; popupView = null;
+        if (pv == null) return;
+        try { sitePanel.Controls.Remove(pv); pv.Dispose(); } catch { }
+        if (site != null) site.BringToFront();
+    }
     void OpenRealPopup(CoreWebView2 opener, CoreWebView2NewWindowRequestedEventArgs e)
     {
         var deferral = e.GetDeferral();
         try
         {
-            var win = new Form { Text = "SumIT", Icon = Icon, StartPosition = FormStartPosition.CenterParent, ClientSize = new System.Drawing.Size(1180, 820), ShowInTaskbar = true };
+            CloseSitePopup();
             var view = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
-            win.Controls.Add(view);
-            win.Show(this);
+            popupView = view;
+            sitePanel.Controls.Add(view); view.BringToFront();
             view.EnsureCoreWebView2Async(env).ContinueWith(t =>
             {
                 try
@@ -218,24 +229,26 @@ partial class HitStudent
                     var pc = view.CoreWebView2;
                     pc.NewWindowRequested += OpenSitePopup;
                     pc.DownloadStarting += OnSiteDownload; pc.PermissionRequested += OnDownloadPermission;
-                    pc.DocumentTitleChanged += delegate { try { if (!string.IsNullOrEmpty(pc.DocumentTitle)) win.Text = pc.DocumentTitle + " - SumIT"; } catch { } };
-                    pc.WindowCloseRequested += delegate { try { win.Close(); } catch { } };
+                    pc.SourceChanged += delegate { if (popupView == view) Send(new { type = "siteNav", url = pc.Source, canBack = pc.CanGoBack, canForward = pc.CanGoForward }); };
+                    pc.NavigationStarting += delegate { Send(new { type = "siteLoading", loading = true }); };
+                    pc.NavigationCompleted += delegate { Send(new { type = "siteLoading", loading = false }); };
+                    pc.WindowCloseRequested += delegate { if (popupView == view) CloseSitePopup(); };
                     e.NewWindow = pc; e.Handled = true;
                 }
-                catch { e.Handled = true; try { win.Close(); } catch { } }
+                catch { e.Handled = true; CloseSitePopup(); }
                 finally { deferral.Complete(); }
             }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
         }
         catch { e.Handled = true; try { deferral.Complete(); } catch { } }
-    }
-    // ---------- Saving from the sites ----------
+    }    // ---------- Saving from the sites ----------
 
     // Where a file saved from a site goes: the course / lecture / folder chosen in the bar above the site, or "הורדות".
     string SiteSaveDir(string name, out string where)
     {
         string course = siteDownloadCourse;
         // Pages saved from the personal portal (timetable, exam board) go to the timetable folder, where "update timetable" reads them.
-        if (course == null && site != null && site.Source != null && site.Source.Host.IndexOf("webrashim.hit.ac.il", StringComparison.OrdinalIgnoreCase) >= 0)
+        var ac = ActiveSiteCore(); Uri au;
+        if (course == null && ac != null && Uri.TryCreate(ac.Source ?? "", UriKind.Absolute, out au) && au.Host.IndexOf("webrashim.hit.ac.il", StringComparison.OrdinalIgnoreCase) >= 0)
         { where = "מערכת שעות"; return Path.Combine(AppRoot, TimetableFolder); }
         if (course == null) { where = "הורדות"; return Path.Combine(AppRoot, "הורדות"); }
         string rel = SafeDownloadFolder(siteDownloadFolder);
@@ -251,7 +264,7 @@ partial class HitStudent
     // "Save as PDF" from the bar: the page being shown is printed straight into the lecture the student is working on.
     async void SavePageAsPdf()
     {
-        var c = site != null ? site.CoreWebView2 : null;
+        var c = ActiveSiteCore();
         if (c == null || env == null) return;
         try
         {

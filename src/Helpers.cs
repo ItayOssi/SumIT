@@ -329,22 +329,23 @@ for p in sys.argv[1:]:
         if (r == null || r.Error) return false;
         var data = JsonFromAnswer(r.Text, json);
         if (data == null) return false;
-        ApplySchedule(data);
-        return true;
+        return ApplySchedule(data);
     }
 
     // Merges what a page said into the timetable and the calendar the app keeps (what was there stays unless the page replaces it).
-    void ApplySchedule(Dictionary<string, object> data)
+    bool ApplySchedule(Dictionary<string, object> data)
     {
+        bool found = false;
         string dir = Path.Combine(AppRoot, TimetableFolder);
         Directory.CreateDirectory(dir);
         var tt = new Dictionary<string, object>();
         try { if (File.Exists(TimetableJson)) tt = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(TimetableJson, Encoding.UTF8)) ?? tt; } catch { }
         var classes = data.ContainsKey("classes") ? data["classes"] as ArrayList : null;
-        if (classes != null && classes.Count > 0) tt["classes"] = classes;     // a week's timetable replaces the old one
+        if (classes != null && classes.Count > 0) { tt["classes"] = classes; found = true; }     // a week's timetable replaces the old one
         var exams = data.ContainsKey("exams") ? data["exams"] as ArrayList : null;
         if (exams != null && exams.Count > 0)
         {
+            found = true;
             var merged = new Dictionary<string, object>();
             foreach (var list in new[] { tt.ContainsKey("exams") ? tt["exams"] as ArrayList : null, exams })
                 if (list != null) foreach (Dictionary<string, object> e in list) merged[Str(e, "course") + "|" + Str(e, "moed")] = e;
@@ -358,11 +359,13 @@ for p in sys.argv[1:]:
         var hol = data.ContainsKey("holidays") ? data["holidays"] as ArrayList : null;
         if (hol != null && hol.Count > 0)
         {
+            found = true;
             var merged = new Dictionary<string, object>();
             foreach (var list in new[] { ac.ContainsKey("holidays") ? ac["holidays"] as ArrayList : null, hol })
                 if (list != null) foreach (Dictionary<string, object> h in list) merged[Str(h, "from") + "|" + Str(h, "to")] = h;
             ac["holidays"] = merged.Values.ToList();
         }
         if (ac.Count > 0) File.WriteAllText(AcademicJson, json.Serialize(ac), new UTF8Encoding(true));
+        return found || Str(data, "semesterStart").Length > 0;
     }
 }
