@@ -1470,7 +1470,7 @@ function renderSettings() {
   }
   $('wizNot').textContent = st.notabilityDir || 'אם Notability מגבה את המחברות לתיקייה במחשב, בחר אותה כאן';
   $('wizNotRow').classList.toggle('ok', !!st.notabilityDir);
-  $('optFallback').checked = st.autoFallback !== false;
+  $('optFallback').checked = st.autoFallback !== false; $('optPdfDark').checked = !!st.pdfDark;
   ['optSync','optRec','optUpdate'].forEach(id => { $(id).checked = false; $(id).closest('.setting').hidden = true; });
   $('versionText').textContent = `SumIT ${st.version || ''} · מתעדכנת לבד כשיוצאת גרסה חדשה`;
   applyTheme(st.theme || 'system');
@@ -1484,7 +1484,7 @@ $('themeToggle').onclick = () => {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   applyTheme(next); send({ type: 'setOption', name: 'theme', value: next });
 };
-[['optSync', 'autoSync'], ['optRec', 'autoRecordings'], ['optUpdate', 'autoUpdate'], ['optFallback', 'autoFallback']].forEach(([id, name]) =>
+[['optSync', 'autoSync'], ['optRec', 'autoRecordings'], ['optUpdate', 'autoUpdate'], ['optFallback', 'autoFallback'], ['optPdfDark', 'pdfDark']].forEach(([id, name]) =>
   $(id).onchange = () => send({ type: 'setOption', name, value: $(id).checked }));
 
 // ---------- First-run setup ----------

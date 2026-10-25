@@ -117,7 +117,7 @@ partial class HitStudent
         File.WriteAllText(bookPage, "<!doctype html><html dir=\"rtl\"><head><meta charset=\"utf-8\"></head><body><div class=\"wrap\"><header class=\"top\"><h1>נושא</h1></header><nav class=\"toc\"><a href=\"#must\">חובה</a><a href=\"#core\">ליבה</a><a href=\"#use\">תרגילים</a></nav><h2 id=\"must\">🎯 מה חובה</h2><p>מהירות $v=x/t$</p><h2 id=\"core\">הסבר</h2><p>$$a=\\frac{\\Delta v}{\\Delta t}$$</p><h2 id=\"use\">🎯 שימוש בתרגילים</h2><p>שאלה 1</p><footer>f</footer></div></body></html>", new System.Text.UTF8Encoding(false));
         app.PrepareStudyPage(bookPage); app.PrepareStudyPage(bookPage);
         string bookHtml = File.ReadAllText(bookPage);
-        check("the study page becomes a book, added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "id=\"sumit-book\"").Count == 1 && bookHtml.Contains("bookpage") && bookHtml.Contains("sumit-render-start"));        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
+        check("the study page becomes a book, added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "data-sumit-book").Count == 2 && File.Exists(Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math", "study-book.js")) && bookHtml.Contains("sumit-render-start"));        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
         if (!string.IsNullOrEmpty(sample) && File.Exists(sample)) {
             string actual = Path.Combine(root, "actual-study", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(actual));
             File.Copy(sample, actual, true); app.PrepareStudyPage(actual);
@@ -326,18 +326,19 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 1 }, { "title", "L1" } });
             Directory.CreateDirectory(Path.GetDirectoryName(app.StudyPagePath(course, 1)));
             File.WriteAllText(app.StudyPagePath(course, 1), "<html><body><h1>סיכום</h1><p>שאלה 2: התשובה היא 5</p></body></html>");
-            Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"issues\",\"issues\":[{\"where\":\"שאלה 2\",\"problem\":\"החישוב שגוי\",\"fix\":\"התשובה היא 7\"}]}");
+            Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"issues\",\"issues\":[{\"where\":\"שאלה 2\",\"problem\":\"החישוב שגוי\",\"old\":\"התשובה היא 5\",\"new\":\"התשובה היא 7\"},{\"where\":\"שאלה 9\",\"problem\":\"לא ניתן לצטט\",\"old\":\"\",\"new\":\"\"}]}");
             string note = Run(() => app.SecondOpinion(course, 1, "claude"));
             string html = File.ReadAllText(app.StudyPagePath(course, 1));
-            check("a second AI's notes are added to the summary", note != null && note.Contains("הערות") && html.Contains("id=\"second-opinion-openai\"") && html.Contains("id=\"second-opinion-gemini\"") && html.Contains("החישוב שגוי") && html.Contains("התשובה היא 7") && html.Contains("<h1>סיכום</h1>"));
+            check("a reviewer's correction is made in the page itself, quietly", note != null && note.Contains("תיקן") && html.Contains("התשובה היא 7") && !html.Contains("התשובה היא 5") && html.Contains("<h1>סיכום</h1>") && !html.Contains("בדיקה שנייה"));
+            check("what could not be quoted stays as a small closed note", html.Contains("הערות לבדיקה") && !html.Contains("<section id=\"second-opinion"));
             Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"ok\",\"issues\":[]}");
-            note = Run(() => app.SecondOpinion(course, 1, "claude"));
-            check("unchanged review reuses cached result", note.Contains("הערות"));
-            File.WriteAllText(app.StudyPagePath(course, 1), "<html><body><h1>סיכום</h1><p>תשובה מתוקנת 7</p></body></html>");
+            File.WriteAllText(app.StudyPagePath(course, 1), html.Replace("התשובה היא 7", "התשובה היא 7 (בדיקה)"));
             note = Run(() => app.SecondOpinion(course, 1, "claude"));
             html = File.ReadAllText(app.StudyPagePath(course, 1));
-            check("a repeated check replaces the notes, and a clean one says so", note.Contains("לא מצא טעויות") && System.Text.RegularExpressions.Regex.Matches(html, "id=\"second-opinion-").Count == 2 && !html.Contains("החישוב שגוי") && html.Contains("לא נמצאו טעויות"));
-            Environment.SetEnvironmentVariable("FAKE_REPLY", null);
+            check("a clean check says so and clears the old note", note.Contains("לא מצא טעויות") && !html.Contains("הערות לבדיקה"));
+            Environment.SetEnvironmentVariable("FAKE_REPLY", "{\"verdict\":\"issues\",\"issues\":[{\"where\":\"x\",\"problem\":\"y\",\"old\":\"\",\"new\":\"\"}]}");
+            note = Run(() => app.SecondOpinion(course, 1, "claude"));
+            check("unchanged review reuses cached result", note.Contains("לא מצא טעויות"));            Environment.SetEnvironmentVariable("FAKE_REPLY", null);
             app.codexSignedIn = false; app.geminiSignedOverride = false;
             check("with no other AI the check is skipped", Run(() => app.SecondOpinion(course, 1)) == null);
 

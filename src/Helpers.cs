@@ -308,6 +308,7 @@ for p in sys.argv[1:]:
         if (r == null || r.Error) return false;
         var info = JsonFromAnswer(r.Text, json);
         if (info == null) return false;
+        try { if (File.Exists(Path.Combine(CourseDir(course), CourseJson))) File.SetAttributes(Path.Combine(CourseDir(course), CourseJson), FileAttributes.Normal); } catch { }   // a hidden file cannot be written over
         File.WriteAllText(Path.Combine(CourseDir(course), CourseJson), json.Serialize(info), new UTF8Encoding(false));
         try { File.SetAttributes(Path.Combine(CourseDir(course), CourseJson), FileAttributes.Hidden); } catch { }
         string lecturer = Str(info, "lecturer");

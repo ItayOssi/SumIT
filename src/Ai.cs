@@ -838,7 +838,9 @@ partial class HitStudent
             + "2. \"" + CourseJson + "\" - JSON תקין במבנה: {\"lecturer\":\"\",\"assistants\":[],\"officeHours\":\"\",\"grading\":[{\"component\":\"\",\"weight\":0}],"
             + "\"homeworkRequired\":true|false|null,\"homeworkNote\":\"\",\"attendance\":\"\",\"examFormat\":\"\",\"importantDates\":[{\"date\":\"YYYY-MM-DD\",\"what\":\"\"}],\"materialsAllowed\":\"\",\"tips\":[\"\"]}. "
             + "כל הערכים בעברית. מה שלא כתוב בחומר - השאר ריק או null, אל תמציא." + WorkAlone;
+        try { string cj = Path.Combine(CourseDir(course), CourseJson); if (File.Exists(cj)) File.SetAttributes(cj, FileAttributes.Normal); } catch { }   // the AI cannot write over a hidden file
         var result = await CourseTask(key, course, s => Send(new { type = "courseStatus", course = course, text = s, busy = true }), prompt);
+        try { string cj = Path.Combine(CourseDir(course), CourseJson); if (File.Exists(cj)) File.SetAttributes(cj, FileAttributes.Hidden); } catch { }
         try
         {
             var info = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(CourseDir(course), CourseJson), Encoding.UTF8));
