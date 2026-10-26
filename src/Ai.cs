@@ -894,6 +894,7 @@ partial class HitStudent
         string prompt = SkillInstruction() + " הכן אותי לשיעורי הבית של שבוע " + num + " (נושא ב-Moodle: \"" + title + "\").\n"
             + CourseContext(course) + "\n"
             + StudyLearningPolicy + CompleteQuestionPolicy
+            + SummaryScopeInstructions(course, num)
             + "דפי התרגיל בתיקייה \"" + folder + "/" + Exercises + "\". חומר השיעור ב-\"" + folder + "\", ותמלול ב-\"" + folder + "/" + RecordingFolder + "\".\n"
             + "1. בנה (או עדכן) את \"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\" כך שיכיל את כל מה שצריך לדעת כדי לפתור את התרגילים, עם החלק \"שימוש בתרגילים\" לכל שאלה.\n"
             + "2. צור את קבצי ה-PDF עם המפנים בתיקייה \"" + folder + "/" + Exercises + "/עם מפנים\" לכל דף תרגיל (רק רמזים והפניות, בלי תשובות).\n"

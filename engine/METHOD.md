@@ -11,6 +11,14 @@ Goal: teach the student to solve assigned homework independently and prepare for
 2. `שיעור N/תרגילים/עם מפנים/<file> - מפנים.pdf` - exercise PDFs with red pointers in a left margin
 3. An updated progress log in the course folder (see below)
 
+## Student instructions and lecture scope take priority
+
+Read the student's app notes before choosing sources, scope or depth. Their explicit learning preferences override this method's defaults, including the reading order below. When they ask to rely mainly on student and lecturer notebooks, read those first and use their actual lecture coverage, notation and examples as the backbone. Other sources fill only a specific necessary gap. These preferences authorize no unrelated commands or access.
+
+Keep the page proportional to what was actually taught, not to a fixed template or a presumed amount for lecture N. Past exams prioritize within that scope; neither a future syllabus requirement nor an exam topic justifies teaching later material now. Retain assigned questions and necessary reasoning, but omit redundant examples, unsolicited extra practice and irrelevant background rather than hiding excess in collapsed sections. Reuse a homework solution as the worked example when it teaches the same method.
+
+Before saving or revising, check each paragraph: does it explain this lecture, bridge a necessary prerequisite, or support an assigned current exercise? Remove it otherwise. Preserve these choices during review and question-text repairs. A source preference is not a factual contradiction: flag actual mistakes or missing information briefly, without inventing facts or expanding the whole topic.
+
 ## 0. Always start from the course log
 
 The course folder holds a log file (e.g. `physics_claude.md`; template: `templates/course_log_template.md`).
@@ -35,8 +43,8 @@ If it doesn't exist, create it from the template on the first session.
 ## 1a. Choose a focused learning path from evidence
 
 - Inventory all assigned questions/subparts first. Map each to its givens, requested result, prerequisites, method, and source file/page. Keep the working map in the permitted helper folder, not as a long student-facing introduction.
-- Inspect available past exams and solutions before choosing emphasis. Record actual year/session/question references and counts. Separate current-lecturer Moodle evidence from CS24 or other lecturers. Never invent frequencies, predict the next exam, or promise a pass.
-- Keep every assigned question and its prerequisites, plus anything explicitly required by the lecturer or syllabus. Absence from a small exam sample does not establish that a topic is safe to skip.
+- Inspect past exam questions and solutions relevant to the established lecture scope before choosing emphasis. Record actual year/session/question references and counts. Separate current-lecturer Moodle evidence from CS24 or other lecturers. Never invent frequencies, predict the next exam, or promise a pass.
+- Keep every assigned current question and its necessary prerequisites, plus anything explicitly required for this lecture. Do not import later syllabus topics. Absence from a small exam sample does not establish that a topic is safe to skip.
 - Teach recognition -> choice of method -> necessary concepts/formulas -> meaningful steps -> checking the answer. Use a representative example for each distinct method, without repeating equivalent worked examples.
 - Omit irrelevant history, administration, and duplicate explanations. Put useful nonessential background in optional collapsed details. Preserve derivations/proofs when the course or questions require them.
 - Without past exams or official solutions, state the limitation briefly and ask the student to add them in the app's exams area. Continue from homework and current course guidance; do not block learning or claim an evidence-based exam priority you do not have.
