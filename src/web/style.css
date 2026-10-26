@@ -637,6 +637,12 @@ button.link:hover { text-decoration: underline; }
 @keyframes pulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
 #viewerBar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
 #siteBarMain[hidden], #viewerBar[hidden], .dl-strip[hidden] { display: none; }
+#viewerShareNote { display:flex; gap:16px; align-items:flex-start; flex-shrink:0; padding:14px 18px; border-bottom:1px solid var(--border); background:var(--surface); font-size:13px; line-height:1.7; }
+#viewerShareNote[hidden] { display:none; }
+#viewerShareNote .grow { min-width:0; }
+#viewerShareNote p { margin:4px 0 0; color:var(--muted); }
+#viewerShareStatus { display:block; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+#viewerShareNote.error #viewerShareStatus { color:var(--danger, #b42335); }
 
 /* Profile picture and course background */
 .avatar-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }

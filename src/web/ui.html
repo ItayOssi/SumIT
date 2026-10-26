@@ -211,8 +211,17 @@
       <div class="site-bar" id="viewerBar" hidden>
         <button class="small primary" id="viewerBack"><span data-ic="back"></span>חזרה להרצאה</button>
         <b class="grow" id="viewerTitle" dir="auto"></b>
+        <button class="small soft" id="viewerShare" aria-controls="viewerShareNote" title="שמור את הסיכום בקובץ ZIP לשיתוף"><span data-ic="download"></span><span id="viewerShareLabel">שיתוף</span></button>
         <button class="small soft" id="viewerChat"><span data-ic="chat"></span>שאל את הצ'אט על ההרצאה</button>
         <button class="small soft" id="viewerPdf"><span data-ic="file"></span>פתח כ-PDF</button>
+      </div>
+      <div id="viewerShareNote" hidden>
+        <div class="grow">
+          <b id="viewerShareStatus" role="status" aria-live="polite"></b>
+          <p>אפשר לשלוח את קובץ ה־ZIP ב־WhatsApp כמסמך, או לשמור אותו בתיקיית OneDrive משותפת ולשלוח לחבר קישור.</p>
+          <p>כדי לפתוח: מחלצים את כל ה־ZIP ופותחים את ״פתח את הסיכום.html״ בדפדפן. הסיכום, הנוסחאות והקבצים המקושרים כלולים בפנים.</p>
+        </div>
+        <button class="small ghost" id="viewerShareDismiss" aria-label="סגור את הסבר השיתוף">סגור</button>
       </div>
       <div id="siteHost"><div class="loading"><span class="spinner lg"></span></div></div>
     </section>

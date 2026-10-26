@@ -1400,6 +1400,7 @@ function jobLog(id, line) {
 // A lecture summary inside the app: the page, with a way back to the lecture, to the chat and to the PDF.
 function openViewer(path, title, pdf, lec) {
   S.viewer = { path, title, pdf, lec };
+  $('viewerShareNote').hidden = true;
   $('viewerTitle').textContent = title;
   $('viewerPdf').hidden = !pdf;
   show('sites');
@@ -1407,9 +1408,35 @@ function openViewer(path, title, pdf, lec) {
 $('viewerBack').onclick = () => { S.viewer = null; show('course'); };
 $('viewerChat').onclick = () => { const l = S.viewer && S.viewer.lec; S.viewer = null; show('course'); if (l) setChatScope('lesson:' + l); };
 $('viewerPdf').onclick = () => S.viewer && S.viewer.pdf && send({ type: 'openPath', path: S.viewer.pdf });
+$('viewerShare').onclick = () => {
+  if (!S.viewer || !S.course || S.shareJob?.busy) return;
+  const requestId = 'share-' + Date.now();
+  S.shareJob = { requestId, path: S.viewer.path, busy: true };
+  $('viewerShare').disabled = true;
+  $('viewerShareLabel').textContent = 'מכין ZIP…';
+  $('viewerShareNote').hidden = false;
+  $('viewerShareNote').classList.remove('error');
+  $('viewerShareStatus').textContent = 'בחר היכן לשמור את קובץ ה־ZIP';
+  send({ type: 'shareSummary', requestId, course: S.course.name, path: S.viewer.path, pdf: S.viewer.pdf || '', title: S.viewer.title });
+};
+$('viewerShareDismiss').onclick = () => { $('viewerShareNote').hidden = true; $('viewerShare').focus(); };
+function summaryShareStatus(m) {
+  if (!S.shareJob || S.shareJob.requestId !== m.requestId) return;
+  if (m.type === 'summaryShareResult') {
+    S.shareJob.busy = false;
+    $('viewerShare').disabled = false;
+    $('viewerShareLabel').textContent = 'שיתוף';
+  }
+  if (S.viewer?.path === S.shareJob.path && S.view === 'sites') {
+    $('viewerShareNote').hidden = false;
+    $('viewerShareNote').classList.toggle('error', m.status === 'error');
+    $('viewerShareStatus').textContent = m.text;
+  } else if (m.type === 'summaryShareResult' && m.status !== 'cancelled') toast(m.text, { error: m.status === 'error' });
+}
 $('siteBackCourse').onclick = () => { S.viewer = null; show('course'); };
 
 function openSite(site, url) {
+  $('viewerShareNote').hidden = true;
   if (window.stonesHook) window.stonesHook({ type: 'openSite', site });
   S.viewer = null;
   S.site = site;
@@ -1801,6 +1828,7 @@ function onMessage(m) {
       if (num) toast(`העתקת קישור להקלטת Zoom`, { action: `הוסף לשיעור ${num}`, ms: 9000, onAction: () => send({ type: 'addRecording', course: S.course.name, num, url: m.url }) });
       break;
     }
+    case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }
     case 'update': S.update = m; renderBanners(); break;
