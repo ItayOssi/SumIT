@@ -19,7 +19,7 @@ partial class HitStudent
     // The addresses can be pointed at a local test server.
     static string GeminiBase { get { return Environment.GetEnvironmentVariable("SUMIT_GEMINI_URL") ?? "https://generativelanguage.googleapis.com"; } }
     static string OpenAiBase { get { return Environment.GetEnvironmentVariable("SUMIT_OPENAI_URL") ?? "https://api.openai.com"; } }
-    string GeminiModel { get { return Str(settings, "geminiModel").Length > 0 ? Str(settings, "geminiModel") : "gemini-flash-latest"; } }
+    string GeminiModel { get { string m = Str(settings, "geminiModel").Trim(); string raw = m.Length > 0 ? m : "gemini-1.5-flash"; return raw.StartsWith("models/") ? raw.Substring(7) : raw; } }
     string OpenAiModel { get { return Str(settings, "openaiModel").Length > 0 ? Str(settings, "openaiModel") : "gpt-4o-mini"; } }
 
     class HelperReply { public string Text = "", Provider = ""; public bool Error, Limit; }
@@ -49,7 +49,7 @@ partial class HitStudent
             var req = new HttpRequestMessage(HttpMethod.Post, "http://invalid/");
             if (provider == "gemini")
             {
-                url = GeminiBase + "/v1beta/models/" + GeminiModel + ":generateContent";
+                url = GeminiBase + "/v1beta/models/" + Uri.EscapeDataString(GeminiModel) + ":generateContent?key=" + Uri.EscapeDataString(key);
                 var contents = messages.Select(m => (object)new Dictionary<string, object> { { "role", m.Item1 == "assistant" ? "model" : "user" }, { "parts", new object[] { new Dictionary<string, object> { { "text", m.Item2 } } } } }).ToList();
                 if (image != null && contents.Count > 0) {
                     var last = (Dictionary<string, object>)contents[contents.Count - 1];

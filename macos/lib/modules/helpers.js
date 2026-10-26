@@ -73,7 +73,7 @@ module.exports = {
     get GeminiBase() { return process.env.SUMIT_GEMINI_URL || 'https://generativelanguage.googleapis.com'; },
     get OpenAiBase() { return process.env.SUMIT_OPENAI_URL || 'https://api.openai.com'; },
     get AnthropicBase() { return process.env.SUMIT_ANTHROPIC_URL || 'https://api.anthropic.com'; },
-    get GeminiModel() { return Str(this.settings, 'geminiModel').length > 0 ? Str(this.settings, 'geminiModel') : 'gemini-1.5-flash'; },
+    get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-1.5-flash'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
     get OpenAiModel() { return Str(this.settings, 'openaiModel').length > 0 ? Str(this.settings, 'openaiModel') : 'gpt-4o-mini'; },
     get ClaudeModel() { return Str(this.settings, 'claudeModel').length > 0 ? Str(this.settings, 'claudeModel') : 'claude-3-5-haiku-latest'; },
 
