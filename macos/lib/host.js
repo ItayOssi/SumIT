@@ -62,6 +62,9 @@ class Host {
       title: 'SumIT', width: 1240, height: 820, minWidth: 820, minHeight: 620, center: true, backgroundColor: bg, show: !this.selfTest,
       titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 }, tabbingIdentifier: 'sumit',
     });
+    // With a right-to-left system language (Hebrew on most students' Macs) Chromium mirrors child-view bounds, so
+    // x: 0 lands on the right edge - over the sidebar. layout() flips the rects back.
+    this.mirrorViews = /^(he|iw|ar|fa|ur|yi|ps|sd|ug|ckb|dv)\b/i.test(app.getLocale());
     this.win.on('resize', () => this.layout());
     this.win.on('maximize', () => this.layout());
     this.win.on('unmaximize', () => this.layout());
@@ -96,16 +99,8 @@ class Host {
     this.ui = new WebView('ui', { session: this.uiSession, preload: pre('preload-ui.js'), background: bg });
 
     const fill = (w, h) => ({ x: 0, y: 0, width: w, height: h });
-    const siteRectFn = (w, h) => {
-      // In RTL layout, the right sidebar lives permanently on the right edge.
-      // Match the exact sidebar width from CSS (236px default, 70px on narrow <= 860px, 48px if collapsed).
-      const sideWidth = this.sideWidth || (w <= 860 ? 70 : 236);
-      const topBar = (this.siteBounds && this.siteBounds.y) ? this.siteBounds.y : 89;
-      const targetW = Math.max(10, w - sideWidth);
-      const targetH = Math.max(10, h - topBar);
-      return { x: 0, y: topBar, width: targetW, height: targetH };
-    };
-    this.addPanel('site', [[this.site, siteRectFn]], false);
+    // Detached from the window while hidden, so the dashboard underneath gets every click.
+    this.addPanel('site', [[this.site, (w, h) => this.siteRect(w, h)]], false, true);
     this.addPanel('moodle', this.loginPanel(this.moodle, 'התחבר עם שם המשתמש והסיסמה של HIT. זה קורה פעם אחת בלבד.', () => { this.moodleCancelled = true; this.bringToFront('ui'); }));
     this.addPanel('zoom', this.loginPanel(this.zoom, 'התחבר ל-Zoom עם המשתמש של HIT. זה קורה פעם אחת, וההורדה תמשיך לבד.', () => { if (this.working) this.zoomCancelled = true; this.bringToFront('ui'); }));
     this.addPanel('cs24', [[this.cs24View, fill]]);
@@ -130,11 +125,21 @@ class Host {
     return [[bar, (w) => ({ x: 0, y: 0, width: w, height: 60 })], [view, (w, h) => ({ x: 0, y: 60, width: w, height: Math.max(0, h - 60) })]];
   }
 
-  addPanel(name, items, visible = true) {
-    this.panels.set(name, { items, visible });
+  // detach: the panel's views are removed from the window while it is hidden, not just made invisible.
+  addPanel(name, items, visible = true, detach = false) {
+    this.panels.set(name, { items, visible, detach });
     if (!this.order.includes(name)) this.order.unshift(name);
-    for (const [v] of items) { this.win.contentView.addChildView(v.view); v.view.setVisible(visible); }
+    for (const [v] of items) v.view.setVisible(visible);
     this.restack();
+  }
+
+  // Where a site goes: left of the right-hand (RTL) sidebar, under the site bar. Both come from the page's last
+  // placeSite report (CSS: 236px wide, 70px at <= 860px, 48px collapsed); the fallbacks cover the first frame.
+  // Left-to-right coordinates: layout() takes care of Chromium's RTL mirroring.
+  siteRect(w, h) {
+    const sideWidth = this.sideWidth || (w <= 860 ? 70 : 236);
+    const top = this.siteBounds && this.siteBounds.y ? this.siteBounds.y : 89;
+    return { x: 0, y: top, width: Math.max(10, w - sideWidth), height: Math.max(10, h - top) };
   }
 
   removePanel(name) {
@@ -158,13 +163,20 @@ class Host {
     if (!p) return;
     p.visible = visible;
     for (const [v] of p.items) v.view.setVisible(visible);
-    this.layout();
+    if (p.detach) this.restack(); else this.layout();
   }
   isPanelVisible(name) { const p = this.panels.get(name); return !!p && p.visible; }
   frontPanel() { return this.order[this.order.length - 1]; }
 
+  // addChildView of a view that's already there moves it to the top, so this re-applies the whole z-order.
   restack() {
-    for (const name of this.order) for (const [v] of this.panels.get(name).items) this.win.contentView.addChildView(v.view);
+    for (const name of this.order) {
+      const p = this.panels.get(name);
+      for (const [v] of p.items) {
+        if (p.detach && !p.visible) { try { this.win.contentView.removeChildView(v.view); } catch { } }
+        else this.win.contentView.addChildView(v.view);
+      }
+    }
     this.layout();
   }
 
@@ -173,7 +185,10 @@ class Host {
     const { width, height } = this.win.getContentBounds();
     for (const name of this.order) {
       const p = this.panels.get(name);
-      for (const [v, rect] of p.items) v.view.setBounds(rect(width, height));
+      for (const [v, rect] of p.items) {
+        const r = rect(width, height);   // left-to-right window coordinates
+        if (this.mirrorViews) r.x = width - r.x - r.width;
+        v.view.setBounds(r);      }
     }
   }
 
@@ -796,8 +811,8 @@ class Host {
     const w = Math.max(10, totalW - sideWidth);
     const { height: totalH } = this.win.getContentBounds();
     const h = Math.max(10, totalH - y);
-    // In RTL layout, the webview MUST be placed strictly on the left of the right sidebar:
-    // x is strictly 0, width is strictly (totalWidth - sideWidth).
+    // The site sits left of the right-hand sidebar: x 0, width (totalWidth - sideWidth), in left-to-right
+    // coordinates (layout() undoes Chromium's mirroring under an RTL system language).
     this.siteBounds = { x: 0, y, width: w, height: h };
     this.layout();
   }
