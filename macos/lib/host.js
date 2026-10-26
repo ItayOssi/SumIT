@@ -349,8 +349,10 @@ class Host {
 
   SendSettings() {
     const hitOd = this.HitOneDrive();
+    const outdated = this.OutdatedSummaries ? this.OutdatedSummaries().length : 0;
     this.Send({
       snapSeen: Bool(this.settings, 'snapSeen'), hitOneDrive: hitOd,
+      outdatedSummaries: outdated,
       studyInHitOneDrive: hitOd.length > 0 && this.StudyRoot.toLowerCase().startsWith(hitOd.replace(/\/+$/, '').toLowerCase() + '/'),
       tasks: Array.isArray(this.settings.tasks) ? this.settings.tasks : [],
       type: 'settings', studyRoot: this.StudyRoot, recordingsDir: this.RecordingsDir, notabilityDir: this.NotabilityDir,
@@ -369,6 +371,7 @@ class Host {
 
   Send(message) {
     if (this.shuttingDown || !this.ui || this.ui.wc.isDestroyed()) return;
+    if (this.RecordUiFailure) this.RecordUiFailure(message);
     try { this.ui.wc.send('sumit-host-message', JSON.parse(JSON.stringify(message === undefined ? null : message))); } catch { }
   }
 
@@ -587,6 +590,11 @@ class Host {
       case 'viewFile': this.ShowFile(m); break;
       case 'selectSummary': this.SelectSummary(m); break;
       case 'summaryChat': this.AskSummary(m); break;
+      case 'exportDiagnostics': this.ExportDiagnostics(); break;
+      case 'importSharedSummary': this.PickSharedSummary(m); break;
+      case 'cloudSummaryImport': this.cloudImportCourse = course; this.cloudImportLecture = Int(m, 'num'); break;
+      case 'cancelCloudImport': this.cloudImportCourse = null; this.cloudImportLecture = 0; break;
+      case 'refreshSummaries': this.RefreshOutdatedSummaries(); break;
       case 'shareSummary': this.ShareSummary(m); break;
       case 'pickProfileImage': await this.SetProfileImage(false); break;
       case 'clearProfileImage': await this.SetProfileImage(true); break;
@@ -812,8 +820,21 @@ class Host {
       // Downloads that a module started itself (e.g. through downloadURL with its own target) set this flag.
       if (item.getSavePath && item.getSavePath()) return;
       const downloadCourse = this.siteDownloadCourse;
+      const sharedCourse = this.cloudImportCourse;
+      const sharedLecture = this.cloudImportLecture;
+      const url = this.site && this.site.source ? this.site.source : '';
+      const isZip = item.getFilename().toLowerCase().endsWith('.zip');
+      const sharedZip = sharedCourse && sharedLecture > 0 && this.IsOneDrivePage && this.IsOneDrivePage(url) && isZip;
+      if (sharedZip) {
+        this.cloudImportCourse = null;
+        this.cloudImportLecture = 0;
+      }
       const name = SafeName(item.getFilename());
-      const { dir, where } = this.SiteSaveDir(name);
+      let { dir, where } = this.SiteSaveDir(name);
+      if (sharedZip) {
+        dir = path.join(this.CourseDir(sharedCourse), C.SumitDir, 'incoming');
+        where = 'סיכום להרצאה ' + sharedLecture;
+      }
       mkdirp(dir);
       this.siteDownloadsDir = dir;
       const p = this.UniquePathIn(dir, name);
@@ -833,6 +854,7 @@ class Host {
       item.once('done', (_e, state) => {
         if (state === 'completed') {
           this.Send({ type: 'siteDownload', name: shown, dir, path: p, state: 'done', where });
+          if (sharedZip && this.ImportSharedSummary) this.ImportSharedSummary(sharedCourse, sharedLecture, p);
           if (downloadCourse) this.SendCourseLocal(downloadCourse);
         } else this.Send({ type: 'siteDownload', name: shown, dir, state: 'failed' });
       });
@@ -855,7 +877,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat'])
+  'study-policy', 'summary-share', 'summary-chat', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };
