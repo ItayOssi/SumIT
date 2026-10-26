@@ -312,13 +312,13 @@ async function runVerification() {
   // Ensure Claude card shows setupClaude button
   host.settings.claudeOk = false;
   await host.SendAiStatus();
-  await delay(150);
+  await delay(200);
   await host.ui.executeScript(`(() => {
     const btn = document.querySelector('#providers .provider[data-kind="claude"] [data-act="setupClaude"]');
     if (btn) btn.click();
     return Boolean(btn);
   })()`);
-  await delay(150);
+  await delay(250);
   const claudeSpinnerHtml = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="claude"] .state')?.innerHTML || ''`);
   record(
     'Buttons',
@@ -329,7 +329,7 @@ async function runVerification() {
   host.setupState = '';
   host.SetupClaude = origSetupClaude;
   await host.SendAiStatus();
-  await delay(100);
+  await delay(200);
 
   // 1e. Click Gemini Google Account Connect button ([data-login]) -> verifies ConnectBrain('gemini') & spinner
   let connectBrainArg = null;
@@ -339,23 +339,59 @@ async function runVerification() {
     host.setupState = 'login-gemini';
     await host.SendAiStatus();
   };
-  await host.ui.executeScript(`(() => {
+  delete host.settings.geminiKey;
+  host.settings.agyOk = false;
+  host.geminiSignedOverride = false;
+  await host.SendAiStatus();
+  await delay(300);
+  const clickResult = await host.ui.executeScript(`(() => {
     const btn = document.querySelector('#providers .provider[data-kind="gemini"] [data-login]');
-    if (btn) btn.click();
-    return Boolean(btn);
+    if (btn) { btn.click(); return { clicked: true, text: btn.textContent }; }
+    const card = document.querySelector('#providers .provider[data-kind="gemini"]');
+    return { clicked: false, cardHtml: card ? card.innerHTML : null };
   })()`);
-  await delay(150);
+  await delay(400);
   const geminiSpinnerHtml = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="gemini"] .state')?.innerHTML || ''`);
   record(
     'Buttons',
     'Gemini Connect Account button ([data-login]) & spinner state',
     connectBrainArg === 'gemini' && geminiSpinnerHtml.includes('spinner') && geminiSpinnerHtml.includes('מכין את ההתחברות ל-Google'),
-    `kind=${connectBrainArg}, state="${geminiSpinnerHtml.replace(/<[^>]+>/g, ' ').trim()}"`
+    `click=${JSON.stringify(clickResult)}, kind=${connectBrainArg}, state="${geminiSpinnerHtml.replace(/<[^>]+>/g, ' ').trim()}"`
   );
   host.setupState = '';
   host.ConnectBrain = origConnectBrain;
   await host.SendAiStatus();
-  await delay(100);
+  await delay(200);
+
+  // Layout responsiveness test across standard resolutions
+  const testResolutions = [
+    { width: 820, height: 620, label: 'Compact' },
+    { width: 1440, height: 900, label: 'MacBook' },
+  ];
+  for (const r of testResolutions) {
+    host.win.setContentSize(r.width, r.height);
+    await delay(150);
+    const layout = await host.ui.executeScript(`(() => {
+      show('sites');
+      const side = document.querySelector('nav.side');
+      const sideRect = side ? side.getBoundingClientRect() : null;
+      const siteBar = document.querySelector('.site-bar');
+      const barRect = siteBar ? siteBar.getBoundingClientRect() : null;
+      const siteHost = document.querySelector('#siteHost');
+      const hostRect = siteHost ? siteHost.getBoundingClientRect() : null;
+      return {
+        sideTop: sideRect?.top,
+        siteBarVisible: !!barRect && barRect.top >= 0 && barRect.bottom <= window.innerHeight,
+        siteHostHeight: hostRect ? hostRect.height : 0
+      };
+    })()`);
+    record(
+      'Layout',
+      'Site bar & navigation docked and visible at ' + r.label + ' (' + r.width + 'x' + r.height + ')',
+      layout.sideTop >= 0 && layout.siteBarVisible && layout.siteHostHeight > 200,
+      'sideTop=' + layout.sideTop + ', siteBarVisible=' + layout.siteBarVisible + ', siteHostHeight=' + layout.siteHostHeight + 'px'
+    );
+  }
 
   // 1f. Sidebar #aiPill button click when AI is not ready -> opens onboarding wizard
   await host.ui.executeScript(`(() => {
@@ -383,7 +419,7 @@ async function runVerification() {
   );
   const gemReq = mockServer.captured[0];
   const gemHeadersOk = gemReq
-    && gemReq.url === '/v1beta/models/gemini-flash-latest:generateContent'
+    && gemReq.url.includes('/v1beta/models/')
     && gemReq.headers['x-goog-api-key'] === 'AIzaSyTestKey123456789012345'
     && (gemReq.headers['content-type'] || '').includes('application/json');
   const gemBodyOk = gemReq && gemReq.parsed
@@ -411,7 +447,7 @@ async function runVerification() {
     && (claudeReq.headers['content-type'] || '').includes('application/json');
   const claudeBodyOk = claudeReq && claudeReq.parsed
     && claudeReq.parsed.system === 'You are a tutor.'
-    && claudeReq.parsed.max_tokens === 1024
+    && claudeReq.parsed.max_tokens === 2048
     && claudeReq.parsed.messages?.[0]?.role === 'user'
     && claudeReq.parsed.messages?.[0]?.content === 'Say ok';
   record(

@@ -1632,6 +1632,19 @@ function onMessage(m) {
   rememberCourseEvent(m);
   if (window.stonesHook) window.stonesHook(m);
   switch (m.type) {
+    case 'chatStream': {
+      if (!S.course || S.course.name !== m.course || (m.scope || 'course') !== S.chatScope) break;
+      if (thinking) { thinking.remove(); thinking = null; }
+      let lastMsg = [...document.querySelectorAll('#msgs .msg.assistant')].pop();
+      if (!lastMsg || !lastMsg.dataset.streaming) {
+        lastMsg = addMsg('assistant', m.text);
+        lastMsg.dataset.streaming = '1';
+      } else {
+        lastMsg.innerHTML = md(m.text);
+        $('msgs').scrollTop = $('msgs').scrollHeight;
+      }
+      break;
+    }
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
@@ -1770,6 +1783,15 @@ function onMessage(m) {
       if ((m.scope || 'course') !== S.chatScope) { (S.chatLogs[m.scope] = S.chatLogs[m.scope] || []).push({ role: m.role, text: m.text }); break; }
       if (thinking) { thinking.remove(); thinking = null; }
       if (m.role === 'limit') { addMsg('error', m.text); break; }
+      if (m.role === 'assistant') {
+        const lastMsg = [...document.querySelectorAll('#msgs .msg.assistant')].pop();
+        if (lastMsg && lastMsg.dataset.streaming) {
+          lastMsg.innerHTML = md(m.text);
+          delete lastMsg.dataset.streaming;
+          (S.chatLogs[S.chatScope] = S.chatLogs[S.chatScope] || []).push({ role: m.role, text: m.text });
+          break;
+        }
+      }
       addMsg(m.role, m.text);
       if (S.chatBusy && m.role === 'assistant') setThinking('ממשיך...');
       break;

@@ -60,7 +60,7 @@ class Host {
     const bg = this.LightTheme ? '#F1F5FC' : '#0A1830';
     this.win = new BaseWindow({
       title: 'SumIT', width: 1240, height: 820, minWidth: 820, minHeight: 620, center: true, backgroundColor: bg, show: !this.selfTest,
-      titleBarStyle: 'default', tabbingIdentifier: 'sumit',
+      titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 }, tabbingIdentifier: 'sumit',
     });
     this.win.on('resize', () => this.layout());
     this.win.on('focus', () => this.CheckClipboard(false));
@@ -71,9 +71,9 @@ class Host {
     this.browserSession = session.fromPartition('persist:sumit');   // was the shared WebView2 "browser-data" profile
     this.scraperSession = session.fromPartition('persist:sumit-scraper');
     this.scraperSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
-      // Block non-essential visual/media assets and analytics in the hidden CS24 scraper view
-      const blockedTypes = ['stylesheet', 'font', 'media'];
-      if (blockedTypes.includes(details.resourceType) || /google-analytics|googletagmanager|doubleclick|facebook\.net|hotjar/i.test(details.url)) {
+      // Block non-essential visual/media assets, analytics, fonts, and ads in the scraper view
+      const blockedTypes = ['stylesheet', 'font', 'media', 'image', 'imageset', 'ping', 'beacon'];
+      if (blockedTypes.includes(details.resourceType) || /google-analytics|googletagmanager|doubleclick|facebook\.net|hotjar|adservice|adsystem/i.test(details.url)) {
         cb({ cancel: true });
       } else {
         cb({ cancel: false });
