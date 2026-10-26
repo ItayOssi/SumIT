@@ -93,12 +93,13 @@ class Host {
 
     const fill = (w, h) => ({ x: 0, y: 0, width: w, height: h });
     const siteRectFn = (w, h) => {
-      const minSide = w <= 860 ? 70 : 236;
-      const topBar = this.siteBounds ? this.siteBounds.y : 89;
-      const b = this.siteBounds || { x: 0, y: topBar, width: Math.max(10, w - minSide), height: Math.max(10, h - topBar) };
-      const clampedWidth = Math.min(b.width, Math.max(10, w - minSide - b.x));
-      const clampedHeight = Math.min(b.height, Math.max(10, h - b.y));
-      return { x: b.x, y: b.y, width: clampedWidth, height: clampedHeight };
+      // In RTL layout, the right sidebar lives permanently on the right edge.
+      // Match the exact sidebar width from CSS (236px default, 70px on narrow <= 860px, 48px if collapsed).
+      const sideWidth = this.sideWidth || (w <= 860 ? 70 : 236);
+      const topBar = (this.siteBounds && this.siteBounds.y) ? this.siteBounds.y : 89;
+      const targetW = Math.max(10, w - sideWidth);
+      const targetH = Math.max(10, h - topBar);
+      return { x: 0, y: topBar, width: targetW, height: targetH };
     };
     this.addPanel('site', [[this.site, siteRectFn]], false);
     this.addPanel('moodle', this.loginPanel(this.moodle, 'התחבר עם שם המשתמש והסיסמה של HIT. זה קורה פעם אחת בלבד.', () => { this.moodleCancelled = true; this.bringToFront('ui'); }));
@@ -783,18 +784,17 @@ class Host {
     const num = (k) => { const v = Number(m[k]); return isFinite(v) ? v : 0; };
     const vw = num('vw');
     if (vw > 0) this.siteScale = this.clientWidth() / vw;
-    const x = Math.round(num('x') * this.siteScale);
-    const y = Math.round(num('y') * this.siteScale);
-    let w = Math.round(num('w') * this.siteScale);
-    const h = Math.round(num('h') * this.siteScale);
+    const y = Math.max(0, Math.round(num('y') * this.siteScale));
+    const reportedSide = num('sideW');
     const totalW = this.clientWidth();
-    // In RTL, the navigation bar lives on the right side (~236px, or ~70px on narrow viewports).
-    // Ensure the embedded webview never encroaches on the right edge or exceeds available width.
-    const minSideWidth = totalW <= 860 ? 70 : 236;
-    if (x + w > totalW - minSideWidth) {
-      w = Math.max(10, totalW - minSideWidth - x);
-    }
-    this.siteBounds = { x, y, width: Math.max(10, w), height: Math.max(10, h) };
+    const sideWidth = reportedSide > 0 ? Math.round(reportedSide * this.siteScale) : (totalW <= 860 ? 70 : 236);
+    this.sideWidth = sideWidth;
+    const w = Math.max(10, totalW - sideWidth);
+    const { height: totalH } = this.win.getContentBounds();
+    const h = Math.max(10, totalH - y);
+    // In RTL layout, the webview MUST be placed strictly on the left of the right sidebar:
+    // x is strictly 0, width is strictly (totalWidth - sideWidth).
+    this.siteBounds = { x: 0, y, width: w, height: h };
     this.layout();
   }
 

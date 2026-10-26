@@ -1536,12 +1536,9 @@ function placeSite(navigate) {
   const r = $('siteHost').getBoundingClientRect();
   const sideEl = document.querySelector('nav.side');
   const sideRect = sideEl ? sideEl.getBoundingClientRect() : null;
-  // In RTL, nav.side is on the right side. Never let siteHost expand into nav.side.
-  let allowedWidth = r.width;
-  if (sideRect && sideRect.left > r.left) {
-    allowedWidth = Math.min(r.width, Math.max(10, sideRect.left - r.left));
-  }
-  const m = { x: r.left, y: r.top, w: allowedWidth, h: r.height, vw: window.innerWidth };
+  const sideW = sideRect ? sideRect.width : (window.innerWidth <= 860 ? 70 : 236);
+  // In RTL, nav.side is on the right side. The webview is strictly placed at x: 0 with width: window.innerWidth - sideW.
+  const m = { x: 0, y: r.top, w: window.innerWidth - sideW, h: r.height, vw: window.innerWidth, sideW };
   if (navigate && S.viewer) send(Object.assign({ type: 'viewFile', path: S.viewer.path }, m));
   else if (navigate) { send(Object.assign({ type: 'showSite', site: S.site, url: S.siteUrl || '' }, m)); S.siteUrl = null; }
   else send(Object.assign({ type: 'placeSite' }, m));
