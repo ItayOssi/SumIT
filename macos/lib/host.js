@@ -63,6 +63,10 @@ class Host {
       titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 }, tabbingIdentifier: 'sumit',
     });
     this.win.on('resize', () => this.layout());
+    this.win.on('maximize', () => this.layout());
+    this.win.on('unmaximize', () => this.layout());
+    this.win.on('enter-full-screen', () => this.layout());
+    this.win.on('leave-full-screen', () => this.layout());
     this.win.on('focus', () => this.CheckClipboard(false));
     this.win.on('close', () => this.onClosing());
     nativeTheme.on('updated', () => this.ApplyTitleBarTheme());
