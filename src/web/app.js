@@ -326,7 +326,10 @@ function providerCard(kind) {
   let state, act = '';
   if (kind === 'claude') {
     if (busy) state = `<span class="spinner"></span>${setupText(a.setup)}`;
-    else if (c.loggedIn) state = `<span class="chip ok"><span data-ic="check"></span>מחובר</span><span class="muted ltr">${esc(c.email || '')}</span>`;
+    else if (c.loggedIn) {
+      state = `<span class="chip ok"><span data-ic="check"></span>מחובר</span><span class="muted ltr">${esc(c.email || '')}</span>`;
+      act = '<button class="ghost small" data-act="testClaude">בדוק שזה עובד</button><button class="ghost small" data-act="disconnectClaude">התנתק</button>';
+    }
     else if (c.installed) { state = '<span class="chip warn">מותקן, לא מחובר</span>'; act = '<button class="primary small" data-act="setupClaude">התחבר לחשבון Claude</button>'; }
     else { state = '<span class="chip">לא מותקן</span>'; act = '<button class="primary small" data-act="setupClaude">התקן והתחבר</button>'; }
   } else {
@@ -339,17 +342,21 @@ function providerCard(kind) {
       <div class="row" style="width:100%"><input type="password" class="ltr" placeholder="${c.hasKey ? 'המפתח שמור · אפשר להחליף' : 'מפתח API (לא חובה)'}" data-key><button class="small" data-act="saveKey">שמור</button></div>
       <button class="link" data-act="getKey">קבל מפתח מ-Google AI Studio</button>`;
   }
+  const tr = (S.brainTests || {})[kind];
+  const testLine = !(c && c.loggedIn) || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
   const el = h(`<div class="provider${sel ? ' selected' : ''}" data-kind="${kind}">
     ${kind === 'claude' ? '<span class="chip accent tag">מומלץ</span>' : '<span class="chip ok tag">חינמי או מנוי</span>'}
     <div class="ph"><span class="pl ${kind}" data-ic="${kind}"></span><div><h3>${kind === 'claude' ? 'Claude' : 'Gemini'}</h3></div></div>
     <p>${kind === 'claude' ? 'הכי טוב בסיכומים ארוכים ובבניית דפי לימוד. דורש חשבון Claude (Pro ומעלה מומלץ).' : 'מתחברים עם חשבון Google: חינמי, או עם המנוי שלך (למשל Google AI Pro לסטודנטים). טוב מאוד לצ\'אט ולשאלות, וגם גיבוי כשנגמרת המכסה של Claude.'}</p>
-    <div class="state">${state}</div><div class="act">${act}</div></div>`);
+    <div class="state">${state}</div><div class="act">${act}</div>${testLine}</div>`);
   el.onclick = (e) => {
     const t = e.target.closest('[data-act]');
     if (t) {
       e.stopPropagation();
       const actn = t.dataset.act;
       if (actn === 'setupClaude') { send({ type: 'setProvider', provider: 'claude' }); send({ type: 'setupClaude' }); toast('מתחבר ל-Claude. אם נפתח דפדפן, אשר שם את ההתחברות.'); }
+      if (actn === 'testClaude') { S.brainTests = S.brainTests || {}; S.brainTests.claude = { busy: true }; renderProviders(); send({ type: 'testBrain', kind: 'claude' }); }
+      if (actn === 'disconnectClaude') { if (confirm('להתנתק מ-Claude?')) send({ type: 'disconnectBrain', kind: 'claude' }); }
       if (actn === 'setupGemini') { send({ type: 'setProvider', provider: 'gemini' }); send({ type: 'setupGemini' }); }
       if (actn === 'getKey') send({ type: 'openGeminiKeyPage' });
       if (actn === 'loginGemini') { send({ type: 'setProvider', provider: 'gemini' }); send({ type: 'loginGemini' }); toast('ההתחברות ל-Gemini לוקחת קצת זמן. אשר בחלון שנפתח והאפליקציה תמשיך לבד.'); }
@@ -361,10 +368,11 @@ function providerCard(kind) {
   };
   return el;
 }
-function renderProviders() {
+function renderProviders(force) {
   for (const id of ['providers', 'wizProviders']) {
     const box = $(id);
-    const focused = box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+    if (!box) continue;
+    const focused = !force && box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
     if (focused) continue;
     box.innerHTML = '';
     box.append(providerCard('claude'), providerCard('gemini'), providerCard('openai'));
@@ -1780,7 +1788,7 @@ function onMessage(m) {
     case 'authCode': S.authCode = m.state === 'wait' ? { kind: m.kind, url: m.url, phase:m.phase } : null; renderProviders(); break;
     case 'loginUrl':
       // The browser normally opens by itself; if it didn't, the address is here.
-      toast(`אם הדפדפן לא נפתח, ההתחברות ל-${m.kind === 'gemini' ? 'Google' : 'ChatGPT'} כאן:`, { action: 'פתח את דף ההתחברות', ms: 20000, onAction: () => send({ type: 'openLink', url: m.url }) });
+      toast(`אם הדפדפן לא נפתח, ההתחברות ל-${m.kind === 'gemini' ? 'Google' : m.kind === 'claude' ? 'Claude' : 'ChatGPT'} כאן:`, { action: 'פתח את דף ההתחברות', ms: 20000, onAction: () => send({ type: 'openLink', url: m.url }) });
       break;
     case 'needSync':
       // The assistant had nothing to read yet: download the course, then ask the same question again.
@@ -1807,7 +1815,15 @@ function onMessage(m) {
     case 'updateProgress': S.update = Object.assign(S.update || {}, { progress: m.text, error: m.error }); renderBanners(); break;
     case 'updateReady': S.updateReady = m.version; renderBanners(); toast(`העדכון לגרסה ${m.version} מוכן. הוא ייכנס בפעם הבאה שהאפליקציה נפתחת, או עכשיו:`, { action: 'הפעל מחדש', onAction: () => send({ type: 'restartForUpdate' }), ms: 15000 }); break;
     case 'notabilitySubjects': if (S.course) send({ type: 'openCourse', id: S.course.id, course: S.course.name }); break;
-    case 'helperKeyResult': toast(m.ok ? (m.provider === 'gemini' ? 'Gemini' : 'ChatGPT') + ' חובר, והוא יעזור בצ\'אט ובקריאת דפים' : 'לא התחבר: ' + m.message, { error: !m.ok, ms: 6000 }); renderProviders(); break;
+    case 'helperKeyResult': {
+      toast(m.ok ? (m.provider === 'gemini' ? 'Gemini' : 'ChatGPT') + ' חובר, והוא יעזור בצ\'אט ובקריאת דפים' : 'לא התחבר: ' + m.message, { error: !m.ok, ms: 6000 });
+      if (!m.ok) {
+        document.querySelectorAll(`.provider[data-kind="${m.provider}"] [data-save]`).forEach(b => { b.disabled = false; b.textContent = 'חבר'; });
+      } else {
+        renderProviders(true);
+      }
+      break;
+    }
     case 'sectionProgress': {
       if (!S.course || S.course.name !== m.course) break;
       const s = section(m.num); if (!s) break;
@@ -1871,7 +1887,7 @@ function maybeHideSplash(force) {
 setTimeout(() => maybeHideSplash(true), 7000);
 
 function start() {
-  host = DEMO ? window.DemoHost : (window.chrome && window.chrome.webview);
+  host = DEMO ? window.DemoHost : (window.sumitBridge || (window.chrome && window.chrome.webview));
   if (!host) return;
   host.addEventListener('message', e => onMessage(e.data));
   icons();
