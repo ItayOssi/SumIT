@@ -224,13 +224,16 @@
         </div>
         <button class="small ghost" id="viewerShareDismiss" aria-label="סגור את הסבר השיתוף">סגור</button>
       </div>
+      <div id="summaryWorkspace">
       <div id="siteHost"><div class="loading"><span class="spinner lg"></span></div></div>
       <aside id="summaryChat" hidden dir="rtl" aria-label="שיחה עם Gemini על הסיכום">
-        <div class="row"><b class="grow">שאל את Gemini</b><small id="summaryChatStatus" role="status"></small><button id="summaryChatClose" class="ghost small">סגור צ׳אט</button></div>
+        <div class="row"><b class="grow">שאל את Gemini</b><small id="summaryChatStatus" role="status"></small><button id="summaryChatExpand" class="ghost small" aria-pressed="false">הגדל</button><button id="summaryChatClose" class="ghost small">סגור צ׳אט</button></div>
+        <label class="summary-chat-width">רוחב הצ׳אט <input id="summaryChatWidth" type="range" min="300" max="680" step="20" value="380" aria-label="רוחב הצ׳אט"></label>
         <div id="summaryChatSelection" hidden><img id="summaryChatImage" alt="האזור שסימנת בסיכום"><button id="summaryChatClearSelection" class="ghost small">הסר סימון</button></div>
         <div id="summaryChatMessages" aria-live="polite" role="log"></div>
         <div class="row"><textarea id="summaryChatText" maxlength="8000" rows="2" placeholder="מה תרצה להבין באזור שסימנת?" aria-label="השאלה שלך"></textarea><button id="summaryChatSend" class="primary">שלח ל־Gemini</button></div>
       </aside>
+      </div>
     </section>
 
     <!-- Settings -->

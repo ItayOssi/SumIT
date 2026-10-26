@@ -1,4 +1,4 @@
-// The summary stays visible above an independent Gemini-only conversation.
+// The summary stays visible beside an independent Gemini-only conversation.
 const summaryThreads = new Map();
 let summaryChatJob = null;
 function summaryThread() {
@@ -40,3 +40,16 @@ function summaryChatEvent(m){
   if(t){t.messages.push({role:m.error?'error':'assistant',text:m.text});if(m.error)t.draft=summaryChatJob.text;}
   summaryChatJob=null;if(S.viewer)renderSummaryChat();
 }
+
+function setSummaryChatWidth(value) {
+  const width=Math.max(300,Math.min(680,Number(value)||380));
+  $('summaryWorkspace').style.setProperty('--summary-chat-width',width+'px');
+  $('summaryChatWidth').value=width;
+  $('summaryChatExpand').textContent=width>=540?'הקטן':'הגדל';
+  $('summaryChatExpand').setAttribute('aria-pressed',String(width>=540));
+  try{localStorage.setItem('sumit-summary-chat-width',String(width));}catch{}
+  requestAnimationFrame(()=>placeSite(false));
+}
+$('summaryChatWidth').oninput=e=>setSummaryChatWidth(e.target.value);
+$('summaryChatExpand').onclick=()=>setSummaryChatWidth(Number($('summaryChatWidth').value)>=540?380:600);
+try{setSummaryChatWidth(localStorage.getItem('sumit-summary-chat-width')||380);}catch{setSummaryChatWidth(380);}

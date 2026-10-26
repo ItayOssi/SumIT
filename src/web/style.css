@@ -891,7 +891,7 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .summary-options textarea { display:block; width:100%; margin-top:10px; resize:vertical; min-height:130px; padding:12px; border:1px solid var(--border); border-radius:10px; font:inherit; color:var(--text); background:var(--surface-2); }
 
 #siteHost { min-height: 100px; }
-#summaryChat { flex:0 0 auto; height:clamp(240px,38vh,430px); min-height:0; display:flex; flex-direction:column; gap:8px; padding:12px 18px; border-top:1px solid var(--line); background:var(--surface); }
+#summaryChat { flex:0 0 min(var(--summary-chat-width,380px),58%); width:min(var(--summary-chat-width,380px),58%); min-width:0; height:auto; min-height:0; display:flex; flex-direction:column; gap:8px; padding:12px 18px; border-inline-start:1px solid var(--line); background:var(--surface); }
 #summaryChat[hidden],#summaryChatSelection[hidden] { display:none; }
 #summaryChatMessages { flex:1; min-height:30px; overflow:auto; }
 #summaryChatSelection { display:flex; gap:12px; align-items:center; }
@@ -901,3 +901,16 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .summary-chat-message.user { border-inline-start:3px solid #709cff; }
 .summary-chat-message.error { border-inline-start:3px solid #ef7777; }
 #summaryChatStatus { color:var(--muted); }
+
+#summaryWorkspace { display:flex; flex:1; min-height:0; min-width:0; direction:rtl; overflow:hidden; }
+#summaryWorkspace #siteHost { min-width:0; }
+#summaryChat > .row:first-child { flex-wrap:wrap; gap:6px; }
+#summaryChatStatus { flex-basis:100%; order:2; }
+.summary-chat-width { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); }
+.summary-chat-width input { flex:1; min-width:50px; padding:0; }
+#summaryChat .katex-display { overflow-x:auto; overflow-y:hidden; }
+@media(max-width:760px) {
+  #summaryWorkspace { flex-direction:column; }
+  #summaryChat { flex:0 0 42%; width:100%; border-inline-start:0; border-top:1px solid var(--line); }
+  .summary-chat-width,#summaryChatExpand { display:none; }
+}

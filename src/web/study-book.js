@@ -72,7 +72,48 @@
     var grid = document.createElement('div'); grid.className = 'bookgrid';
     var side = document.createElement('aside'); side.className = 'booktabs';
     var main = document.createElement('div'); main.className = 'bookmain';
-    grid.appendChild(side); grid.appendChild(main);
+    var reading = document.createElement('div'); reading.className = 'bookreading';
+    var pin = document.createElement('aside'); pin.className = 'book-question-pin'; pin.hidden = true;
+    pin.setAttribute('aria-label', 'השאלה לצד ההסבר');
+    reading.appendChild(pin); reading.appendChild(main);
+    grid.appendChild(side); grid.appendChild(reading);
+    var controls = document.createElement('div'); controls.className = 'book-controls';
+    var menuToggle = document.createElement('button'); menuToggle.type = 'button';
+    menuToggle.setAttribute('aria-controls', 'sumit-book-sections'); side.id = 'sumit-book-sections';
+    controls.appendChild(menuToggle); wrap.insertBefore(controls, kids[first]);
+    var collapsed = false, pinned = null, printQuestion = null;
+    function collapseSections(value) {
+      collapsed = value; grid.classList.toggle('tabs-collapsed', value); side.hidden = value;
+      menuToggle.textContent = value ? 'הצג סעיפים ☰' : 'הסתר סעיפים ☰';
+      menuToggle.setAttribute('aria-expanded', String(!value));
+    }
+    menuToggle.onclick = function () { collapseSections(!collapsed); if (pinned) pinned.previousCollapsed = collapsed; };
+    collapseSections(false);
+    function restoreQuestion() {
+      if (!pinned) return;
+      var old = pinned; pinned = null;
+      old.placeholder.parentNode.replaceChild(old.question, old.placeholder);
+      pin.replaceChildren(); pin.hidden = true;
+      reading.classList.remove('with-question'); wrap.classList.remove('has-question');
+      collapseSections(old.previousCollapsed);
+    }
+    function pinQuestion(question) {
+      if (pinned && pinned.question === question) return;
+      restoreQuestion();
+      var placeholder = document.createComment('question reading position');
+      question.parentNode.insertBefore(placeholder, question);
+      pinned = { question:question, placeholder:placeholder, previousCollapsed:collapsed };
+      var head = document.createElement('div'); head.className = 'book-pin-head';
+      var title = document.createElement('b'); title.textContent = 'השאלה שלך'; head.appendChild(title);
+      var back = document.createElement('button'); back.type = 'button'; back.textContent = 'חזרה לתרגיל';
+      back.onclick = function () { restoreQuestion(); show('hw', false); question.open = true; question.scrollIntoView({block:'start'}); };
+      var close = document.createElement('button'); close.type = 'button'; close.textContent = 'סגור';
+      close.onclick = restoreQuestion; head.appendChild(back); head.appendChild(close);
+      pin.appendChild(head); pin.appendChild(question); question.open = true; pin.hidden = false;
+      reading.classList.add('with-question'); wrap.classList.add('has-question'); collapseSections(true);
+    }
+    addEventListener('beforeprint', function () { printQuestion = pinned && pinned.question; restoreQuestion(); });
+    addEventListener('afterprint', function () { if (printQuestion) pinQuestion(printQuestion); printQuestion = null; });
     wrap.insertBefore(grid, kids[first]);
     if (toc) main.appendChild(toc);
 
@@ -92,7 +133,7 @@
     order.forEach(function (n, ix) {
       var b = document.createElement('button'); b.type = 'button'; b.setAttribute('data-p', n);
       b.innerHTML = '<span class="bn">' + (ix + 1) + '</span><span class="bt">' + ICONS[n] + ' ' + NAMES[n] + '</span>';
-      b.onclick = function () { show(n, true); };
+      b.onclick = function () { restoreQuestion(); show(n, true); };
       side.appendChild(b);
     });
 
@@ -133,7 +174,15 @@
     document.addEventListener('click', function (ev) {
       var a = ev.target.closest ? ev.target.closest('a[href^="#"]') : null; if (!a || a.closest('nav.toc')) return;
       var t = document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))), pg = t && pageOf(t);
-      if (pg) { ev.preventDefault(); show(pg, false); if (t.tagName === 'DETAILS') t.open = true; t.scrollIntoView(); }
+      if (pg) {
+        ev.preventDefault();
+        var question = a.closest('details.q');
+        if (question && pg !== 'hw') pinQuestion(question);
+        else if (pg === 'hw') restoreQuestion();
+        show(pg, false);
+        for (var parent = t; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+        t.scrollIntoView({block:'start'});
+      }
     });
     addEventListener('hashchange', goHash);
     show(order[0], false); goHash();
