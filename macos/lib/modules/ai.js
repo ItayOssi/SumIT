@@ -680,10 +680,11 @@ module.exports = {
         + 'הקבצים שנמצאים בתיקיית העבודה (נתיבים יחסיים):\n' + inventory;
       writeText(taskFile, full);
 
+      const modelName = this.AgyModel || 'gemini-3.8-flash-low';
       const args = [
         '-p',
         'Read the file ' + C.SumitDir + '/' + path.basename(taskFile) + ' in the current folder and carry out everything it says, completely and without asking questions. Reply with the answer or a one-line summary only.',
-        '--mode', 'accept-edits', '--output-format', 'stream-json', '--add-dir', this.SkillDir,
+        '--mode', 'accept-edits', '--output-format', 'stream-json', '--add-dir', this.SkillDir, '--model', modelName,
       ];
       const envv = { NO_COLOR: '1' };
       let lastLife = Date.now();

@@ -584,8 +584,9 @@ partial class HitStudent
             + "\n\n---\nהערות טכניות (חשוב): אסור להריץ פקודות או תוכניות (לא PowerShell, לא Python, ולא תתי-סוכנים). השתמש רק בכלי הקבצים: קריאת קובץ, רשימת תיקייה וכתיבת קובץ. "
             + "דלג על כל שלב בסקיל שדורש הרצת סקריפט (למשל יצירת קבצי PDF עם מפנים, בדיקת קישורים או הרכבה) וכתוב ישירות את קבצי ה-HTML והטקסט. קבצי PDF ותמונות אפשר לקרוא ישירות. כתוב קבצים רק בתוך תיקיית העבודה (צור תיקיות חסרות לפי הצורך). קובץ גדול (כמו דף הלימוד) כתוב בחלקים: צור קודם את הקובץ עם המבנה והחלק הראשון, ואז הוסף את שאר החלקים בעריכות נפרדות (כל כתיבה עד כ-250 שורות), ולא בכתיבה אחת ארוכה, כדי שלא תיתקע.\n"
             + "הקבצים שנמצאים בתיקיית העבודה (נתיבים יחסיים):\n" + inventory;        File.WriteAllText(taskFile, full, new UTF8Encoding(false));
+        string modelArg = " --model " + (AgyModel ?? "gemini-3.8-flash-low");
         string args = "-p " + Q("Read the file " + SumitDir + "/" + Path.GetFileName(taskFile) + " in the current folder and carry out everything it says, completely and without asking questions. Reply with the answer or a one-line summary only.")
-                    + " --mode accept-edits --output-format stream-json --add-dir " + Q(SkillDir);
+                    + " --mode accept-edits --output-format stream-json --add-dir " + Q(SkillDir) + modelArg;
         var envv = new Dictionary<string, string> { { "NO_COLOR", "1" } };
         // Google's servers sometimes stop answering in the middle of a long write; without a sign of life for a long time, stop and say so.
         DateTime lastLife = DateTime.UtcNow; bool idleStopped = false;

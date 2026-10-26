@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Bool, Trunc, FindOnPath, Exec, spawnTracked, killTree, delay, guidN, fileExists, dirExists, mkdirp, readText, writeText } = require('../util');
+const { Str, Bool, Trunc, FindOnPath, Exec, spawnTracked, killTree, delay, guidN, fileExists, dirExists, mkdirp, readText, writeText } = require('../util');
 const platform = require('../platform');
 
 function CliPrompt(system, messages) {
@@ -74,6 +74,19 @@ module.exports = {
       return this.ChatGptAccountReady() ? 'account' : this.HasHelperKey('openai') ? 'key' : '';
     },
 
+    get AgyModel() {
+      const m = Str(this.settings, 'geminiModel').trim();
+      const valid = ['gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high', 'claude-sonnet-5-5-low', 'gemini-4-argon-low', 'gemini-4-argon-medium'];
+      if (m && valid.includes(m)) return m;
+      return 'gemini-3.8-flash-low';
+    },
+
+    AgyModelCandidates() {
+      const primary = this.AgyModel;
+      const list = [primary, 'gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'claude-sonnet-5-5-low', 'gemini-3.8-flash-high', 'gemini-4-argon-low'];
+      return Array.from(new Set(list));
+    },
+
     CliEnv() {
       return { PATH: this.NodePath(), NO_COLOR: '1', CI: '1' };
     },
@@ -128,19 +141,22 @@ module.exports = {
             prompt += '\nThe student\'s selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.';
           }
           writeText(path.join(dir, 'material.txt'), prompt);
-          const exe = this.FindAgy();
-          r = await this.RunCli(exe, [
-            '-p',
-            'Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.',
-            '--mode', 'plan',
-          ], null, dir, 300000);
-          text = r.stdout.trim();
-          if (/Authentication required|authentication failed/i.test(r.stderr)) {
-            this.settings.agyOk = false;
-            this.SaveSettings();
-            reply.Error = true;
-            reply.Text = 'ההתחברות ל-Google פגה. התחבר שוב בהגדרות';
-            return reply;
+          let exe = this.FindAgy();
+          const pArgs = 'Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.';
+          for (const mod of this.AgyModelCandidates()) {
+            r = await this.RunCli(exe, ['-p', pArgs, '--mode', 'plan', '--model', mod], null, dir, 300000);
+            text = r.stdout.trim();
+            if (/Authentication required|authentication failed/i.test(r.stderr)) {
+              this.settings.agyOk = false;
+              this.SaveSettings();
+              reply.Error = true;
+              reply.Text = 'ההתחברות ל-Google פגה. התחבר שוב בהגדרות';
+              return reply;
+            }
+            if (r.code === 0 && text.length > 0) break;
+            const errLower = (r.stderr + ' ' + r.stdout).toLowerCase();
+            const isLimit = errLower.includes('usage limit') || errLower.includes('rate limit') || errLower.includes('quota') || errLower.includes('429');
+            if (!isLimit) break;
           }
         } else {
           const exe = this.FindCodex();
@@ -256,7 +272,7 @@ module.exports = {
       this.agyLoginCancelled = false;
       try {
         const fake = !!process.env.SUMIT_AGY;
-        const exe = this.FindAgy();
+        let exe = this.FindAgy();
         let signed = false;
         this.Send({ type: 'authCode', kind: 'gemini', state: 'wait', phase: 'interactive' });
         if (fake) {
@@ -283,8 +299,17 @@ module.exports = {
         if (!signed) signed = await this.AgyCredentialPresent();
         if (!signed) { this.settings.agyOk = false; this.SaveSettings(); return false; }
         this.Send({ type: 'authCode', kind: 'gemini', state: 'wait', phase: 'verify' });
-        const r = await this.RunCli(this.FindAgy(), ['-p', 'Reply with exactly: READY', '--mode', 'plan', '--print-timeout', '30s'], null, dir, 45000, true);
-        const ok = !this.agyLoginCancelled && r.code === 0 && /^\s*(?:\*\*)?READY(?:\*\*)?[.!]?\s*$/im.test(r.stdout);
+        let ok = false;
+        exe = this.FindAgy();
+        for (const mod of this.AgyModelCandidates()) {
+          if (this.agyLoginCancelled) break;
+          const r = await this.RunCli(exe, ['-p', 'Reply with exactly: READY', '--mode', 'plan', '--model', mod, '--print-timeout', '30s'], null, dir, 45000, true);
+          if (r.code === 0 && /^\s*(?:\*\*)?READY(?:\*\*)?[.!]?\s*$/im.test(r.stdout)) {
+            ok = true;
+            this.settings.geminiModel = mod;
+            break;
+          }
+        }
         this.settings.agyOk = ok;
         this.SaveSettings();
         if (!ok && !this.agyLoginCancelled) {
