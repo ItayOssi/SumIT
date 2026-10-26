@@ -763,8 +763,15 @@ class Host {
     if (vw > 0) this.siteScale = this.clientWidth() / vw;
     const x = Math.round(num('x') * this.siteScale);
     const y = Math.round(num('y') * this.siteScale);
-    const w = Math.round(num('w') * this.siteScale);
+    let w = Math.round(num('w') * this.siteScale);
     const h = Math.round(num('h') * this.siteScale);
+    const totalW = this.clientWidth();
+    // In RTL, the navigation bar lives on the right side (~236px, or ~70px on narrow viewports).
+    // Ensure the embedded webview never encroaches on the right edge or exceeds available width.
+    const minSideWidth = totalW <= 860 ? 70 : 236;
+    if (x + w > totalW - minSideWidth) {
+      w = Math.max(10, totalW - minSideWidth - x);
+    }
     this.siteBounds = { x, y, width: Math.max(10, w), height: Math.max(10, h) };
     this.layout();
   }

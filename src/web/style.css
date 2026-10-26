@@ -441,16 +441,16 @@ pre.log { margin: 8px 0 0; max-height: 180px; overflow: auto; padding: 10px 12px
 .site-bar {
   display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border);
   background: var(--surface); flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; flex: none;
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: 0; z-index: 10; min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box;
 }
 .site-tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 12px; flex: none; }
 .site-tabs button { height: 32px; border: none; background: none; border-radius: 9px; font-weight: 650; color: var(--muted); }
 .site-tabs button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
-.site-bar .grow { flex: 1; }
-.site-bar select { width: auto; height: 34px; min-width: 150px; font-size: 12.5px; }
-.site-bar .url { font-size: 12px; color: var(--muted); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#view-sites.active { display: flex; flex-direction: column; height: 100vh; animation: none; overflow: hidden; }
-#siteHost { flex: 1; min-height: 0; position: relative; background: var(--surface-2); width: 100%; height: 100%; }
+.site-bar .grow { flex: 1; min-width: 10px; }
+.site-bar select { width: auto; height: 34px; min-width: 110px; max-width: 180px; font-size: 12.5px; flex-shrink: 1; }
+.site-bar .url { font-size: 12px; color: var(--muted); max-width: 280px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 2; }
+#view-sites.active { display: flex; flex-direction: column; height: 100vh; animation: none; overflow: hidden; min-width: 0; max-width: 100%; width: 100%; }
+#siteHost { flex: 1; min-height: 0; position: relative; background: var(--surface-2); width: 100%; height: 100%; min-width: 0; max-width: 100%; }
 #siteHost .loading { position: absolute; inset: 0; display: grid; place-items: center; }
 
 /* Settings */

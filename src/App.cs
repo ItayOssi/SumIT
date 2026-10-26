@@ -864,6 +864,9 @@ partial class HitStudent : Form
         int y = (int)Math.Round(Convert.ToDouble(m["y"]) * siteScale);
         int w = (int)Math.Round(Convert.ToDouble(m["w"]) * siteScale);
         int h = (int)Math.Round(Convert.ToDouble(m["h"]) * siteScale);
+        int totalW = ui.ClientSize.Width;
+        int minSideWidth = totalW <= 860 ? 70 : 236;
+        if (x + w > totalW - minSideWidth) w = Math.Max(10, totalW - minSideWidth - x);
         sitePanel.Bounds = new Rectangle(x, y, Math.Max(10, w), Math.Max(10, h));
     }
 
