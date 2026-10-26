@@ -212,7 +212,8 @@
         <button class="small primary" id="viewerBack"><span data-ic="back"></span>חזרה להרצאה</button>
         <b class="grow" id="viewerTitle" dir="auto"></b>
         <button class="small soft" id="viewerShare" aria-controls="viewerShareNote" title="שמור את הסיכום בקובץ ZIP לשיתוף"><span data-ic="download"></span><span id="viewerShareLabel">שיתוף</span></button>
-        <button class="small soft" id="viewerChat"><span data-ic="chat"></span>שאל את הצ'אט על ההרצאה</button>
+        <button class="small soft" id="viewerSelect">הקף אזור לשאלה</button>
+        <button class="small soft" id="viewerChat"><span data-ic="chat"></span>שאל את הצ'אט</button>
         <button class="small soft" id="viewerPdf"><span data-ic="file"></span>פתח כ-PDF</button>
       </div>
       <div id="viewerShareNote" hidden>
@@ -224,6 +225,12 @@
         <button class="small ghost" id="viewerShareDismiss" aria-label="סגור את הסבר השיתוף">סגור</button>
       </div>
       <div id="siteHost"><div class="loading"><span class="spinner lg"></span></div></div>
+      <aside id="summaryChat" hidden dir="rtl" aria-label="שיחה עם Gemini על הסיכום">
+        <div class="row"><b class="grow">שאל את Gemini</b><small id="summaryChatStatus" role="status"></small><button id="summaryChatClose" class="ghost small">סגור צ׳אט</button></div>
+        <div id="summaryChatSelection" hidden><img id="summaryChatImage" alt="האזור שסימנת בסיכום"><button id="summaryChatClearSelection" class="ghost small">הסר סימון</button></div>
+        <div id="summaryChatMessages" aria-live="polite" role="log"></div>
+        <div class="row"><textarea id="summaryChatText" maxlength="8000" rows="2" placeholder="מה תרצה להבין באזור שסימנת?" aria-label="השאלה שלך"></textarea><button id="summaryChatSend" class="primary">שלח ל־Gemini</button></div>
+      </aside>
     </section>
 
     <!-- Settings -->
@@ -354,5 +361,6 @@
 <script src="vendor/katex/katex.min.js"></script>
 <script src="extras.js"></script>
 <script src="app.js"></script>
+<script src="summary-chat.js"></script>
 </body>
 </html>

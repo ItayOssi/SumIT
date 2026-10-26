@@ -213,6 +213,21 @@ partial class HitStudent
             check("a limit on Gemini passes the question to ChatGPT", !r.Error && r.Provider == "openai" && r.Text.Contains("ChatGPT") && heads.Last().Contains("Bearer " + new string('o', 30)));
             geminiStatus = 200;
 
+            // Summary chat must use only Gemini even when general chat prefers another provider.
+            app.settings["helperPref"] = "claude";
+            string fullSummary = FullSummaryContext("<script>DROP-ME</script><p>BEGIN</p>" + new string('x', 70000) + "<details><p>HIDDEN-END $x^2$</p></details><svg><text>DIAGRAM</text></svg>");
+            int before = requests.Count;
+            r = Run(() => app.SummaryGemini(fullSummary, msgs, new byte[] { 1, 2, 3 }));
+            check("summary Gemini ignores general provider order and receives complete context plus selected image", !r.Error && requests.Count == before + 1 && requests.Last().Contains("HIDDEN-END") && requests.Last().Contains("DIAGRAM") && requests.Last().Contains("inline_data") && !requests.Last().Contains("DROP-ME"));
+            geminiStatus = 429; before = requests.Count;
+            r = Run(() => app.SummaryGemini(fullSummary, msgs, null));
+            check("summary Gemini quota never falls back to another provider", r.Error && r.Provider == "gemini" && requests.Count == before + 1 && requests.Last().Contains("generateContent"));
+            geminiStatus = 200;
+            var savedGeminiKey = app.settings["geminiKey"]; app.settings.Remove("geminiKey"); before = requests.Count;
+            r = Run(() => app.SummaryGemini(fullSummary, msgs, null));
+            check("missing Gemini sends no requests to any provider", r.Error && requests.Count == before);
+            app.settings["geminiKey"] = savedGeminiKey; app.settings["helperPref"] = "auto";
+
             // A lecture question is answered from the digests and the summary the app already has.
             string course = "helper-course";
             Directory.CreateDirectory(Path.Combine(app.CourseDir(course), SumitDir, "digests"));
@@ -267,6 +282,7 @@ if ($env:FAKE_LOGIN -eq '1') {
   exit 0
 }
 if ($env:FAKE_NAME -eq 'gemini') { $text = Get-Content -Raw -Encoding UTF8 -Path (Join-Path (Get-Location) 'material.txt') } else { $text = [Console]::In.ReadToEnd() }
+if ($env:FAKE_IMAGE -eq '1') { Write-Output ('image=' + (Test-Path -LiteralPath 'selection.png') + '; instructed=' + ($text -match 'selection.png')); exit 0 }
 if ($env:FAKE_FAIL -eq '1') { [Console]::Error.WriteLine('usage limit reached'); exit 1 }
 if ($env:FAKE_REPLY) { $ans = $env:FAKE_REPLY } else { $ans = $env:FAKE_NAME + ' saw ' + $text.Length + ' chars; marker=' + ($text -match 'MARKER-Q') }
 $m = [regex]::Match($argline, '\s-o\s+(\S+)')
@@ -291,6 +307,10 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             var msgs = new List<Tuple<string, string>> { Tuple.Create("user", "MARKER-Q " + new string('x', 120000)) };
             var r = Run(() => app.HelperAsk("system", msgs));
             check("Gemini answers through the account, a long text goes in on stdin", !r.Error && r.Provider == "gemini" && r.Text.Contains("gemini saw") && r.Text.Contains("marker=True") && !r.Text.Contains("saw 0 "));
+            Environment.SetEnvironmentVariable("FAKE_IMAGE", "1");
+            r = Run(() => app.SummaryGemini("system", msgs, new byte[] { 1, 2, 3 }));
+            check("Gemini account gets selected image file and reading instructions", !r.Error && r.Provider == "gemini" && r.Text.Contains("image=True") && r.Text.Contains("instructed=True"));
+            Environment.SetEnvironmentVariable("FAKE_IMAGE", null);
             r = Run(() => app.HelperAsk("system", msgs, "openai"));
             check("ChatGPT answers through the account", !r.Error && r.Provider == "openai" && r.Text.Contains("codex saw") && r.Text.Contains("marker=True"));
 

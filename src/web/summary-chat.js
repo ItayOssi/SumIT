@@ -1,0 +1,42 @@
+// The summary stays visible above an independent Gemini-only conversation.
+const summaryThreads = new Map();
+let summaryChatJob = null;
+function summaryThread() {
+  if(!S.viewer)return null;
+  const key=S.viewer.path;
+  if(!summaryThreads.has(key))summaryThreads.set(key,{messages:[],selection:null,draft:''});
+  return summaryThreads.get(key);
+}
+function openSummaryChat(){if(!S.viewer)return;$('summaryChat').hidden=false;renderSummaryChat();$('summaryChatText').focus();requestAnimationFrame(()=>placeSite(false));}
+function renderSummaryChat(){
+  const t=summaryThread();if(!t)return;
+  $('summaryChatMessages').innerHTML=t.messages.map(m=>`<div class="summary-chat-message ${m.role}"><b>${m.role==='user'?'אתה':m.role==='error'?'Gemini לא הצליח לענות':'Gemini'}</b><div>${md(m.text)}</div></div>`).join('');
+  $('summaryChatText').value=t.draft;
+  $('summaryChatSelection').hidden=!t.selection;
+  $('summaryChatImage').src=t.selection?.image||'';
+  $('summaryChatSend').disabled=!!summaryChatJob;
+  $('summaryChatStatus').textContent=summaryChatJob?.path===S.viewer.path?'Gemini חושב…':summaryChatJob?'ממתין לתשובה בסיכום אחר · Gemini בלבד':'Gemini בלבד · כל דף הסיכום נשלח כהקשר';
+  $('summaryChatMessages').scrollTop=$('summaryChatMessages').scrollHeight;
+}
+$('viewerChat').onclick=openSummaryChat;
+$('viewerSelect').onclick=()=>{if(S.viewer&&S.course)send({type:'selectSummary',course:S.course.name,path:S.viewer.path});};
+$('summaryChatClose').onclick=()=>{$('summaryChat').hidden=true;requestAnimationFrame(()=>placeSite(false));};
+$('summaryChatClearSelection').onclick=()=>{const t=summaryThread();if(t){t.selection=null;renderSummaryChat();}};
+$('summaryChatText').oninput=()=>{const t=summaryThread();if(t)t.draft=$('summaryChatText').value;};
+$('summaryChatSend').onclick=()=>{
+  const t=summaryThread(),text=$('summaryChatText').value.trim();if(!t||!text||summaryChatJob)return;
+  const requestId='summary-chat-'+Date.now();summaryChatJob={requestId,path:S.viewer.path,text};
+  t.messages.push({role:'user',text:(t.selection?'על האזור שסימנתי:\n':'')+text});t.draft='';
+  send({type:'summaryChat',requestId,course:S.course.name,path:S.viewer.path,text,selected:!!t.selection});renderSummaryChat();
+};
+$('summaryChatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('summaryChatSend').click();}};
+function summaryChatEvent(m){
+  if(m.type==='summarySelectionReady'){
+    if(S.viewer?.path!==m.path||S.view!=='sites')return;
+    for(const t of summaryThreads.values())t.selection=null;summaryThread().selection={text:m.text,image:m.image};openSummaryChat();return;
+  }
+  if(m.type!=='summaryChatResult'||m.requestId!==summaryChatJob?.requestId||m.path!==summaryChatJob.path)return;
+  const t=summaryThreads.get(m.path);
+  if(t){t.messages.push({role:m.error?'error':'assistant',text:m.text});if(m.error)t.draft=summaryChatJob.text;}
+  summaryChatJob=null;if(S.viewer)renderSummaryChat();
+}

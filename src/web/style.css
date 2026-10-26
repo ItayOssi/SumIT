@@ -889,3 +889,15 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .summary-options p { margin:16px 0; line-height:1.7; }
 .summary-options label { display:block; font-weight:600; }
 .summary-options textarea { display:block; width:100%; margin-top:10px; resize:vertical; min-height:130px; padding:12px; border:1px solid var(--border); border-radius:10px; font:inherit; color:var(--text); background:var(--surface-2); }
+
+#siteHost { min-height: 100px; }
+#summaryChat { flex:0 0 auto; height:clamp(240px,38vh,430px); min-height:0; display:flex; flex-direction:column; gap:8px; padding:12px 18px; border-top:1px solid var(--line); background:var(--surface); }
+#summaryChat[hidden],#summaryChatSelection[hidden] { display:none; }
+#summaryChatMessages { flex:1; min-height:30px; overflow:auto; }
+#summaryChatSelection { display:flex; gap:12px; align-items:center; }
+#summaryChatImage { max-height:76px; max-width:70%; object-fit:contain; border:1px solid var(--line); border-radius:6px; }
+#summaryChatText { flex:1; min-width:0; resize:vertical; max-height:100px; }
+.summary-chat-message { padding:8px 12px; margin:6px 0; border-radius:10px; background:var(--surface-2); overflow-wrap:anywhere; }
+.summary-chat-message.user { border-inline-start:3px solid #709cff; }
+.summary-chat-message.error { border-inline-start:3px solid #ef7777; }
+#summaryChatStatus { color:var(--muted); }

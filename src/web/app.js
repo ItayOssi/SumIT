@@ -1400,13 +1400,14 @@ function jobLog(id, line) {
 // A lecture summary inside the app: the page, with a way back to the lecture, to the chat and to the PDF.
 function openViewer(path, title, pdf, lec) {
   S.viewer = { path, title, pdf, lec };
+  $('summaryChat').hidden = true;
   $('viewerShareNote').hidden = true;
   $('viewerTitle').textContent = title;
   $('viewerPdf').hidden = !pdf;
   show('sites');
 }
 $('viewerBack').onclick = () => { S.viewer = null; show('course'); };
-$('viewerChat').onclick = () => { const l = S.viewer && S.viewer.lec; S.viewer = null; show('course'); if (l) setChatScope('lesson:' + l); };
+// The Gemini-only summary chat is connected in summary-chat.js.
 $('viewerPdf').onclick = () => S.viewer && S.viewer.pdf && send({ type: 'openPath', path: S.viewer.pdf });
 $('viewerShare').onclick = () => {
   if (!S.viewer || !S.course || S.shareJob?.busy) return;
@@ -1436,6 +1437,7 @@ function summaryShareStatus(m) {
 $('siteBackCourse').onclick = () => { S.viewer = null; show('course'); };
 
 function openSite(site, url) {
+  $('summaryChat').hidden = true;
   $('viewerShareNote').hidden = true;
   if (window.stonesHook) window.stonesHook({ type: 'openSite', site });
   S.viewer = null;
@@ -1828,6 +1830,7 @@ function onMessage(m) {
       if (num) toast(`העתקת קישור להקלטת Zoom`, { action: `הוסף לשיעור ${num}`, ms: 9000, onAction: () => send({ type: 'addRecording', course: S.course.name, num, url: m.url }) });
       break;
     }
+    case 'summarySelectionReady': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }

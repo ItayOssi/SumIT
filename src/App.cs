@@ -15,7 +15,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 partial class HitStudent : Form
 {
-    public const string Version = "1.0.12";
+    public const string Version = "1.0.13";
     const string Repo = "Pinkel-Kinkel/SumIT";
     // Updates are only accepted from these repositories (the project was renamed from hit-recordings).
     static readonly string[] RepoNames = { "Pinkel-Kinkel/SumIT" };
@@ -215,6 +215,7 @@ partial class HitStudent : Form
         sc.Settings.AreDevToolsEnabled = false;
         sc.Settings.IsPasswordAutosaveEnabled = true;
         sc.Settings.IsGeneralAutofillEnabled = true;
+        sc.WebMessageReceived += OnSummarySelection;
         sc.NewWindowRequested += OpenSitePopup;
         sc.DownloadStarting += OnSiteDownload;
         sc.PermissionRequested += OnDownloadPermission;
@@ -582,6 +583,8 @@ partial class HitStudent : Form
             case "deleteTimetable": DeleteTimetable(); break;
             case "skipExams": SkipExams(course); break;
             case "viewFile": ShowFile(m); break;
+            case "selectSummary": SelectSummary(m); break;
+            case "summaryChat": AskSummary(m); break;
             case "shareSummary": BeginInvoke(new Action(() => ShareSummary(m))); break;
             case "pickProfileImage": SetProfileImage(false); break;
             case "clearProfileImage": SetProfileImage(true); break;
