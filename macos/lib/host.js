@@ -86,7 +86,7 @@ class Host {
     const pre = (n) => path.join(__dirname, '..', n);
     this.zoom = new WebView('zoom', { session: this.browserSession });
     this.moodle = new WebView('moodle', { session: this.browserSession });
-    this.site = new WebView('site', { session: this.browserSession });
+    this.site = new WebView('site', { session: this.browserSession, preload: pre('preload-site.js') });
     this.cs24View = new WebView('cs24', { session: this.scraperSession });    // hidden: walks a course's CS24 folder
     this.printView = new WebView('print', { session: this.browserSession });  // hidden: prints a lecture summary to PDF
     this.ui = new WebView('ui', { session: this.uiSession, preload: pre('preload-ui.js'), background: bg });
@@ -212,6 +212,7 @@ class Host {
     u.wc.on('will-redirect', (e, url) => { if (!url.toLowerCase().startsWith(UI_ORIGIN)) { e.preventDefault(); this.OpenExternal(url); } });
     u.wc.setWindowOpenHandler(({ url }) => { this.OpenExternal(url); return { action: 'deny' }; });
     ipcMain.on('sumit-ui-message', (e, json) => this.OnUiMessage(e, json));
+    ipcMain.on('sumit-site-message', (e, json) => { if (typeof this.OnSummarySelectionMessage === 'function') this.OnSummarySelectionMessage(json); });
     u.wc.on('dom-ready', () => u.wc.insertCSS('h1,h2,h3,.brand b{font-family:-apple-system,"SF Pro Display",system-ui,sans-serif}body{font-family:-apple-system,"SF Pro Text",system-ui,sans-serif}').catch(() => { }));
     let demoArgs = '';
     for (const a of process.argv) if (a.startsWith('--demo-')) demoArgs += '&' + encodeURIComponent(a.substring(7).split('=')[0]) + '=' + encodeURIComponent(a.includes('=') ? a.split('=')[1] : '1');
@@ -561,6 +562,9 @@ class Host {
       case 'deleteTimetable': this.DeleteTimetable(); break;
       case 'skipExams': this.SkipExams(course); break;
       case 'viewFile': this.ShowFile(m); break;
+      case 'selectSummary': this.SelectSummary(m); break;
+      case 'summaryChat': this.AskSummary(m); break;
+      case 'shareSummary': this.ShareSummary(m); break;
       case 'pickProfileImage': await this.SetProfileImage(false); break;
       case 'clearProfileImage': await this.SetProfileImage(true); break;
       case 'setCourseBackground': this.SetCourseBackground(course, Str(m, 'mode'), Str(m, 'colors')); break;
@@ -820,7 +824,8 @@ function useModule(file) {
   Host.modules.push(m);
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
-  'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest'])
+  'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
+  'study-policy', 'summary-share', 'summary-chat'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

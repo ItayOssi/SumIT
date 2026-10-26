@@ -88,17 +88,26 @@ module.exports = {
 
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
-    async HelperCall(provider, key, system, messages, onChunk = null) {
+    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       try {
         let url, body, headers = { 'Content-Type': 'application/json' };
         if (provider === 'gemini') {
           const endpoint = onChunk ? ':streamGenerateContent?alt=sse' : ':generateContent';
           url = this.GeminiBase + '/v1beta/models/' + this.GeminiModel + endpoint;
-          const contents = messages.map(m => ({
-            role: m[0] === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m[1] }],
-          }));
+          const contents = messages.map((m, idx) => {
+            const role = m[0] === 'assistant' ? 'model' : 'user';
+            const parts = [{ text: m[1] }];
+            if (imageBuffer && idx === messages.length - 1) {
+              parts.push({
+                inline_data: {
+                  mime_type: 'image/png',
+                  data: Buffer.isBuffer(imageBuffer) ? imageBuffer.toString('base64') : String(imageBuffer)
+                }
+              });
+            }
+            return { role, parts };
+          });
           body = {
             systemInstruction: { parts: [{ text: system }] },
             contents,

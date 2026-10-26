@@ -640,7 +640,7 @@ async function runVerification() {
     if (btn) btn.click();
     return Boolean(btn);
   })()`);
-  await delay(200);
+  for (let i = 0; i < 20; i++) { await delay(100); const t = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="claude"] .test-line')?.textContent || ''`); if (t && t.includes('✓')) break; }
   const claudeTestLine = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="claude"] .test-line')?.textContent || ''`);
   record(
     'Buttons',

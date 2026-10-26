@@ -114,14 +114,19 @@ module.exports = {
       });
     },
 
-    async HelperCallCli(provider, system, messages) {
+    async HelperCallCli(provider, system, messages, imageBuffer = null) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       const dir = path.join(platform.TempDir, 'SumIT-brain-' + guidN());
       mkdirp(dir);
       try {
-        const prompt = CliPrompt(system, messages);
+        let prompt = CliPrompt(system, messages);
         let r, text = '';
         if (provider === 'gemini') {
+          if (imageBuffer) {
+            prompt = prompt.replace('אל תשתמש בכלים ואל תקרא או תכתוב קבצים.', 'מותר לקרוא רק את material.txt ואת selection.png לצורך התשובה; אל תריץ פקודות ואל תכתוב קבצים.');
+            fs.writeFileSync(path.join(dir, 'selection.png'), imageBuffer);
+            prompt += '\nThe student\'s selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.';
+          }
           writeText(path.join(dir, 'material.txt'), prompt);
           const exe = this.FindAgy();
           r = await this.RunCli(exe, [

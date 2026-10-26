@@ -157,6 +157,30 @@ async function run() {
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
+    // 8. Summary Share and Study Policy port verification
+    const { buildSummaryShare } = require('../lib/modules/summary-share');
+    const { missingQuestionStatements } = require('../lib/modules/study-policy');
+    const shareRoot = path.join(platform.TempDir, 'sumit-share-test-' + guidN());
+    mkdirp(path.join(shareRoot, 'summary', '.math', 'fonts'));
+    mkdirp(path.join(shareRoot, 'exercises'));
+    const page = path.join(shareRoot, 'summary', 'page.html'), zip = path.join(shareRoot, 'test.zip');
+    writeText(path.join(shareRoot, 'summary', '.math', 'style.css'), "@font-face{src:url('fonts/test.woff2')}");
+    writeText(path.join(shareRoot, 'summary', '.math', 'fonts', 'test.woff2'), 'font');
+    writeText(path.join(shareRoot, 'exercises', 'תרגיל.pdf'), 'pdf');
+    writeText(path.join(shareRoot, 'private-notebook.pdf'), 'private');
+    writeText(page, "<link href='.math/style.css'><a href='../exercises/%D7%AA%D7%A8%D7%92%D7%99%D7%9C.pdf#page=2'>PDF</a><a href='#x'>anchor</a><a href='https://example.org/'>web</a>");
+    buildSummaryShare(shareRoot, page, '', zip);
+    check('SummaryShare exports valid zip file', fileExists(zip) && fs.statSync(zip).size > 100);
+
+    // Study policy tests
+    const statement = "<section class='question-statement' data-source='sheet.pdf, p1, Q1'><h4>Question</h4><p>A train moves at 34 m/s. Find its distance after 10 seconds.</p></section>";
+    const card = (body) => "<details class='q' id='use-1'><summary>Question</summary><div class='qbody'>" + body + "</div></details>";
+    check('complete sourced statement before solution accepted', missingQuestionStatements(card(statement + "<details class='reveal'><summary>Solution</summary>340 m</details>")).length === 0);
+    check('solution without question rejected', missingQuestionStatements(card("<p>Hint only</p><details><summary>Solution</summary>340 m</details>")).length === 1);
+    check('missing exercise section rejected', missingQuestionStatements('<h1>Summary without exercises</h1>').length === 1);
+    try { fs.rmSync(shareRoot, { recursive: true, force: true }); } catch { }
+
+
     console.log(`\nALL ${passed} OFFLINE REGRESSION CHECKS PASSED.`);
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch { }
