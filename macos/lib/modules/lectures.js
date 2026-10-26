@@ -229,7 +229,14 @@ module.exports = {
         view.wc.on('did-start-loading', () => this.Send({ type: 'siteLoading', loading: true }));
         view.wc.on('did-stop-loading', () => this.Send({ type: 'siteLoading', loading: false }));
         view.wc.on('destroyed', () => { if (this.popupView === view) this.CloseSitePopup(); });
-        this.addPanel('popup', [[view, () => this.siteBounds || { x: 0, y: 0, width: 10, height: 10 }]], true);
+        this.addPanel('popup', [[view, (w, h) => {
+          const minSide = w <= 860 ? 70 : 236;
+          const topBar = this.siteBounds ? this.siteBounds.y : 89;
+          const b = this.siteBounds || { x: 0, y: topBar, width: Math.max(10, w - minSide), height: Math.max(10, h - topBar) };
+          const clampedWidth = Math.min(b.width, Math.max(10, w - minSide - b.x));
+          const clampedHeight = Math.min(b.height, Math.max(10, h - b.y));
+          return { x: b.x, y: b.y, width: clampedWidth, height: clampedHeight };
+        }]], true);
         this.bringToFront('popup');
         if (url && url !== 'about:blank') view.navigate(url);
       } catch { this.CloseSitePopup(); }

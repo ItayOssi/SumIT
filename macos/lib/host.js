@@ -92,7 +92,15 @@ class Host {
     this.ui = new WebView('ui', { session: this.uiSession, preload: pre('preload-ui.js'), background: bg });
 
     const fill = (w, h) => ({ x: 0, y: 0, width: w, height: h });
-    this.addPanel('site', [[this.site, () => this.siteBounds || { x: 0, y: 0, width: 10, height: 10 }]], false);
+    const siteRectFn = (w, h) => {
+      const minSide = w <= 860 ? 70 : 236;
+      const topBar = this.siteBounds ? this.siteBounds.y : 89;
+      const b = this.siteBounds || { x: 0, y: topBar, width: Math.max(10, w - minSide), height: Math.max(10, h - topBar) };
+      const clampedWidth = Math.min(b.width, Math.max(10, w - minSide - b.x));
+      const clampedHeight = Math.min(b.height, Math.max(10, h - b.y));
+      return { x: b.x, y: b.y, width: clampedWidth, height: clampedHeight };
+    };
+    this.addPanel('site', [[this.site, siteRectFn]], false);
     this.addPanel('moodle', this.loginPanel(this.moodle, 'התחבר עם שם המשתמש והסיסמה של HIT. זה קורה פעם אחת בלבד.', () => { this.moodleCancelled = true; this.bringToFront('ui'); }));
     this.addPanel('zoom', this.loginPanel(this.zoom, 'התחבר ל-Zoom עם המשתמש של HIT. זה קורה פעם אחת, וההורדה תמשיך לבד.', () => { if (this.working) this.zoomCancelled = true; this.bringToFront('ui'); }));
     this.addPanel('cs24', [[this.cs24View, fill]]);
