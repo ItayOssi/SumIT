@@ -39,7 +39,7 @@ partial class HitStudent
 
     string HelperProvider() { return HelperOrder().FirstOrDefault(); }
 
-    async Task<HelperReply> HelperCall(string provider, string key, string system, List<Tuple<string, string>> messages)
+    async Task<HelperReply> HelperCall(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null)
     {
         var reply = new HelperReply { Provider = provider };
         try
@@ -51,6 +51,13 @@ partial class HitStudent
             {
                 url = GeminiBase + "/v1beta/models/" + GeminiModel + ":generateContent";
                 var contents = messages.Select(m => (object)new Dictionary<string, object> { { "role", m.Item1 == "assistant" ? "model" : "user" }, { "parts", new object[] { new Dictionary<string, object> { { "text", m.Item2 } } } } }).ToList();
+                if (image != null && contents.Count > 0) {
+                    var last = (Dictionary<string, object>)contents[contents.Count - 1];
+                    last["parts"] = new object[] {
+                        new Dictionary<string, object> { { "text", messages[messages.Count - 1].Item2 } },
+                        new Dictionary<string, object> { { "inline_data", new Dictionary<string, object> { { "mime_type", "image/png" }, { "data", Convert.ToBase64String(image) } } } }
+                    };
+                }
                 body = new Dictionary<string, object>
                 {
                     { "systemInstruction", new Dictionary<string, object> { { "parts", new object[] { new Dictionary<string, object> { { "text", system } } } } } },

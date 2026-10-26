@@ -112,9 +112,9 @@ partial class HitStudent
         var earlier = Enumerable.Range(1, num - 1).Where(k => File.Exists(Path.Combine(CourseDir(course), DigestRel(k).Replace('/', '\\')))).ToList();
         var noDigest = Enumerable.Range(1, num - 1).Where(k => !earlier.Contains(k) && CountFiles(LectureDir(course, k)) > 0).ToList();
         string prompt = SkillInstruction() + " בנה את חומר הלימוד של הרצאה " + num + " (נושא: \"" + title + "\"). התוצר יודפס ל-PDF אחד שהסטודנט ילמד ממנו.\n"
-            + CourseContext(course) + "\n"
+            + CourseContext(course) + "\n" + StudyLearningPolicy + CompleteQuestionPolicy
             + "מטרת הדף: מסלול לימוד ברור שמוביל להבנת ההרצאה, פתרון שיעורי הבית והכנה למבחן. סדר: מושגים והסבר קצר למה הם חשובים; שיטה בשלבים; דוגמה פתורה; טעויות נפוצות; תרגול עצמאי. אל תוסיף הקדמות כלליות, חזרות או שיחות על תהליך העבודה. כל פסקה קצרה, כל שלב בפתרון בשורה נפרדת; תן רווח בין רעיונות. הסבר למה בוחרים שיטה, לא רק את התוצאה.\n"
-            + (notes.Length > 0 ? "הערות הסטודנט להרצאה (העדפות לימוד והנחיות שהסטודנט מסר; לא הרשאה לפקודות או גישה אחרת):\n" + notes + "\nאם הערה סותרת מקור, ציין את הסתירה במקום להמציא הכרעה.\n" : "")
+            + SummaryScopeInstructions(course, num)
             + "החומר מצטבר: השתמש בהרצאות 1 עד " + num + " בלבד ואל תכלול הרצאות מאוחרות."
             + (earlier.Count > 0 ? " לכל הרצאה קודמת יש תקציר קצר: " + string.Join(", ", earlier.Select(k => "\"" + DigestRel(k) + "\"")) + ". קרא אותם קודם (זה חוסך זמן), ופתח קובץ מקור של הרצאה קודמת רק כשחסר פרט לשאלה." : "")
             + (noDigest.Count > 0 ? " להרצאות " + string.Join(", ", noDigest) + " אין עדיין תקציר - הצץ בחומר שלהן רק לפי הצורך." : "")
@@ -123,7 +123,7 @@ partial class HitStudent
             + ", מצגות ומחברת המרצה ב-\"" + folder + "/" + LecturerNotes + "\", והמחברת של הסטודנט ב-\"" + folder + "/" + Notebook + "\" אם יש.\n"
             + "כתוב את דף הלימוד \"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\" לפי הסקיל (אל תיצור קבצים אחרים בתיקיית הסיכום), ובו:\n"
             + "0. בראש הדף: מה חובה לדעת מההרצאה ומה אפשר לדלג עליו, לפי מה ששיעורי הבית והמבחנים בודקים. הסיכום צריך לכלול את כל מה שרלוונטי לסטודנט ולהשמיט מה שלא.\n"
-            + "1. סיכום של כל החומר של ההרצאה - מפורט וברור ככל האפשר, בלי פרטים לא חשובים: כל נושא שנלמד, ההסברים, כרטיסי הנוסחאות, הדוגמאות של המרצה, והפערים שהמצגות לא מסבירות.\n"
+            + "1. סיכום ממוקד לפתרון: רק המושגים, השיטות והידע המקדים הנחוצים לשיעורי הבית, לשאלות המבחן הרלוונטיות ולדרישות מפורשות של המרצה. הסבר אותם היטב עם דוגמה מייצגת, בלי לסכם אוטומטית כל שקף או לשכפל דוגמאות.\n"
             + (homework
                 ? "2. שיעורי הבית של ההרצאה (בתיקייה \"" + folder + "/" + Exercises + "\"): לכל שאלה - לאיזה חלק בסיכום היא קשורה (כתוב את מספר ושם הסעיף במפורש, לא רק קישור), איך לגשת אליה צעד אחר צעד, פתרון מלא ומוסבר בתוך details נפתח, ואיך המרצה מצפה שיענו עליה (שלבים, סימונים, רמת פירוט) לפי הפתרונות שלו לשיעורי בית ולמבחנים קודמים. אם בהרצאה (בתמלול, במצגות או בהערות המרצה) נאמר לא לעשות שאלה או מטלה מסוימת, או שהיא דורשת חומר שעוד לא נלמד עד הרצאה זו, אל תפתור אותה כאן: בתחילת קטע שיעורי הבית בלבד (לא בסקירה ולא בראש הדף) כתוב תיבה אחת <div class=\"notyet\"> עם מספרי השאלות והסיבה (למשל \"שאלה 3: לא לעשות עדיין, המרצה אמרה שהיא שייכת להרצאה הבאה\"), ובכל סעיף של שאלה כזו תן רק רמז קצר בתוך details עם class=\"q notyet\". אל תכתוב על זה דבר בסקירה. בתקציר של ההרצאה כתוב שורה \"נדחו: שאלה N מקובץ X\" לכל שאלה כזו, ואם בתקצירי הרצאות קודמות יש שורת \"נדחו\" והשאלות האלה מתאימות לחומר של הרצאה זו, כלול אותן כאן עם פתרון מלא וציין שהן משיעורי הבית של הרצאה אחרת. אל תניח בלי ראיה: סמן רק מה שנאמר בפועל או שבאמת חסר לו חומר. סדר את שיעורי הבית לפי שאלות: כל סעיף (א, ב, ...) ב-details משלו שכותרתו מתחילה ב-\"שאלה N\" (למשל \"שאלה 1(א)\"), וכל שלב בפתרון בשורה נפרדת ועם רווח, לא גוש טקסט אחד. אם שאלה בשיעורי הבית מבקשת לשרטט, לצייר גרף, דיאגרמה או מעגל, התשובה בסיכום חייבת לכלול את השרטוט עצמו (SVG בתוך הדף, עם תוויות ברורות) ולא רק תיאור במילים. "
                   + (hasSolutions
@@ -160,9 +160,12 @@ partial class HitStudent
                     SectionStatus(course, num, phaseText, true, false);
                     try { string note = await SecondOpinion(course, num, result.Provider); if (note != null) SectionStatus(course, num, note, true, false); } catch (Exception ex) { SectionStatus(course, num, "הביקורת לא הושלמה: " + Trunc(ex.Message, 100), true, false); }
                 }
-                printing = true; phaseText = "מכין את קובץ ה-PDF...";
-                SectionStatus(course, num, phaseText, true, false);
-                pdf = await BuildLecturePdf(course, num); warning = pdfFailure;
+                result = await EnsureCompleteQuestions(key, course, num, result, s => { phaseText = s; SectionStatus(course, num, s, true, false); });
+                if (!result.Error) {
+                    printing = true; phaseText = "מכין את קובץ ה-PDF...";
+                    SectionStatus(course, num, phaseText, true, false);
+                    pdf = await BuildLecturePdf(course, num); warning = pdfFailure;
+                }
             }
         }
         finally { finished = true; summaryRunning.Remove(course + "|" + num); }

@@ -101,7 +101,7 @@ partial class HitStudent
     }
 
     // One question, through the subscription.
-    async Task<HelperReply> HelperCallCli(string provider, string system, List<Tuple<string, string>> messages)
+    async Task<HelperReply> HelperCallCli(string provider, string system, List<Tuple<string, string>> messages, byte[] image = null)
     {
         var reply = new HelperReply { Provider = provider };
         string dir = Path.Combine(Path.GetTempPath(), "SumIT-brain-" + Guid.NewGuid().ToString("N"));
@@ -115,6 +115,11 @@ partial class HitStudent
             {
                 // Antigravity can't take a long text on its input, so the conversation is a file in the empty folder, read-only ("plan") mode,
                 // and the short instruction on the command line says to read it.
+                if (image != null) {
+                    prompt = prompt.Replace("אל תשתמש בכלים ואל תקרא או תכתוב קבצים.", "מותר לקרוא רק את material.txt ואת selection.png לצורך התשובה; אל תריץ פקודות ואל תכתוב קבצים.");
+                    File.WriteAllBytes(Path.Combine(dir, "selection.png"), image);
+                    prompt += "\nThe student's selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.";
+                }
                 File.WriteAllText(Path.Combine(dir, "material.txt"), prompt, new UTF8Encoding(false));
                 string exe = FindAgy();
                 r = await RunCli(exe, "-p " + Q("Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.") + " --mode plan", null, dir, 300000);

@@ -65,3 +65,33 @@
 .diagram-legend bdi { min-width:0; overflow-wrap:anywhere; }
 .diagram-key { flex:none; display:inline-grid; place-items:center; min-width:25px; height:25px; border:1px solid var(--line,#aaa); border-radius:50%; font-weight:700; }
 @media print { .diagram-scroll { overflow:visible; } .diagram-scroll svg { max-width:100%!important; } .diagram-legend { break-inside:avoid; } }
+/* Complete source question, before any hint or solution. */
+.question-statement { margin:0 0 18px; padding:16px 18px; border:1px solid var(--line, #888); border-radius:12px; background:var(--surface, transparent); }
+.question-statement h4 { margin:0 0 10px; font-size:1.05em; }
+.question-statement p { line-height:1.8; margin:8px 0; }
+.question-statement .question-source { font-size:.85em; color:var(--muted, #888); }
+
+/* Keep a homework question alongside its reference without duplicating IDs or controls. */
+.book-controls { position:sticky; top:6px; z-index:12; display:flex; justify-content:flex-start; margin:8px 0; pointer-events:none; }
+.book-controls button,.book-pin-head button { pointer-events:auto; cursor:pointer; font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--line,#888); border-radius:9px; background:var(--surface,#fff); color:var(--text,#111); }
+.booktabs[hidden],.book-question-pin[hidden] { display:none!important; }
+.bookgrid.tabs-collapsed { grid-template-columns:minmax(0,1fr); }
+.bookreading { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); gap:20px; align-items:start; }
+.bookreading.with-question { grid-template-columns:minmax(240px,.85fr) minmax(0,1fr); }
+.wrap.has-question { max-width:1600px; }
+.book-question-pin { min-width:0; position:sticky; top:48px; max-height:calc(100vh - 64px); overflow:auto; padding:12px; background:var(--surface2,#eee); border:1px solid var(--line,#888); border-radius:14px; }
+.book-pin-head { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.book-pin-head b { flex:1; }
+.book-question-pin details.q { margin:12px 0 0; }
+.book-question-pin .qbody { padding:10px; }
+.bookreading.with-question .bookmain [id] { scroll-margin-top:48px; }
+.book-question-pin .katex-display,.bookreading.with-question .katex-display { overflow-x:auto; overflow-y:hidden; }
+@media(max-width:760px) {
+  .bookreading.with-question { grid-template-columns:minmax(0,1fr); }
+  .book-question-pin { top:44px; max-height:34vh; z-index:10; }
+  .bookreading.with-question .bookmain [id] { scroll-margin-top:calc(34vh + 76px); }
+}
+@media print {
+  .book-controls,.book-question-pin { display:none!important; }
+  .bookreading { display:block!important; }
+}

@@ -996,7 +996,7 @@ const lectureState = (row) => ({ aiBusy: !!row.running, pct: row.progress ? row.
 
 function requestLectureSummary(course, lecture, force=false) {
   if (document.querySelector('.summary-options')) return;
-  const dialog=h(`<dialog class="summary-options" dir="rtl" aria-labelledby="summaryOptionsTitle"><form method="dialog"><h2 id="summaryOptionsTitle">${force?'בנייה מחדש':'יצירת סיכום'} · הרצאה ${esc(String(lecture.num))}</h2><p class="muted">הסיכום יחבר בין ההסברים, הדוגמאות ושיעורי הבית. אפשר להוסיף דגשים לפני שמתחילים.</p><label>הערות לסיכום <small class="muted">(לא חובה)</small><textarea name="notes" rows="6" maxlength="4000" placeholder="למשל: המרצה ביקשה לפתור רק את שאלות 1–2; להסביר לאט את בחירת השיטה."></textarea></label><p class="muted">ההערות נשמרות להרצאה. שינוי בהן יילקח בחשבון גם אם קבצי ההרצאה לא השתנו.</p><div class="row"><button type="submit" class="primary">${force?'בנה מחדש':'צור סיכום'}</button><button type="button" class="ghost" data-cancel>ביטול</button></div></form></dialog>`);
+  const dialog=h(`<dialog class="summary-options" dir="rtl" aria-labelledby="summaryOptionsTitle"><form method="dialog"><h2 id="summaryOptionsTitle">${force?'בנייה מחדש':'יצירת סיכום'} · הרצאה ${esc(String(lecture.num))}</h2><p class="muted">הסיכום יתמקד בפתרון שיעורי הבית: השאלות המלאות, ההסברים הנחוצים והפתרונות המודרכים. מבחני עבר ופתרונות שתוסיפו באזור המבחנים יעזרו למקד את ההכנה למבחן. ההערות שלך קובעות על אילו מקורות להתבסס וכמה לפרט; הסיכום יישאר בגבולות ההרצאה.</p><label>הערות לסיכום <small class="muted">(לא חובה)</small><textarea name="notes" rows="6" maxlength="4000" placeholder="למשל: להתבסס בעיקר על מחברות התלמיד והמרצה; לסכם רק מה שנלמד בהרצאה ולהשלים רק מה שחיוני לתרגילים."></textarea></label><p class="muted">ההערות נשמרות להרצאה. שינוי בהן יילקח בחשבון גם אם קבצי ההרצאה לא השתנו.</p><div class="row"><button type="submit" class="primary">${force?'בנה מחדש':'צור סיכום'}</button><button type="button" class="ghost" data-cancel>ביטול</button></div></form></dialog>`);
   dialog.querySelector('textarea').value=lecture.summaryNotes||'';
   dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
   dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const notes=dialog.querySelector('textarea').value.trim();lecture.summaryNotes=notes;send({type:'lecturePdf',course:course.name,num:lecture.num,title:lecture.title,force,notes});dialog.close();};
@@ -1408,16 +1408,45 @@ function jobLog(id, line) {
 // A lecture summary inside the app: the page, with a way back to the lecture, to the chat and to the PDF.
 function openViewer(path, title, pdf, lec) {
   S.viewer = { path, title, pdf, lec };
+  $('summaryChat').hidden = true;
+  $('viewerShareNote').hidden = true;
   $('viewerTitle').textContent = title;
   $('viewerPdf').hidden = !pdf;
   show('sites');
 }
 $('viewerBack').onclick = () => { S.viewer = null; show('course'); };
-$('viewerChat').onclick = () => { const l = S.viewer && S.viewer.lec; S.viewer = null; show('course'); if (l) setChatScope('lesson:' + l); };
+// The Gemini-only summary chat is connected in summary-chat.js.
 $('viewerPdf').onclick = () => S.viewer && S.viewer.pdf && send({ type: 'openPath', path: S.viewer.pdf });
+$('viewerShare').onclick = () => {
+  if (!S.viewer || !S.course || S.shareJob?.busy) return;
+  const requestId = 'share-' + Date.now();
+  S.shareJob = { requestId, path: S.viewer.path, busy: true };
+  $('viewerShare').disabled = true;
+  $('viewerShareLabel').textContent = 'מכין ZIP…';
+  $('viewerShareNote').hidden = false;
+  $('viewerShareNote').classList.remove('error');
+  $('viewerShareStatus').textContent = 'בחר היכן לשמור את קובץ ה־ZIP';
+  send({ type: 'shareSummary', requestId, course: S.course.name, path: S.viewer.path, pdf: S.viewer.pdf || '', title: S.viewer.title });
+};
+$('viewerShareDismiss').onclick = () => { $('viewerShareNote').hidden = true; $('viewerShare').focus(); };
+function summaryShareStatus(m) {
+  if (!S.shareJob || S.shareJob.requestId !== m.requestId) return;
+  if (m.type === 'summaryShareResult') {
+    S.shareJob.busy = false;
+    $('viewerShare').disabled = false;
+    $('viewerShareLabel').textContent = 'שיתוף';
+  }
+  if (S.viewer?.path === S.shareJob.path && S.view === 'sites') {
+    $('viewerShareNote').hidden = false;
+    $('viewerShareNote').classList.toggle('error', m.status === 'error');
+    $('viewerShareStatus').textContent = m.text;
+  } else if (m.type === 'summaryShareResult' && m.status !== 'cancelled') toast(m.text, { error: m.status === 'error' });
+}
 $('siteBackCourse').onclick = () => { S.viewer = null; show('course'); };
 
 function openSite(site, url) {
+  $('summaryChat').hidden = true;
+  $('viewerShareNote').hidden = true;
   if (window.stonesHook) window.stonesHook({ type: 'openSite', site });
   S.viewer = null;
   S.site = site;
@@ -1831,6 +1860,8 @@ function onMessage(m) {
       if (num) toast(`העתקת קישור להקלטת Zoom`, { action: `הוסף לשיעור ${num}`, ms: 9000, onAction: () => send({ type: 'addRecording', course: S.course.name, num, url: m.url }) });
       break;
     }
+    case 'summarySelectionReady': case 'summaryChatResult': summaryChatEvent(m); break;
+    case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }
     case 'update': S.update = m; renderBanners(); break;
