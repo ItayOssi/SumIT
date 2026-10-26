@@ -383,7 +383,8 @@ partial class HitStudent : Form
             onboarded = Bool(settings, "onboarded"), userName = Str(settings, "userName"), version = Version,
             autoSync = Option("autoSync"), autoRecordings = Option("autoRecordings"), autoUpdate = Option("autoUpdate"), autoFallback = Option("autoFallback"), pdfDark = Option("pdfDark"),
             profileImage = ProfileImage(),
-            theme = Str(settings, "theme").Length > 0 ? Str(settings, "theme") : "system", systemLight = SystemUsesLightTheme()
+            theme = Str(settings, "theme").Length > 0 ? Str(settings, "theme") : "system", systemLight = SystemUsesLightTheme(),
+            discordUrl = Str(settings, "discordUrl")
         });
     }
 
@@ -437,6 +438,12 @@ partial class HitStudent : Form
                     settings["theme"] = t == "light" || t == "dark" ? t : "system";
                     SaveSettings();
                     ApplyTitleBarTheme();
+                    SendSettings();
+                }
+                if (opt == "discordUrl")
+                {
+                    settings["discordUrl"] = Str(m, "value").Trim();
+                    SaveSettings();
                     SendSettings();
                 }
                 break;

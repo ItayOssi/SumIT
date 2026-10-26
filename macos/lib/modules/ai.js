@@ -965,6 +965,10 @@ module.exports = {
         + 'ובנה את דף "' + C.Exams + '/' + C.ExamPrepPage + '" עם דף נוסחאות, תבניות השאלות החוזרות ושני מבחני תרגול חדשים עם פתרונות מודרכים נפתחים. סמן אותם כמבחנים שנוצרו לתרגול, לא תחזית. התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים.' + WorkAlone;
 
       const result = await this.CourseTask(key, course, s => this.Send({ type: 'courseStatus', course, text: s, busy: true }), prompt);
+      const prepFile = path.join(this.CourseDir(course), C.Exams, C.ExamPrepPage);
+      if (fileExists(prepFile)) {
+        try { this.PrepareStudyPage(prepFile); } catch { }
+      }
       this.Send({ type: 'courseStatus', course, text: result.Error ? Trunc(result.Text, 160) : '', busy: false, error: result.Error });
       this.SendCourseLocal(course);
       this.Notify(result.Error ? null : 'ההכנה למבחן מוכנה', course);

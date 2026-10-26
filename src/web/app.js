@@ -115,11 +115,15 @@ function md(text) {
   t = t.replace(/`([^`]+)`/g, (_, code) => { blocks.push(`<code>${code}</code>`); return `\u0000${blocks.length-1}\u0000`; });
   t = t.replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(?<!\\)\$([^$\n]+?)\$/g, (match, display, bracket, inline, dollar) => {
     const raw = display || bracket || inline || dollar;
-    const decoded = raw.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,'&');
+    let decoded = raw.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,'&').trim();
+    decoded = decoded.replace(/[·•]/g, ' \\cdot ').replace(/\\vec\s+([a-zA-Z])'/g, '\\vec{$1}\'').replace(/→/g, ' \\to ').replace(/←/g, ' \\leftarrow ').replace(/−/g, '-');
     const isDisplay = display !== undefined || bracket !== undefined;
     let rendered;
-    try { rendered = katex.renderToString(decoded, {displayMode:isDisplay, throwOnError:true, trust:false, maxExpand:1000}); }
-    catch { rendered = `<code>${esc(decoded)}</code>`; }
+    try { rendered = katex.renderToString(decoded, {displayMode:isDisplay, throwOnError:true, trust:false, strict:'ignore', maxExpand:1000}); }
+    catch {
+      try { rendered = katex.renderToString(decoded, {displayMode:isDisplay, throwOnError:false, trust:false, strict:'ignore', maxExpand:1000}); }
+      catch { rendered = `<code>${esc(decoded)}</code>`; }
+    }
     math.push(`<span class="${isDisplay ? 'math-display' : 'math-inline'}" dir="ltr">${rendered}</span>`);
     return `\u0001${math.length-1}\u0001`;
   });
@@ -660,10 +664,47 @@ function loadCourses() {
 }
 function renderCourses() {
   const g = $('courses'); g.innerHTML = '';
-  const list = (S.courses || []).filter(c => $('showAll').checked || c.current);
+  const filterVal = $('courseSemesterFilter')?.value || 'current';
+  const query = ($('courseSearch')?.value || '').trim().toLowerCase();
+
+  // Populate semester filter options dynamically based on available courses
+  const semSelect = $('courseSemesterFilter');
+  if (semSelect && S.courses && S.courses.length) {
+    const existingVal = semSelect.value;
+    const semesters = new Set();
+    S.courses.forEach(c => {
+      const s = semesterOf(c);
+      if (s) semesters.add(s);
+    });
+    // Rebuild options if needed
+    const currentOptions = Array.from(semSelect.options).map(o => o.value);
+    const hasCustomSems = [...semesters].some(s => !currentOptions.includes(s));
+    if (hasCustomSems || semSelect.options.length <= 2) {
+      semSelect.innerHTML = '<option value="current">הסמסטר הנוכחי בלבד</option><option value="all">כל הסמסטרים</option>';
+      [...semesters].sort().forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        semSelect.appendChild(opt);
+      });
+      if (currentOptions.includes(existingVal)) semSelect.value = existingVal;
+    }
+  }
+
+  const list = (S.courses || []).filter(c => {
+    if (filterVal === 'current' && !c.current) return false;
+    if (filterVal !== 'current' && filterVal !== 'all' && semesterOf(c) !== filterVal) return false;
+    if (query) {
+      const name = (c.name || '').toLowerCase();
+      const cat = (c.category || '').toLowerCase();
+      const short = (c.short || '').toLowerCase();
+      if (!name.includes(query) && !cat.includes(query) && !short.includes(query)) return false;
+    }
+    return true;
+  });
+
   if (!list.length) {
     $('coursesState').innerHTML = '';
-    $('coursesState').append(h(`<div class="empty">${ART.empty().replace('<svg', '<svg class="art"')}<b>לא נמצאו קורסים פעילים</b>אפשר להציג גם קורסים קודמים.</div>`));
+    $('coursesState').append(h(`<div class="empty">${ART.empty().replace('<svg', '<svg class="art"')}<b>לא נמצאו קורסים מתאימים</b>נסה לשנות את הסינון או החיפוש.</div>`));
     return;
   }
   $('coursesState').innerHTML = '';
@@ -678,7 +719,9 @@ function renderCourses() {
   });
 }
 $('refreshCourses').onclick = loadCourses;
-$('showAll').onchange = renderCourses;
+if ($('courseSemesterFilter')) $('courseSemesterFilter').onchange = renderCourses;
+if ($('courseSearch')) $('courseSearch').oninput = renderCourses;
+if ($('showAll')) $('showAll').onchange = renderCourses;
 
 // ---------- One course ----------
 const modIcon = { resource: 'file', file: 'file', assign: 'exam', zoom: 'play', url: 'link', folder: 'folder', page: 'book', quiz: 'exam', forum: 'chat', book: 'book' };
@@ -1611,7 +1654,17 @@ function renderSettings() {
   ['optSync','optRec','optUpdate'].forEach(id => { $(id).checked = false; $(id).closest('.setting').hidden = true; });
   $('versionText').textContent = `SumIT ${st.version || ''} · מתעדכנת לבד כשיוצאת גרסה חדשה`;
   applyTheme(st.theme || 'system');
+  if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/';
 }
+if ($('discordUrl')) $('discordUrl').onchange = () => send({ type: 'setOption', name: 'discordUrl', value: $('discordUrl').value });
+if ($('openDiscordBtn')) $('openDiscordBtn').onclick = () => {
+  const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/').trim();
+  send({ type: 'openLink', url });
+};
+if ($('navDiscord')) $('navDiscord').onclick = () => {
+  const url = (S.settings?.discordUrl || $('discordUrl')?.value || 'https://discord.gg/').trim();
+  send({ type: 'openLink', url });
+};
 $('changeStudy').onclick = $('wizStudyBtn').onclick = () => send({ type: 'chooseFolder', which: 'study' });
 $('openStudy').onclick = () => send({ type: 'openFolder', which: 'study' });
 $('changeNotability').onclick = $('wizNotBtn').onclick = () => send({ type: 'chooseFolder', which: 'notability' });

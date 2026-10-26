@@ -352,6 +352,7 @@ class Host {
       autoSync: this.Option('autoSync'), autoRecordings: this.Option('autoRecordings'), autoUpdate: this.Option('autoUpdate'), autoFallback: this.Option('autoFallback'), pdfDark: this.Option('pdfDark'),
       profileImage: this.ProfileImage(),
       theme: Str(this.settings, 'theme').length > 0 ? Str(this.settings, 'theme') : 'system', systemLight: this.SystemUsesLightTheme(),
+      discordUrl: Str(this.settings, 'discordUrl'),
       platform: 'mac',
     });
   }
@@ -403,6 +404,11 @@ class Host {
           this.settings.theme = t === 'light' || t === 'dark' ? t : 'system';
           this.SaveSettings();
           this.ApplyTitleBarTheme();
+          this.SendSettings();
+        }
+        if (opt === 'discordUrl') {
+          this.settings.discordUrl = Str(m, 'value').trim();
+          this.SaveSettings();
           this.SendSettings();
         }
         break;
