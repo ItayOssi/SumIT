@@ -48,6 +48,14 @@ partial class HitStudent
             string current = app.LectureFingerprint(course, 1);
             File.WriteAllText(Path.Combine(app.LectureDir(course, 2), "later.txt"), "future");
             check("future lecture excluded", current == app.LectureFingerprint(course, 1));
+            string examDir = Path.Combine(app.CourseDir(course), Exams); Directory.CreateDirectory(examDir);
+            string exam = Path.Combine(examDir, "past-exam.pdf"); File.WriteAllText(exam, "new exam");
+            check("new exam invalidates lecture summary", current != app.LectureFingerprint(course, 1));
+            current = app.LectureFingerprint(course, 1);
+            File.WriteAllText(exam, "corrected exam solution");
+            check("changed exam invalidates lecture summary", current != app.LectureFingerprint(course, 1));
+            current = app.LectureFingerprint(course, 1);
+
             Directory.CreateDirectory(Path.Combine(dir, SummaryName)); File.WriteAllText(Path.Combine(dir, SummaryName, SummaryPdfName), "generated"); File.WriteAllText(Path.Combine(dir, SummaryName, SummaryHtmlName), "generated");
             check("the summary files themselves do not change the fingerprint", current == app.LectureFingerprint(course, 1));
             File.WriteAllText(Path.Combine(dir, "unrelated.mp4"), "not a recording");

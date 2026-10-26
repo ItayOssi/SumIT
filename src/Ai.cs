@@ -871,6 +871,7 @@ partial class HitStudent
         }
         string prompt = SkillInstruction() + " בצע את שלב 5 (כשהמבחנים מגיעים) על כל הקורס.\n"
             + CourseContext(course) + "\n"
+            + StudyLearningPolicy + CompleteQuestionPolicy
             + "קרא את כל המבחנים והפתרונות ב-\"" + Exams + "\", ואת סיכומי ההרצאות (\"" + SummaryName + "/" + SummaryHtmlName + "\" בכל תיקיית הרצאה, ואת התקצירים ב-\"" + SumitDir + "/digests\" - קודם אותם), ורק לפי הצורך את קבצי ההרצאות. המטרה: להבין איך המרצה חושב.\n"
             + "כתוב את \"" + LecturerProfile + "\": איזה נושאים חוזרים ובאיזו תדירות, תבניות השאלות שלו, איך הוא מצפה שיפתרו (שלבים, סימונים, רמת פירוט), מלכודות שהוא אוהב, ומה דפוסי הבחינות הקודמות; אין להבטיח מה יופיע בבחינה הבאה.\n"
             + "ובנה את דף \"" + Exams + "/" + ExamPrepPage + "\" עם דף נוסחאות, תבניות השאלות החוזרות ושני מבחני תרגול חדשים עם פתרונות מודרכים נפתחים. סמן אותם כמבחנים שנוצרו לתרגול, לא תחזית. התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים." + WorkAlone;
@@ -892,11 +893,13 @@ partial class HitStudent
         string folder = LectureFolderName(num);
         string prompt = SkillInstruction() + " הכן אותי לשיעורי הבית של שבוע " + num + " (נושא ב-Moodle: \"" + title + "\").\n"
             + CourseContext(course) + "\n"
+            + StudyLearningPolicy + CompleteQuestionPolicy
             + "דפי התרגיל בתיקייה \"" + folder + "/" + Exercises + "\". חומר השיעור ב-\"" + folder + "\", ותמלול ב-\"" + folder + "/" + RecordingFolder + "\".\n"
             + "1. בנה (או עדכן) את \"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\" כך שיכיל את כל מה שצריך לדעת כדי לפתור את התרגילים, עם החלק \"שימוש בתרגילים\" לכל שאלה.\n"
             + "2. צור את קבצי ה-PDF עם המפנים בתיקייה \"" + folder + "/" + Exercises + "/עם מפנים\" לכל דף תרגיל (רק רמזים והפניות, בלי תשובות).\n"
             + "השתמש במבחנים, בפרופיל המרצה ובחומרים מ-CS24 אם יש, כדי להראות איך המרצה מצפה שיפתרו." + WorkAlone;
         var result = await CourseTask(key, course, s => SectionStatus(course, num, s, true, false), prompt);
+        result = await EnsureCompleteQuestions(key, course, num, result, s => SectionStatus(course, num, s, true, false));
         SectionStatus(course, num, result.Error ? "נכשל: " + Trunc(result.Text, 160) : "ההכנה לשיעורי הבית מוכנה ✨", false, result.Error);
         SendSectionLocal(course, num);
         Notify(result.Error ? null : "ההכנה לשיעורי הבית של שיעור " + num + " מוכנה", course);

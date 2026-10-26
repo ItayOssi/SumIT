@@ -55,10 +55,17 @@ partial class HitStudent
             if (Directory.Exists(dir)) files.AddRange(Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
                 .Where(f => !f.Contains("\\" + PointersFolder + "\\") && !IsSummaryFile(f) && Path.GetExtension(f).ToLowerInvariant() != ".mp4"));
         }
+        // New exams/syllabus guidance change priorities even if lecture files stay the same.
+        foreach (string area in new[] { Exams, CourseInfoFolder, General }) {
+            string folder = Path.Combine(CourseDir(course), area);
+            if (Directory.Exists(folder)) files.AddRange(Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
+                .Where(f => !f.Contains("\\" + SumitDir + "\\") && !Path.GetFileName(f).StartsWith(ExamPrepPage, StringComparison.OrdinalIgnoreCase)
+                    && new[] { ".pdf", ".txt", ".md", ".docx", ".pptx" }.Contains(Path.GetExtension(f).ToLowerInvariant())));
+        }
         using (var hash = System.Security.Cryptography.SHA256.Create())
         {
             // Hash source content, not generated pages, so a repeat request costs no AI tokens.
-            var source = new System.Text.StringBuilder("lecture-v2|");
+            var source = new System.Text.StringBuilder("lecture-v3|" + StudyPolicyVersion + "|");
             foreach (string file in files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                 using (var stream = File.OpenRead(file)) source.Append(file).Append(Convert.ToBase64String(hash.ComputeHash(stream)));
             return Convert.ToBase64String(hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(source.ToString())));

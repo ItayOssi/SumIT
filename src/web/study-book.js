@@ -146,7 +146,7 @@
     notyet.forEach(function (e) { var n = deferredNumbers(e); for (var k in n) later[k] = true; });
     var items = Array.prototype.slice.call(page.querySelectorAll('details.q')), groups = {}, any = false;
     items.forEach(function (d) {
-      var t = (d.querySelector('summary') || d).textContent || '', m = /שאלה\s*(\d+)/.exec(t);
+      var t = (d.querySelector('summary') || d).textContent || '', m = /שאלה\s*(\d+(?:\.\d+)*)/.exec(t);
       if (!m) return;
       any = true;
       var n = m[1], gr = groups[n];

@@ -65,3 +65,8 @@
 .diagram-legend bdi { min-width:0; overflow-wrap:anywhere; }
 .diagram-key { flex:none; display:inline-grid; place-items:center; min-width:25px; height:25px; border:1px solid var(--line,#aaa); border-radius:50%; font-weight:700; }
 @media print { .diagram-scroll { overflow:visible; } .diagram-scroll svg { max-width:100%!important; } .diagram-legend { break-inside:avoid; } }
+/* Complete source question, before any hint or solution. */
+.question-statement { margin:0 0 18px; padding:16px 18px; border:1px solid var(--line, #888); border-radius:12px; background:var(--surface, transparent); }
+.question-statement h4 { margin:0 0 10px; font-size:1.05em; }
+.question-statement p { line-height:1.8; margin:8px 0; }
+.question-statement .question-source { font-size:.85em; color:var(--muted, #888); }
