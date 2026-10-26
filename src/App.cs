@@ -475,6 +475,15 @@ partial class HitStudent : Form
                 break;
             case "cancelGeminiLogin": CancelGeminiLogin(); CancelAgyLogin(); break;
             case "setGeminiKey": SetHelperKey("gemini", Str(m, "key")); break;
+            case "setGeminiModel":
+                string gmod = Str(m, "model").Trim();
+                if (gmod.Length > 0)
+                {
+                    settings["geminiModel"] = gmod;
+                    SaveSettings();
+                    SendSettings();
+                }
+                break;
             case "setHelperKey": SetHelperKey(Str(m, "provider"), Str(m, "key")); break;
             case "removeHelperKey": RemoveHelperKey(Str(m, "provider")); break;
             case "testBrain": TestBrain(Str(m, "kind")); break;

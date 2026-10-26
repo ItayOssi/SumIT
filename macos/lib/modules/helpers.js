@@ -89,12 +89,31 @@ module.exports = {
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
     async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null) {
+      if (provider === 'gemini') {
+        const primary = this.GeminiModel;
+        const candidates = [primary, 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+        const models = Array.from(new Set(candidates));
+        let lastReply = null;
+        for (const model of models) {
+          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model);
+          if (!res.Error) return res;
+          lastReply = res;
+          // Only fallback if quota/rate limit error (HTTP 429)
+          if (!res.Limit) break;
+        }
+        return lastReply || { Text: 'שגיאה בפנייה ל-Gemini', Provider: 'gemini', Error: true, Limit: true };
+      }
+      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer);
+    },
+
+    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       try {
         let url, body, headers = { 'Content-Type': 'application/json' };
         if (provider === 'gemini') {
           const endpoint = onChunk ? ':streamGenerateContent?alt=sse' : ':generateContent';
-          url = this.GeminiBase + '/v1beta/models/' + this.GeminiModel + endpoint;
+          const modelName = geminiModelOverride || this.GeminiModel;
+          url = this.GeminiBase + '/v1beta/models/' + modelName + endpoint;
           const contents = messages.map((m, idx) => {
             const role = m[0] === 'assistant' ? 'model' : 'user';
             const parts = [{ text: m[1] }];

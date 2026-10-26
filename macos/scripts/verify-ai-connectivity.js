@@ -318,8 +318,12 @@ async function runVerification() {
     if (btn) btn.click();
     return Boolean(btn);
   })()`);
-  await delay(250);
-  const claudeSpinnerHtml = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="claude"] .state')?.innerHTML || ''`);
+  let claudeSpinnerHtml = "";
+  for (let i = 0; i < 20; i++) {
+    await delay(100);
+    claudeSpinnerHtml = await host.ui.executeScript(`document.querySelector('#providers .provider[data-kind="claude"] .state')?.innerHTML || ''`);
+    if (claudeSpinnerHtml.includes("spinner")) break;
+  }
   record(
     'Buttons',
     'Claude Setup/Login button ([data-act="setupClaude"]) & spinner state',

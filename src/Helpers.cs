@@ -41,6 +41,24 @@ partial class HitStudent
 
     async Task<HelperReply> HelperCall(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null)
     {
+        if (provider == "gemini")
+        {
+            var candidates = new List<string> { GeminiModel, "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash", "gemini-1.5-pro" }.Distinct().ToList();
+            HelperReply lastReply = null;
+            foreach (var mod in candidates)
+            {
+                var res = await HelperCallSingle("gemini", key, system, messages, image, mod);
+                if (!res.Error) return res;
+                lastReply = res;
+                if (!res.Limit) break;
+            }
+            return lastReply ?? new HelperReply { Provider = "gemini", Error = true, Limit = true, Text = "שגיאה בפנייה ל-Gemini" };
+        }
+        return await HelperCallSingle(provider, key, system, messages, image, null);
+    }
+
+    async Task<HelperReply> HelperCallSingle(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null, string geminiModelOverride = null)
+    {
         var reply = new HelperReply { Provider = provider };
         try
         {
@@ -49,7 +67,8 @@ partial class HitStudent
             var req = new HttpRequestMessage(HttpMethod.Post, "http://invalid/");
             if (provider == "gemini")
             {
-                url = GeminiBase + "/v1beta/models/" + Uri.EscapeDataString(GeminiModel) + ":generateContent?key=" + Uri.EscapeDataString(key);
+                string mod = !string.IsNullOrEmpty(geminiModelOverride) ? geminiModelOverride : GeminiModel;
+                url = GeminiBase + "/v1beta/models/" + Uri.EscapeDataString(mod) + ":generateContent?key=" + Uri.EscapeDataString(key);
                 var contents = messages.Select(m => (object)new Dictionary<string, object> { { "role", m.Item1 == "assistant" ? "model" : "user" }, { "parts", new object[] { new Dictionary<string, object> { { "text", m.Item2 } } } } }).ToList();
                 if (image != null && contents.Count > 0) {
                     var last = (Dictionary<string, object>)contents[contents.Count - 1];

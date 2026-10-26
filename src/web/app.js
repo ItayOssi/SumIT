@@ -293,7 +293,9 @@ function helperCard(kind) {
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
   // While the Google page is open: say what to do (the app carries on by itself when the account is saved).
   const codeBox = gem && S.authCode ? `<div class="auth-code" dir="rtl"><b>כמעט סיימנו</b>
-    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const keyBox = codeBox + (mode === 'key' || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`);
+    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const curModel = (S.settings && S.settings.geminiModel) || 'gemini-1.5-flash';
+  const modelBox = gem ? `<div class="row gemini-model-row" style="width:100%;margin-top:6px;gap:6px;align-items:center;"><span style="font-size:12px;opacity:0.8;">מודל:</span><select class="small" data-gemini-model style="flex:1;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;"><option value="gemini-1.5-flash" ${curModel === 'gemini-1.5-flash' ? 'selected' : ''}>Gemini 1.5 Flash (מהיר וחסכוני)</option><option value="gemini-1.5-flash-8b" ${curModel === 'gemini-1.5-flash-8b' ? 'selected' : ''}>Gemini 1.5 Flash-8B (מכסה גבוהה)</option><option value="gemini-2.0-flash" ${curModel === 'gemini-2.0-flash' ? 'selected' : ''}>Gemini 2.0 Flash (הדור החדש)</option><option value="gemini-1.5-pro" ${curModel === 'gemini-1.5-pro' ? 'selected' : ''}>Gemini 1.5 Pro (חכם ומעמיק)</option></select></div>` : '';
+  const keyBox = codeBox + (mode === 'key' || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`) + modelBox;
   const tr = (S.brainTests || {})[brain];
   const testLine = !mode || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
   const el = h(`<div class="provider${mode ? ' selected' : ''}" data-kind="${kind}"><span class="chip ${mode ? 'ok' : ''} tag">${mode ? 'מחובר' : 'עוזר · לא חובה'}</span>
@@ -308,6 +310,16 @@ function helperCard(kind) {
   const tst = el.querySelector('[data-test]'); if (tst) tst.onclick = () => { S.brainTests = S.brainTests || {}; S.brainTests[brain] = { busy: true }; renderProviders(); send({ type: 'testBrain', kind: brain }); };
   const out = el.querySelector('[data-logout]'); if (out) out.onclick = () => { if (confirm(`להתנתק מ-${name}?`)) send({ type: 'disconnectBrain', kind: brain }); };
   const rm = el.querySelector('[data-rm]'); if (rm) rm.onclick = () => send({ type: 'removeHelperKey', provider: kind });
+  const modelSel = el.querySelector('[data-gemini-model]');
+  if (modelSel) {
+    modelSel.onchange = () => {
+      const chosen = modelSel.value;
+      S.settings = S.settings || {};
+      S.settings.geminiModel = chosen;
+      send({ type: 'setGeminiModel', model: chosen });
+      toast('מודל Gemini עודכן ל-' + chosen);
+    };
+  }
   const save = el.querySelector('[data-save]');
   if (save) {
     const go = () => { const v = el.querySelector('[data-key]').value.trim(); if (!v) return; save.disabled = true; save.textContent = 'בודק...'; send({ type: 'setHelperKey', provider: kind, key: v }); };

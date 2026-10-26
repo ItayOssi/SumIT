@@ -445,6 +445,15 @@ class Host {
       }
       case 'cancelGeminiLogin': this.CancelGeminiLogin(); this.CancelAgyLogin(); break;
       case 'setGeminiKey': this.SetHelperKey('gemini', Str(m, 'key')); break;
+      case 'setGeminiModel': {
+        const mod = Str(m, 'model').trim();
+        if (mod) {
+          this.settings.geminiModel = mod;
+          this.SaveSettings();
+          this.SendSettings();
+        }
+        break;
+      }
       case 'setHelperKey': this.SetHelperKey(Str(m, 'provider'), Str(m, 'key')); break;
       case 'removeHelperKey': this.RemoveHelperKey(Str(m, 'provider')); break;
       case 'testBrain': this.TestBrain(Str(m, 'kind')); break;
