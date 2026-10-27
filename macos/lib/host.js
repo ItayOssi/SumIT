@@ -612,6 +612,7 @@ class Host {
       case 'viewFile': this.ShowFile(m); break;
       case 'selectSummary': this.SelectSummary(m); break;
       case 'summaryChat': this.AskSummary(m); break;
+      case 'flashcards': this.MakeFlashcards(m); break;
       case 'exportDiagnostics': this.ExportDiagnostics(); break;
       case 'importSharedSummary': this.PickSharedSummary(m); break;
       case 'cloudSummaryImport': this.cloudImportCourse = course; this.cloudImportLecture = Int(m, 'num'); break;
@@ -913,7 +914,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

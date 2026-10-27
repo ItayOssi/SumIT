@@ -227,6 +227,48 @@ module.exports = {
       }
     },
 
+    // Several turns of one Gemini conversation in a single agy process (each turn sees the earlier ones), so a multi-step
+    // job pays the CLI start-up once. Low-effort models. onTurn(n) after each answered turn. Returns { Texts, Error, Text }.
+    async HelperCallCliTurns(turns, onTurn = null) {
+      const reply = { Texts: [], Provider: 'gemini', Error: false, Limit: false, Text: '' };
+      const dir = path.join(platform.TempDir, 'SumIT-brain-' + guidN());
+      mkdirp(dir);
+      try {
+        const exe = this.FindAgy();
+        const stdin = turns.map(t => JSON.stringify({ event: 'user', message: { role: 'user', content: t } })).join('\n') + '\n';
+        let r;
+        for (const mod of Array.from(new Set(this.AgyModelCandidates().map(m => m.replace(/-(medium|high)$/, '-low'))))) {
+          const texts = [];
+          let buf = '';
+          const onStdout = (chunk) => {
+            buf += chunk;
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              let o;
+              try { o = JSON.parse(line); } catch { continue; }
+              if (o && o.event === 'result' && o.result) { texts.push(Str(o.result, 'response').trim()); if (onTurn) try { onTurn(texts.length); } catch { } }
+            }
+          };
+          r = await this.RunCli(exe, ['--input-format', 'stream-json', '--output-format', 'stream-json', '--mode', 'plan', '--model', mod, '--print='], stdin, dir, 300000, false, onStdout);
+          if (/Authentication required|authentication failed/i.test(r.stderr)) {
+            this.settings.agyOk = false;
+            this.SaveSettings();
+            return Object.assign(reply, { Error: true, Text: 'ההתחברות ל-Google פגה. התחבר שוב בהגדרות' });
+          }
+          if (r.code === 0 && texts.length === turns.length && texts.every(t => t.length > 0)) return Object.assign(reply, { Texts: texts });
+          const err = (r.stderr + ' ' + r.stdout).toLowerCase();
+          reply.Limit = err.includes('usage limit') || err.includes('rate limit') || err.includes('quota') || err.includes('429');
+          if (!reply.Limit) break;
+        }
+        return Object.assign(reply, { Error: true, Text: reply.Limit ? 'המכסה של המנוי נגמרה לעכשיו' : Trunc(r.stderr.trim(), 200) || 'ה-AI לא החזיר תשובה' });
+      } catch (ex) {
+        return Object.assign(reply, { Error: true, Text: ex.message || String(ex) });
+      } finally {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { }
+      }
+    },
+
     async InstallCli(pkg, state) {
       if (!this.FindNpm()) {
         this.setupState = 'installing-node';

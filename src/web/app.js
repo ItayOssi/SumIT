@@ -1506,7 +1506,8 @@ function jobLog(id, line) {
 // A lecture summary inside the app: the page, with a way back to the lecture, to the chat and to the PDF.
 function openViewer(path, title, pdf, lec) {
   S.viewer = { path, title, pdf, lec };
-  $('summaryChat').hidden = true;
+  $('summaryChat').hidden = true; $('flashcards').hidden = true;
+  $('viewerCards').hidden = (S.settings || {}).platform !== 'mac';   // the Windows host has no flashcards yet
   $('viewerShareNote').hidden = true;
   $('viewerTitle').textContent = title;
   $('viewerPdf').hidden = !pdf;
@@ -1543,7 +1544,7 @@ function summaryShareStatus(m) {
 $('siteBackCourse').onclick = () => { S.viewer = null; show('course'); };
 
 function openSite(site, url) {
-  $('summaryChat').hidden = true;
+  $('summaryChat').hidden = true; $('flashcards').hidden = true;
   $('viewerShareNote').hidden = true;
   if (window.stonesHook) window.stonesHook({ type: 'openSite', site });
   S.viewer = null;
@@ -1977,6 +1978,7 @@ function onMessage(m) {
     }
     case 'summaryChatProvider': $('summaryChatStatus').textContent = m.text; break;
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
+    case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }

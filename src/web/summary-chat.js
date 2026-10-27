@@ -7,7 +7,7 @@ function summaryThread() {
   if(!summaryThreads.has(key))summaryThreads.set(key,{messages:[],selection:null,draft:''});
   return summaryThreads.get(key);
 }
-function openSummaryChat(){if(!S.viewer)return;$('summaryChat').hidden=false;renderSummaryChat();$('summaryChatText').focus();requestAnimationFrame(()=>placeSite(false));}
+function openSummaryChat(){if(!S.viewer)return;$('flashcards').hidden=true;$('summaryChat').hidden=false;renderSummaryChat();$('summaryChatText').focus();requestAnimationFrame(()=>placeSite(false));}
 function renderSummaryChat(){
   const t=summaryThread();if(!t)return;
   const writing=summaryChatJob?.path===S.viewer.path&&summaryChatJob.partial?[{role:'assistant',text:summaryChatJob.partial}]:[];
