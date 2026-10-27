@@ -1537,8 +1537,8 @@ function placeSite(navigate) {
   const sideEl = document.querySelector('nav.side');
   const sideRect = sideEl ? sideEl.getBoundingClientRect() : null;
   const sideW = sideRect ? sideRect.width : (window.innerWidth <= 860 ? 70 : 236);
-  // In RTL, nav.side is on the right side. The webview is strictly placed at x: 0 with width: window.innerWidth - sideW.
-  const m = { x: 0, y: r.top, w: window.innerWidth - sideW, h: r.height, vw: window.innerWidth, sideW };
+  // The site fills #siteHost: between the summary chat (left, when open) and nav.side (right, in RTL).
+  const m = { x: r.left, y: r.top, w: r.width, h: r.height, vw: window.innerWidth, sideW };
   if (navigate && S.viewer) send(Object.assign({ type: 'viewFile', path: S.viewer.path }, m));
   else if (navigate) { send(Object.assign({ type: 'showSite', site: S.site, url: S.siteUrl || '' }, m)); S.siteUrl = null; }
   else send(Object.assign({ type: 'placeSite' }, m));
@@ -1953,7 +1953,7 @@ function onMessage(m) {
       break;
     }
     case 'summaryChatProvider': $('summaryChatStatus').textContent = m.text; break;
-    case 'summarySelectionReady': case 'summaryChatResult': summaryChatEvent(m); break;
+    case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }

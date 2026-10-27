@@ -133,13 +133,13 @@ class Host {
     this.restack();
   }
 
-  // Where a site goes: left of the right-hand (RTL) sidebar, under the site bar. Both come from the page's last
-  // placeSite report (CSS: 236px wide, 70px at <= 860px, 48px collapsed); the fallbacks cover the first frame.
+  // Where a site goes: the page's #siteHost box, kept as insets from the window edges so a window resize keeps the
+  // columns - the summary chat on the left, the site in the middle, the sidebar on the right (CSS: 236px wide,
+  // 70px at <= 860px, 48px collapsed). The fallback covers the first frame, before the page has reported.
   // Left-to-right coordinates: layout() takes care of Chromium's RTL mirroring.
   siteRect(w, h) {
-    const sideWidth = this.sideWidth || (w <= 860 ? 70 : 236);
-    const top = this.siteBounds && this.siteBounds.y ? this.siteBounds.y : 89;
-    return { x: 0, y: top, width: Math.max(10, w - sideWidth), height: Math.max(10, h - top) };
+    const i = this.siteInsets || { left: 0, top: 89, right: w <= 860 ? 70 : 236, bottom: 0 };
+    return { x: i.left, y: i.top, width: Math.max(10, w - i.left - i.right), height: Math.max(10, h - i.top - i.bottom) };
   }
 
   removePanel(name) {
@@ -807,13 +807,13 @@ class Host {
     const reportedSide = num('sideW');
     const totalW = this.clientWidth();
     const sideWidth = reportedSide > 0 ? Math.round(reportedSide * this.siteScale) : (totalW <= 860 ? 70 : 236);
-    this.sideWidth = sideWidth;
-    const w = Math.max(10, totalW - sideWidth);
     const { height: totalH } = this.win.getContentBounds();
-    const h = Math.max(10, totalH - y);
-    // The site sits left of the right-hand sidebar: x 0, width (totalWidth - sideWidth), in left-to-right
-    // coordinates (layout() undoes Chromium's mirroring under an RTL system language).
-    this.siteBounds = { x: 0, y, width: w, height: h };
+    // The #siteHost box, in left-to-right coordinates (layout() undoes Chromium's mirroring under an RTL system
+    // language). An open summary chat sits left of it, or below it on a narrow window. Never over the sidebar.
+    const left = Math.min(Math.max(0, Math.round(num('x') * this.siteScale)), Math.max(0, totalW - sideWidth - 10));
+    const w = num('w') > 0 ? Math.round(num('w') * this.siteScale) : totalW - sideWidth - left;
+    const h = num('h') > 0 ? Math.round(num('h') * this.siteScale) : totalH - y;
+    this.siteInsets = { left, top: y, right: Math.max(sideWidth, totalW - left - w), bottom: Math.max(0, totalH - y - h) };
     this.layout();
   }
 

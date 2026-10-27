@@ -14,6 +14,39 @@ function CliPrompt(system, messages) {
   return sb + 'ענה עכשיו להודעה האחרונה של הסטודנט, לפי ההנחיות והחומר שלמעלה. אל תשתמש בכלים ואל תקרא או תכתוב קבצים.';
 }
 
+// agy --output-format stream-json prints one JSON event per line. The answer is the text of the last agent_response
+// step (a step before a tool call, like "reading the file", is replaced by the next one). Calls onText(delta, full).
+function AgyStreamParser(onText) {
+  let buf = '', step = -1, text = '';
+  return (chunk) => {
+    buf += chunk;
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      let o;
+      try { o = JSON.parse(line); } catch { continue; }
+      const s = o && o.event === 'step_update' ? o.step_update : null;
+      if (!s || s.step_type !== 'agent_response' || !s.text_delta) continue;
+      if (s.step_index !== step) { step = s.step_index; text = ''; }
+      text += s.text_delta;
+      try { onText(s.text_delta, text); } catch { }
+    }
+  };
+}
+
+// The final answer from stream-json output; plain-text output (an older CLI) is returned as is.
+function AgyStreamAnswer(stdout) {
+  let events = false;
+  for (const line of stdout.split('\n')) {
+    let o;
+    try { o = JSON.parse(line); } catch { continue; }
+    if (!o || typeof o !== 'object' || !o.event) continue;
+    events = true;
+    if (o.event === 'result' && o.result) return Str(o.result, 'response').trim();
+  }
+  return events ? '' : stdout.trim();
+}
+
 function AgyOAuthStarted(sinceMs) {
   try {
     const dir = path.join(platform.Home, '.gemini', 'antigravity-cli', 'log');
@@ -92,7 +125,7 @@ module.exports = {
     },
 
     // Returns { code, stdout, stderr } (C# returned Tuple<int, string, string>).
-    RunCli(exe, args, stdin, cwd, timeoutMs, loginVerification = false) {
+    RunCli(exe, args, stdin, cwd, timeoutMs, loginVerification = false, onStdout = null) {
       return new Promise((resolve) => {
         let stdout = '', stderr = '', settled = false;
         let p;
@@ -116,7 +149,7 @@ module.exports = {
         const cancelPoller = loginVerification ? setInterval(() => {
           if (this.agyLoginCancelled) { killTree(p); finish(-2, 'בוטל'); }
         }, 150) : null;
-        p.stdout.on('data', d => stdout += d);
+        p.stdout.on('data', d => { stdout += d; if (onStdout) onStdout(String(d)); });
         p.stderr.on('data', d => stderr += d);
         p.on('error', e => finish(-1, e.message || String(e)));
         p.on('close', code => finish(code === null ? -2 : code));
@@ -127,7 +160,9 @@ module.exports = {
       });
     },
 
-    async HelperCallCli(provider, system, messages, imageBuffer = null) {
+    // opts.fast (the summary chat): low-effort models, and a short prompt goes straight into -p instead of a file the
+    // agent must open first - that tool round trip roughly doubled the wait. opts.onChunk(delta, full) streams the answer.
+    async HelperCallCli(provider, system, messages, imageBuffer = null, opts = {}) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       const dir = path.join(platform.TempDir, 'SumIT-brain-' + guidN());
       mkdirp(dir);
@@ -140,12 +175,19 @@ module.exports = {
             fs.writeFileSync(path.join(dir, 'selection.png'), imageBuffer);
             prompt += '\nThe student\'s selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.';
           }
-          writeText(path.join(dir, 'material.txt'), prompt);
+          const inline = opts.fast && !imageBuffer && prompt.length <= 100000;
+          let pArgs = prompt;
+          if (!inline) {
+            writeText(path.join(dir, 'material.txt'), prompt);
+            pArgs = 'Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.';
+          }
           let exe = this.FindAgy();
-          const pArgs = 'Read the file material.txt in the current folder. It holds instructions, background material and a conversation. Answer the last student message exactly as the instructions say, in the language they ask for. Do not run commands, do not change files, and reply with the answer only.';
-          for (const mod of this.AgyModelCandidates()) {
-            r = await this.RunCli(exe, ['-p', pArgs, '--mode', 'plan', '--model', mod], null, dir, 300000);
-            text = r.stdout.trim();
+          const models = opts.fast ? Array.from(new Set(this.AgyModelCandidates().map(m => m.replace(/-(medium|high)$/, '-low')))) : this.AgyModelCandidates();
+          const stream = typeof opts.onChunk === 'function';
+          for (const mod of models) {
+            const args = ['-p', pArgs, '--mode', 'plan', '--model', mod].concat(stream ? ['--output-format', 'stream-json'] : []);
+            r = await this.RunCli(exe, args, null, dir, 300000, false, stream ? AgyStreamParser(opts.onChunk) : null);
+            text = stream ? AgyStreamAnswer(r.stdout) : r.stdout.trim();
             if (/Authentication required|authentication failed/i.test(r.stderr)) {
               this.settings.agyOk = false;
               this.SaveSettings();
