@@ -6,9 +6,10 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.18',
+  Version: '1.0.19',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
+  DiscordInvite: 'https://discord.gg/f8Duw6RBMr',   // the degree's server; the student can change it in settings
 
   Sites: {
     moodle: 'https://md.hit.ac.il/my/',

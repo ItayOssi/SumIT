@@ -1686,15 +1686,15 @@ function renderSettings() {
   ['optSync','optRec','optUpdate'].forEach(id => { $(id).checked = false; $(id).closest('.setting').hidden = true; });
   $('versionText').textContent = `SumIT ${st.version || ''} · מתעדכנת לבד כשיוצאת גרסה חדשה`;
   applyTheme(st.theme || 'system');
-  if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/';
+  if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/f8Duw6RBMr';
 }
 if ($('discordUrl')) $('discordUrl').onchange = () => send({ type: 'setOption', name: 'discordUrl', value: $('discordUrl').value });
 if ($('openDiscordBtn')) $('openDiscordBtn').onclick = () => {
-  const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/').trim();
+  const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/f8Duw6RBMr').trim();
   send({ type: 'openLink', url });
 };
 if ($('navDiscord')) $('navDiscord').onclick = () => {
-  const url = (S.settings?.discordUrl || $('discordUrl')?.value || 'https://discord.gg/').trim();
+  const url = (S.settings?.discordUrl || $('discordUrl')?.value || 'https://discord.gg/f8Duw6RBMr').trim();
   send({ type: 'openLink', url });
 };
 $('changeStudy').onclick = $('wizStudyBtn').onclick = () => send({ type: 'chooseFolder', which: 'study' });

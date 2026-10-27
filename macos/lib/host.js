@@ -301,6 +301,8 @@ class Host {
     for (const opt of ['autoSync', 'autoRecordings', 'autoUpdate', 'autoFallback', 'pdfDark'])
       if (!(opt in this.settings)) this.settings[opt] = opt === 'autoFallback';   // pdfDark: off
     this.settings.autoRecordings = false; this.settings.autoUpdate = false; this.settings.autoSync = false;
+    // 1.0.18 shipped an invite that expires in November 2026; move anyone who saved it to the permanent one.
+    if (/discord\.gg\/5uTFvmyRP\/?$/i.test(Str(this.settings, 'discordUrl'))) { this.settings.discordUrl = C.DiscordInvite; this.SaveSettings(); }
   }
 
   // "HIT/קורסים" inside the student's HIT OneDrive when there is one, so the courses are backed up and follow them; otherwise in Documents.
@@ -382,7 +384,7 @@ class Host {
       autoSync: this.Option('autoSync'), autoRecordings: this.Option('autoRecordings'), autoUpdate: this.Option('autoUpdate'), autoFallback: this.Option('autoFallback'), pdfDark: this.Option('pdfDark'),
       profileImage: this.ProfileImage(),
       theme: Str(this.settings, 'theme').length > 0 ? Str(this.settings, 'theme') : 'system', systemLight: this.SystemUsesLightTheme(),
-      discordUrl: Str(this.settings, 'discordUrl'),
+      discordUrl: Str(this.settings, 'discordUrl') || C.DiscordInvite,
       platform: 'mac',
     });
   }
@@ -713,7 +715,22 @@ class Host {
   OpenExternal(url) {
     let u;
     try { u = new URL(url); } catch { return; }
-    if (u.protocol === 'https:' || u.protocol === 'http:') platform.openExternal(u.href);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
+    // A Discord invite opens in the Discord app when it is installed (it registers discord://), else in the browser.
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const invite = host === 'discord.gg' ? u.pathname.slice(1) : /^(discord|discordapp)\.com$/.test(host) ? (/^\/invite\/([^/]+)/.exec(u.pathname) || [])[1] : null;
+    if (invite && /^[\w-]+$/.test(invite) && app.getApplicationNameForProtocol('discord://')) { this.OpenDiscordInvite(invite); return; }
+    platform.openExternal(u.href);
+  }
+
+  // Discord drops a link that arrives while it is still starting, so when it wasn't running the link is sent again
+  // once it has loaded (a second copy of the same invite just shows the same screen).
+  async OpenDiscordInvite(invite) {
+    const link = 'discord://-/invite/' + invite;
+    const running = (await util.Exec('/usr/bin/pgrep', ['-x', 'Discord'], null, 3000)).code === 0;
+    platform.openExternal(link);
+    if (running) return;
+    for (const wait of [6000, 8000]) { await delay(wait); platform.openExternal(link); }
   }
 
   // ---------- Status ----------
