@@ -132,6 +132,24 @@ async function run() {
       'only the syllabus is taken for the course information',
       syllabus.filter(x => !Bool(x, 'discoveryOnly')).length === 1 && syllabus.some(x => Str(x, 'url') === 'u1')
     );
+    const info = app.PickMoodleItems([{ num: 0, title: 'מידע על הקורס', items: [{ mod: 'resource', name: 'הודעה על שינוי חדר', url: 'i1' }] }], 'syllabus');
+    check('an item in the course-info section is checked, not taken as the syllabus', info.length === 1 && Bool(info[0], 'discoveryOnly'));
+    check(
+      'lectures, homework and exams are not syllabus candidates',
+      app.NotSyllabusName('הרצאה 3.pdf') && app.NotSyllabusName('תרגיל 2.pdf') && app.NotSyllabusName('מבחן 2023.pdf') && !app.NotSyllabusName('סילבוס תרגילים.pdf')
+    );
+    check('a passing mention of the syllabus is not a syllabus', !app.LooksLikeSyllabus('=== hw2.pdf\nתרגיל 2\nכפי שמופיע בסילבוס, יש להגיש את התרגיל עד יום ראשון.'));
+    check('a syllabus is recognised by its title and parts', app.LooksLikeSyllabus('=== a.pdf\nסילבוס - מבני נתונים\nמטרות הקורס: ...\nהרכב הציון: מבחן 80%'));
+    check('a syllabus without the word is recognised by three parts', app.LooksLikeSyllabus('מבני נתונים\nמטרות הקורס\nדרישות קדם: מבוא\nהרכב הציון: מבחן 80%'));
+    const sdir = path.join(root, 'zip-syllabus');
+    mkdirp(sdir);
+    const spath = path.join(sdir, 'syllabus.zip');
+    createZip(spath, { 'סילבוס/סילבוס.pdf': 'x', 'סילבוס/הרצאה 1.pdf': 'x' });
+    const sOut = path.join(sdir, 'out');
+    check(
+      'a syllabus zip gives only the syllabus, not the lectures in it',
+      app.UnpackZip(spath, sOut, 'syllabus', 0, 'סילבוס syllabus.zip') === 1 && listFiles(sOut).length === 1
+    );
 
     const zdir = path.join(root, 'zip-exams');
     mkdirp(zdir);

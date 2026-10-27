@@ -77,6 +77,12 @@ partial class HitStudent
             check("an exam named inside a lecture section is taken too, the slides are not", !exams.Any(i => Str(i, "url") == "u6"));
             var syllabus = HitStudent.PickMoodleItems(sections, "syllabus");
             check("only the syllabus is taken for the course information", syllabus.Count(x => !Bool(x, "discoveryOnly")) == 1 && syllabus.Any(x => Str(x, "url") == "u1"));
+            var info = HitStudent.PickMoodleItems(app.json.Deserialize<List<Dictionary<string, object>>>("[{\"num\":0,\"title\":\"מידע על הקורס\",\"items\":[{\"mod\":\"resource\",\"name\":\"הודעה על שינוי חדר\",\"url\":\"i1\"}]}]"), "syllabus");
+            check("an item in the course-info section is checked, not taken as the syllabus", info.Count == 1 && Bool(info[0], "discoveryOnly"));
+            check("lectures, homework and exams are not syllabus candidates", HitStudent.NotSyllabusName("הרצאה 3.pdf") && HitStudent.NotSyllabusName("תרגיל 2.pdf") && HitStudent.NotSyllabusName("מבחן 2023.pdf") && !HitStudent.NotSyllabusName("סילבוס תרגילים.pdf"));
+            check("a passing mention of the syllabus is not a syllabus", !HitStudent.LooksLikeSyllabus("=== hw2.pdf\nתרגיל 2\nכפי שמופיע בסילבוס, יש להגיש את התרגיל עד יום ראשון."));
+            check("a syllabus is recognised by its title and parts", HitStudent.LooksLikeSyllabus("=== a.pdf\nסילבוס - מבני נתונים\nמטרות הקורס: ...\nהרכב הציון: מבחן 80%"));
+            check("a syllabus without the word is recognised by three parts", HitStudent.LooksLikeSyllabus("מבני נתונים\nמטרות הקורס\nדרישות קדם: מבוא\nהרכב הציון: מבחן 80%"));
             // A zip of past exams inside the intro section ("מבחנים משנים קודמות") is found by its name and opened into the exams folder.
             var intro = app.json.Deserialize<List<Dictionary<string, object>>>("[{\"num\":0,\"title\":\"מבוא\",\"items\":[{\"mod\":\"resource\",\"name\":\"מבחנים משנים קודמות\",\"url\":\"z1\"},{\"mod\":\"resource\",\"name\":\"מצגת\",\"url\":\"z2\"}]}]");
             var introPicked = HitStudent.PickMoodleItems(intro, "exams");
@@ -88,7 +94,16 @@ partial class HitStudent
                 foreach (string en in new[] { "2023/exam a.pdf", "2023/solution a.pdf", "../evil.exe", "run.bat" }) { var ze = za.CreateEntry(en); using (var w = new StreamWriter(ze.Open())) w.Write("x"); }
             }
             int unpacked = app.UnpackZip(zpath, zdir);
-            check("zip opened safely and original archive is preserved", unpacked == 2 && File.Exists(Path.Combine(zdir, "2023_exam a.pdf")) && File.Exists(Path.Combine(zdir, "2023_solution a.pdf")) && File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));            RunHelperTests(app, root, check);
+            check("zip opened safely and original archive is preserved", unpacked == 2 && File.Exists(Path.Combine(zdir, "2023_exam a.pdf")) && File.Exists(Path.Combine(zdir, "2023_solution a.pdf")) && File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));
+            string sdir = Path.Combine(root, "zip-syllabus"); Directory.CreateDirectory(sdir);
+            string spath = Path.Combine(sdir, "syllabus.zip");
+            using (var za = System.IO.Compression.ZipFile.Open(spath, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                foreach (string en in new[] { "סילבוס/סילבוס.pdf", "סילבוס/הרצאה 1.pdf" }) { var ze = za.CreateEntry(en); using (var w = new StreamWriter(ze.Open())) w.Write("x"); }
+            }
+            string sOut = Path.Combine(sdir, "out");
+            check("a syllabus zip gives only the syllabus, not the lectures in it", app.UnpackZip(spath, sOut, "syllabus", 0, "סילבוס syllabus.zip") == 1 && Directory.GetFiles(sOut).Length == 1);
+            RunHelperTests(app, root, check);
             RunBrainTests(app, root, check);
             RunLifecycleTests(app, root, check);
             Console.WriteLine("Offline regression checks complete. Fixtures: " + root);

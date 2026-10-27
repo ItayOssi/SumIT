@@ -11,6 +11,11 @@ const C = require('../constants');
 const ExamSectionName = /(מבחן|מבחנ|בחינ|מועד [אבג]|exam|midterm)/i;
 const SkippedMods = new Set(['forum', 'quiz', 'label', 'choice', 'feedback', 'lti', 'h5pactivity', 'zoom']);
 const ZipKeep = new Set(['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.png', '.jpg', '.jpeg', '.txt', '.html', '.htm', '.xlsx']);
+// The syllabus download keeps lectures, homework and exams out of the course information.
+const LectureName = /(הרצא|שקפים|מצגת|lecture|slides|tutorial|שיעור \d)/i;
+const SyllabusTitle = /(סילבוס|סילאבוס|syllabus|course outline|תכנית הקורס|תוכנית הקורס)/i;
+const SyllabusMarks = [/מטרות הקורס/, /דרישות (?:הקורס|קדם)/, /(?:מבנה|הרכב) הציון/, /ביבליוגרפיה|רשימת קריאה/, /נושאי הקורס/, /שעות קבלה/,
+  /course objectives|learning outcomes/i, /prerequisites/i, /grading/i, /bibliography/i];
 
 function htmlDecode(s) {
   return String(s || '')
@@ -26,22 +31,48 @@ module.exports = {
     host.moodleDownloading = new Set();
   },
   methods: {
+    // A file named like a lecture, homework or exam (and not like a syllabus).
+    NotSyllabusName(name) {
+      name = name || '';
+      return !this.SyllabusNameRe().test(name) && (LectureName.test(name) || this.ExerciseNameRe().test(name) || this.ExamNameRe().test(name));
+    },
+
+    // Only the first pages count: a title like "סילבוס" with one syllabus part, or three syllabus parts.
+    // A passing "כפי שמופיע בסילבוס" in homework is not enough.
+    LooksLikeSyllabus(text) {
+      const t = String(text || '').replace(/^=== .*\n/, '').substring(0, 8000);
+      const marks = SyllabusMarks.filter(re => re.test(t)).length;
+      return (SyllabusTitle.test(t.substring(0, 3000)) && marks >= 1) || marks >= 3;
+    },
+
+    // Whether a downloaded file goes into the course information folder.
+    async KeepForSyllabus(file, mod, discover) {
+      const base = path.basename(file);
+      if (this.SyllabusNameRe().test(base)) return true;
+      if (!discover && (mod === 'resource' || mod === 'file')) return true; // the item itself is named like a syllabus
+      if (this.NotSyllabusName(base)) return false;
+      if (mod !== 'resource' && mod !== 'file') return true; // reached through a link labelled like a syllabus
+      return this.LooksLikeSyllabus(await this.ExtractTexts([file]));
+    },
+
     PickMoodleItems(sections, what) {
       const picked = [];
       const urls = new Set();
       for (const s of sections || []) {
         const wholeSection = what === 'exams' && ExamSectionName.test(Str(s, 'title'));
+        const infoSection = what === 'syllabus' && this.SyllabusNameRe().test(Str(s, 'title')) && Str(s, 'title').length < 40;
         const items = Array.isArray(s.items) ? s.items : [];
         for (const it of items) {
           if (!it || SkippedMods.has(Str(it, 'mod')) || Str(it, 'url').length === 0) continue;
           const name = Str(it, 'name');
           const match = what === 'exams'
             ? (wholeSection || this.ExamNameRe().test(name))
-            : (this.SyllabusNameRe().test(name) || (this.SyllabusNameRe().test(Str(s, 'title')) && Str(s, 'title').length < 40));
+            : this.SyllabusNameRe().test(name);
           const container = ['folder', 'page', 'url'].includes(Str(it, 'mod')) || /\.zip(?:$|[?\s])/i.test(name + ' ' + Str(it, 'url'));
-          if ((match || container) && !urls.has(Str(it, 'url'))) {
+          // In a "מידע על הקורס" section, an item not named like a syllabus still has its content checked.
+          if ((match || container || infoSection) && !urls.has(Str(it, 'url'))) {
             urls.add(Str(it, 'url'));
-            picked.push(Object.assign({}, it, { discoveryOnly: !match }));
+            picked.push(Object.assign({}, it, { discoveryOnly: !match }, infoSection && !match ? { infoSection: true } : {}));
           }
         }
       }
@@ -92,7 +123,7 @@ print(json.dumps(entries))
             continue;
           }
           if (!ZipKeep.has(ext)
-            || (filter === 'syllabus' && !this.SyllabusNameRe().test(label))
+            || (filter === 'syllabus' && (!this.SyllabusNameRe().test(label) || this.NotSyllabusName(en.name)))
             || (filter === 'exams' && !this.ExamNameRe().test(label))) continue;
           const outPath = path.join(dest, SafeName(en.full.replace(/\\/g, '_').replace(/\//g, '_')));
           mkdirp(dest);
@@ -145,7 +176,10 @@ print(json.dumps(entries))
       const label = what === 'exams' ? 'המבחנים והפתרונות' : 'הסילבוס';
       const status = (t, pct) => this.Send({ type: 'courseStatus', course, busy: true, text: t, pct });
       let saved = 0, failed = 0;
+      let discoveryRoot = null, discoveryDir = null;
       try {
+        discoveryRoot = path.join(this.CourseDir(course), C.SumitDir, 'discovery');
+        discoveryDir = path.join(discoveryRoot, what);
         status('מחפש את ' + label + ' ב-Moodle...', 0);
         if (courseId <= 0) courseId = Int(this.LoadMeta(course), 'courseId');
         if (courseId <= 0) {
@@ -158,10 +192,16 @@ print(json.dumps(entries))
         let picked = this.PickMoodleItems(sections, what);
         for (const section of sections) {
           for (const item of Array.isArray(section.items) ? section.items : []) {
-            if (Str(item, 'mod') === 'resource' && !picked.some(p => Str(p, 'url') === Str(item, 'url'))) {
+            if (Str(item, 'mod') === 'resource' && !picked.some(p => Str(p, 'url') === Str(item, 'url'))
+              && !(what === 'syllabus' && this.NotSyllabusName(Str(item, 'name')))) {
               picked.push(Object.assign({}, item, { discoveryOnly: true }));
             }
           }
+        }
+        if (what === 'syllabus') {
+          // The syllabus itself first, so the 80-item cap never cuts it.
+          const rank = it => !Bool(it, 'discoveryOnly') ? 0 : Bool(it, 'infoSection') ? 1 : Str(it, 'mod') !== 'resource' ? 2 : 3;
+          picked.sort((a, b) => rank(a) - rank(b));
         }
         picked = picked.slice(0, 80);
         if (picked.length === 0) {
@@ -188,20 +228,21 @@ print(json.dumps(entries))
               : mod === 'file' ? [url]
               : discover ? await this.DiscoverMoodleFiles(http, url, what) : await this.PluginFiles(http, url);
             for (const f of Array.from(new Set(urls))) {
-              const downloadDir = discover ? path.join(this.CourseDir(course), C.SumitDir, 'discovery') : dest;
+              // Syllabus files are staged first and only what passes the checks reaches the course information.
+              const downloadDir = discover || what === 'syllabus' ? discoveryDir : dest;
               const dlPath = await this.DownloadFile(http, f, downloadDir, true, discover ? 64 * 1024 * 1024 : 0);
               if (!dlPath) continue;
               if (path.extname(dlPath).toLowerCase() === '.zip') {
-                saved += this.UnpackZip(dlPath, dest, discover ? what : null, 0, name + ' ' + path.basename(dlPath));
+                saved += this.UnpackZip(dlPath, dest, discover || what === 'syllabus' ? what : null, 0, name + ' ' + path.basename(dlPath));
+              } else if (what === 'syllabus') {
+                if (await this.KeepForSyllabus(dlPath, mod, discover)) {
+                  fs.copyFileSync(dlPath, path.join(dest, path.basename(dlPath)));
+                  saved++;
+                }
               } else if (!discover) {
                 saved++;
               } else {
-                const re = what === 'exams' ? this.ExamNameRe() : this.SyllabusNameRe();
-                let matches = re.test(path.basename(dlPath)) || (mod !== 'resource' && mod !== 'file');
-                if (!matches && what === 'syllabus') {
-                  const sample = await this.ExtractTexts([dlPath]);
-                  matches = this.SyllabusNameRe().test(sample) || (sample.includes('מטרות הקורס') && sample.includes('דרישות'));
-                }
+                const matches = this.ExamNameRe().test(path.basename(dlPath)) || (mod !== 'resource' && mod !== 'file');
                 if (matches) {
                   fs.copyFileSync(dlPath, path.join(dest, path.basename(dlPath)));
                   saved++;
@@ -224,6 +265,11 @@ print(json.dumps(entries))
         this.Send({ type: 'courseStatus', course, busy: false, text: ex.message || String(ex), error: true });
       } finally {
         this.moodleDownloading.delete(key);
+        // Staged downloads (and loose files left by older versions) are not kept.
+        if (discoveryDir) {
+          try { fs.rmSync(discoveryDir, { recursive: true, force: true }); } catch { }
+          for (const f of listFiles(discoveryRoot, false)) { try { fs.unlinkSync(f); } catch { } }
+        }
         this.Send({ type: 'operationStatus', course, operation: what, busy: false });
       }
     },

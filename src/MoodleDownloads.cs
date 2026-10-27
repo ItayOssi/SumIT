@@ -14,6 +14,40 @@ partial class HitStudent
     static readonly Regex ExamSectionName = new Regex("(מבחן|מבחנ|בחינ|מועד [אבג]|exam|midterm)", RegexOptions.IgnoreCase);
     static readonly string[] SkippedMods = { "forum", "quiz", "label", "choice", "feedback", "lti", "h5pactivity", "zoom" };
     readonly HashSet<string> moodleDownloading = new HashSet<string>();
+    // The syllabus download keeps lectures, homework and exams out of the course information.
+    static readonly Regex LectureName = new Regex(@"(הרצא|שקפים|מצגת|lecture|slides|tutorial|שיעור \d)", RegexOptions.IgnoreCase);
+    static readonly Regex SyllabusTitle = new Regex("(סילבוס|סילאבוס|syllabus|course outline|תכנית הקורס|תוכנית הקורס)", RegexOptions.IgnoreCase);
+    static readonly Regex[] SyllabusMarks = {
+        new Regex("מטרות הקורס"), new Regex("דרישות (?:הקורס|קדם)"), new Regex("(?:מבנה|הרכב) הציון"), new Regex("ביבליוגרפיה|רשימת קריאה"), new Regex("נושאי הקורס"), new Regex("שעות קבלה"),
+        new Regex("course objectives|learning outcomes", RegexOptions.IgnoreCase), new Regex("prerequisites", RegexOptions.IgnoreCase), new Regex("grading", RegexOptions.IgnoreCase), new Regex("bibliography", RegexOptions.IgnoreCase) };
+
+    // A file named like a lecture, homework or exam (and not like a syllabus).
+    internal static bool NotSyllabusName(string name)
+    {
+        name = name ?? "";
+        return !SyllabusName.IsMatch(name) && (LectureName.IsMatch(name) || ExerciseName.IsMatch(name) || ExamName.IsMatch(name));
+    }
+
+    // Only the first pages count: a title like "סילבוס" with one syllabus part, or three syllabus parts.
+    // A passing "כפי שמופיע בסילבוס" in homework is not enough.
+    internal static bool LooksLikeSyllabus(string text)
+    {
+        string t = Regex.Replace(text ?? "", @"^=== .*\r?\n", "");
+        if (t.Length > 8000) t = t.Substring(0, 8000);
+        int marks = SyllabusMarks.Count(re => re.IsMatch(t));
+        return (SyllabusTitle.IsMatch(t.Length > 3000 ? t.Substring(0, 3000) : t) && marks >= 1) || marks >= 3;
+    }
+
+    // Whether a downloaded file goes into the course information folder.
+    async Task<bool> KeepForSyllabus(string file, string mod, bool discover)
+    {
+        string name = Path.GetFileName(file);
+        if (SyllabusName.IsMatch(name)) return true;
+        if (!discover && (mod == "resource" || mod == "file")) return true; // the item itself is named like a syllabus
+        if (NotSyllabusName(name)) return false;
+        if (mod != "resource" && mod != "file") return true; // reached through a link labelled like a syllabus
+        return LooksLikeSyllabus(await ExtractTexts(new[] { file }));
+    }
 
     // What belongs: for exams, everything in a section about exams and any item named like an exam; for the syllabus, items named like one.
     internal static List<Dictionary<string, object>> PickMoodleItems(List<Dictionary<string, object>> sections, string what)
@@ -23,13 +57,19 @@ partial class HitStudent
         foreach (var s in sections)
         {
             bool wholeSection = what == "exams" && ExamSectionName.IsMatch(Str(s, "title"));
+            bool infoSection = what == "syllabus" && SyllabusName.IsMatch(Str(s, "title")) && Str(s, "title").Length < 40;
             foreach (Dictionary<string, object> it in (s.ContainsKey("items") ? s["items"] as ArrayList : null) ?? new ArrayList())
             {
                 if (SkippedMods.Contains(Str(it, "mod")) || Str(it, "url").Length == 0) continue;
                 string name = Str(it, "name");
-                bool match = what == "exams" ? (wholeSection || ExamName.IsMatch(name)) : (SyllabusName.IsMatch(name) || (SyllabusName.IsMatch(Str(s, "title")) && Str(s, "title").Length < 40));
+                bool match = what == "exams" ? (wholeSection || ExamName.IsMatch(name)) : SyllabusName.IsMatch(name);
                 bool container = new[] { "folder", "page", "url" }.Contains(Str(it, "mod")) || Regex.IsMatch(name + " " + Str(it, "url"), @"\.zip(?:$|[?\s])", RegexOptions.IgnoreCase);
-                if ((match || container) && urls.Add(Str(it, "url"))) { var candidate = new Dictionary<string, object>(it); candidate["discoveryOnly"] = !match; picked.Add(candidate); }
+                // In a "מידע על הקורס" section, an item not named like a syllabus still has its content checked.
+                if ((match || container || infoSection) && urls.Add(Str(it, "url"))) {
+                    var candidate = new Dictionary<string, object>(it); candidate["discoveryOnly"] = !match;
+                    if (infoSection && !match) candidate["infoSection"] = true;
+                    picked.Add(candidate);
+                }
             }
         }
         return picked;
@@ -55,7 +95,7 @@ partial class HitStudent
                 finally { if (File.Exists(nested)) File.Delete(nested); }
                 continue;
             }
-            if (!ZipKeep.Contains(ext) || (filter == "syllabus" && !SyllabusName.IsMatch(label)) || (filter == "exams" && !ExamName.IsMatch(label))) continue;
+            if (!ZipKeep.Contains(ext) || (filter == "syllabus" && (!SyllabusName.IsMatch(label) || NotSyllabusName(en.Name))) || (filter == "exams" && !ExamName.IsMatch(label))) continue;
             // Flatten archive paths: traversal and absolute names never become output paths.
             string path = Path.Combine(dest, SafeName(en.FullName.Replace('\\', '_').Replace('/', '_')));
             Directory.CreateDirectory(dest);
@@ -100,8 +140,11 @@ partial class HitStudent
         string label = what == "exams" ? "המבחנים והפתרונות" : "הסילבוס";
         Action<string, int?> status = (t, pct) => Send(new { type = "courseStatus", course = course, busy = true, text = t, pct = pct });
         int saved = 0, failed = 0;
+        string discoveryRoot = null, discoveryDir = null;
         try
         {
+            discoveryRoot = Path.Combine(CourseDir(course), SumitDir, "discovery");
+            discoveryDir = Path.Combine(discoveryRoot, what);
             status("מחפש את " + label + " ב-Moodle...", 0);
             if (courseId <= 0) courseId = Int(LoadMeta(course), "courseId");
             if (courseId <= 0) { Send(new { type = "courseStatus", course = course, busy = false, text = "לא מצאתי את הקורס ב-Moodle. פתח אותו מהרשימה ונסה שוב", error = true }); return; }
@@ -111,9 +154,13 @@ partial class HitStudent
             var picked = PickMoodleItems(sections, what);
             foreach (var section in sections)
                 foreach (Dictionary<string, object> item in (section.ContainsKey("items") ? section["items"] as ArrayList : null) ?? new ArrayList())
-                    if (Str(item, "mod") == "resource" && !picked.Any(p => Str(p, "url") == Str(item, "url"))) {
+                    if (Str(item, "mod") == "resource" && !picked.Any(p => Str(p, "url") == Str(item, "url"))
+                        && !(what == "syllabus" && NotSyllabusName(Str(item, "name")))) {
                         var candidate = new Dictionary<string, object>(item); candidate["discoveryOnly"] = true; picked.Add(candidate);
                     }
+            // The syllabus itself first, so the 80-item cap never cuts it.
+            if (what == "syllabus")
+                picked = picked.OrderBy(p => !Bool(p, "discoveryOnly") ? 0 : Bool(p, "infoSection") ? 1 : Str(p, "mod") != "resource" ? 2 : 3).ToList();
             picked = picked.Take(80).ToList();
             if (picked.Count == 0)
             {
@@ -139,16 +186,14 @@ partial class HitStudent
                             : mod == "file" ? new List<string> { url }
                             : discover ? await DiscoverMoodleFiles(http, url, what) : await PluginFiles(http, url);
                         foreach (string f in urls.Distinct()) {
-                            string downloadDir = discover ? Path.Combine(CourseDir(course), SumitDir, "discovery") : dest;
+                            // Syllabus files are staged first and only what passes the checks reaches the course information.
+                            string downloadDir = discover || what == "syllabus" ? discoveryDir : dest;
                             string path = await DownloadFile(http, f, downloadDir, true, discover ? 64L * 1024 * 1024 : 0); if (path == null) continue;
-                            if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase)) saved += UnpackZip(path, dest, discover ? what : null, 0, name + " " + Path.GetFileName(path));
+                            if (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase)) saved += UnpackZip(path, dest, discover || what == "syllabus" ? what : null, 0, name + " " + Path.GetFileName(path));
+                            else if (what == "syllabus") { if (await KeepForSyllabus(path, mod, discover)) { File.Copy(path, Path.Combine(dest, Path.GetFileName(path)), true); saved++; } }
                             else if (!discover) saved++;
                             else {
-                                bool matches = (what == "exams" ? ExamName : SyllabusName).IsMatch(Path.GetFileName(path)) || (mod != "resource" && mod != "file");
-                                if (!matches && what == "syllabus") {
-                                    string sample = await ExtractTexts(new[] { path });
-                                    matches = SyllabusName.IsMatch(sample) || (sample.Contains("מטרות הקורס") && sample.Contains("דרישות"));
-                                }
+                                bool matches = ExamName.IsMatch(Path.GetFileName(path)) || (mod != "resource" && mod != "file");
                                 if (matches) { File.Copy(path, Path.Combine(dest, Path.GetFileName(path)), true); saved++; }
                             }
                         }
@@ -163,6 +208,11 @@ partial class HitStudent
             if (what == "syllabus" && saved > 0) await AnalyzeCourseAsync(course);
         }
         catch (Exception ex) { Send(new { type = "courseStatus", course = course, busy = false, text = ex.Message, error = true }); }
-        finally { moodleDownloading.Remove(key); Send(new { type = "operationStatus", course = course, operation = what, busy = false }); }
+        finally {
+            moodleDownloading.Remove(key);
+            // Staged downloads (and loose files left by older versions) are not kept.
+            try { if (discoveryDir != null && Directory.Exists(discoveryDir)) Directory.Delete(discoveryDir, true); } catch { }
+            try { if (discoveryRoot != null && Directory.Exists(discoveryRoot)) foreach (string f in Directory.GetFiles(discoveryRoot)) try { File.Delete(f); } catch { } } catch { }
+            Send(new { type = "operationStatus", course = course, operation = what, busy = false }); }
     }
 }
