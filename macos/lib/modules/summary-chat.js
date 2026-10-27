@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Str, Bool, Int, IsInside, guidN, fileExists, readText } = require('../util');
+const { Str, Bool, Int, IsInside, guidN, fileExists, readText, Unprotect } = require('../util');
 const platform = require('../platform');
 
 module.exports = {
@@ -94,13 +94,22 @@ module.exports = {
     },
 
     async SummaryGemini(system, messages, imageBuffer) {
-      const mode = this.HelperMode('gemini');
-      if (mode === 'account') return await this.HelperCallCli('gemini', system, messages, imageBuffer);
-      if (mode === 'key') {
-        const key = this.Unprotect(Str(this.settings, this.KeySetting('gemini')));
-        return await this.HelperCall('gemini', key, system, messages, null, imageBuffer);
+      let reply;
+      for(const provider of ['gemini','openai']){
+        const mode=this.HelperMode(provider);if(!mode)continue;
+        if(reply)this.Send({type:'summaryChatProvider',provider,text:'המנוע אינו זמין — ממשיך עם '+provider});
+        reply=mode==='account'?await this.HelperCallCli(provider,system,messages,imageBuffer):await this.HelperCall(provider,Unprotect(Str(this.settings,provider==='gemini'?'geminiKey':'openaiKey')),system,messages,null,imageBuffer);
+        if(!reply.Error)return reply;this.Diagnostic('summary-chat',provider,this.FailureKind(reply.Text));
       }
-      return { Provider: 'gemini', Error: true, Text: 'Gemini לא מחובר. חבר אותו בהגדרות כדי לשאול כאן; השאלה לא הועברה למודל אחר.' };
+      if(this.claudeLoggedIn && this.FindClaude()){
+        const dir=fs.mkdtempSync(path.join(platform.TempDir,'SumIT-summary-'));
+        try{if(imageBuffer)fs.writeFileSync(path.join(dir,'selection.png'),imageBuffer);
+          this.Send({type:'summaryChatProvider',provider:'claude',text:'ממשיך עם Claude'});
+          const result=await this.RunClaude('summary-fallback',dir,system+'\n'+messages.map(m=>m[0]+': '+m[1]).join('\n')+(imageBuffer?'\nקרא את selection.png. אל תשנה קבצים.':''),null,null,null);
+          return {...result,Provider:'claude'};
+        }finally{fs.rmSync(dir,{recursive:true,force:true});}
+      }
+      return reply||{Provider:'gemini',Error:true,Text:'אין מנוע AI מחובר. חבר מנוע בהגדרות.'};
     },
 
     async AskSummary(m) {
@@ -132,7 +141,7 @@ module.exports = {
           if (history.length > 8) history.splice(0, history.length - 8);
           this.summaryChats.set(fullPath.toLowerCase(), history);
         }
-        this.Send({ type: 'summaryChatResult', requestId, path: fullPath, text: reply.Text, error: reply.Error });
+        this.Send({ type: 'summaryChatResult', requestId, path: fullPath, text: reply.Text, error: reply.Error, provider:reply.Provider });
       } catch (ex) {
         this.Send({ type: 'summaryChatResult', requestId, path: fullPath, text: ex.message || String(ex), error: true });
       } finally {

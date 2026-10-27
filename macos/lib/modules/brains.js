@@ -145,14 +145,16 @@ module.exports = {
         } else {
           const exe = this.FindCodex();
           const answer = path.join(dir, 'answer.txt');
-          r = await this.RunCli(exe, ['exec', '--ignore-user-config', '--skip-git-repo-check', '-s', 'read-only', '--ephemeral', '-o', answer, '-'], prompt, dir, 240000);
+          if(imageBuffer)fs.writeFileSync(path.join(dir,'selection.png'),imageBuffer);
+          r = await this.RunCli(exe, ['exec', ...(imageBuffer?['--image',path.join(dir,'selection.png')]:[]), '--ignore-user-config', '--skip-git-repo-check', '-s', 'read-only', '--ephemeral', '-o', answer, '-'], prompt, dir, 240000);
           text = fileExists(answer) ? readText(answer).trim() : '';
         }
         if (r.code !== 0 || text.length === 0) {
           reply.Error = true;
           const err = (r.stderr + ' ' + r.stdout).toLowerCase();
-          reply.Limit = err.includes('usage limit') || err.includes('rate limit') || err.includes('quota') || err.includes('429');
-          reply.Text = reply.Limit ? 'המכסה של המנוי נגמרה לעכשיו'
+          reply.Limit = this.FailureKind(err)==='rate-or-quota';
+          this.Diagnostic('helper-cli',provider,this.FailureKind(err),r.code);
+          reply.Text = reply.Limit ? 'הספק החזיר הגבלת שימוש או קצב, ייתכן זמנית. פרטי התקלה נרשמו בדוח האבחון'
             : (err.includes('not logged in') || err.includes('log in') || err.includes('401')) ? 'ההתחברות פגה. התחבר שוב בהגדרות'
             : Trunc((r.stderr.length > 0 ? r.stderr : r.stdout).trim(), 200);
           if (reply.Text.length === 0) reply.Text = 'ה-AI לא החזיר תשובה';

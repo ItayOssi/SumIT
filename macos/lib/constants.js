@@ -6,7 +6,7 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.14',
+  Version: '1.0.15',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
 

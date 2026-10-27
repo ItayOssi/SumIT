@@ -416,7 +416,7 @@ module.exports = {
         : [];
       return {
         dir, exists: dirExists(dir), files, videos: recordingFiles.length, transcripts, recordings: recordingFiles,
-        studyPage: fileExists(page) ? page : null, exercises, pointers, materialFiles,
+        sharedSummaries:this.SharedSummaries(course,num), studyPage: fileExists(page) ? page : null, exercises, pointers, materialFiles,
         lecturePdf: fileExists(this.LecturePdfPath(course, num)) ? this.LecturePdfPath(course, num) : null,
       };
     },

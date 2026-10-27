@@ -293,8 +293,8 @@ function helperCard(kind) {
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
   // While the Google page is open: say what to do (the app carries on by itself when the account is saved).
   const codeBox = gem && S.authCode ? `<div class="auth-code" dir="rtl"><b>כמעט סיימנו</b>
-    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const curModel = (S.settings && S.settings.geminiModel) || 'gemini-1.5-flash';
-  const modelBox = gem ? `<div class="row gemini-model-row" style="width:100%;margin-top:6px;gap:6px;align-items:center;"><span style="font-size:12px;opacity:0.8;">מודל:</span><select class="small" data-gemini-model style="flex:1;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;"><option value="gemini-1.5-flash" ${curModel === 'gemini-1.5-flash' ? 'selected' : ''}>Gemini 1.5 Flash (מהיר וחסכוני)</option><option value="gemini-1.5-flash-8b" ${curModel === 'gemini-1.5-flash-8b' ? 'selected' : ''}>Gemini 1.5 Flash-8B (מכסה גבוהה)</option><option value="gemini-2.0-flash" ${curModel === 'gemini-2.0-flash' ? 'selected' : ''}>Gemini 2.0 Flash (הדור החדש)</option><option value="gemini-1.5-pro" ${curModel === 'gemini-1.5-pro' ? 'selected' : ''}>Gemini 1.5 Pro (חכם ומעמיק)</option></select></div>` : '';
+    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const curModel = (S.settings && S.settings.geminiModel) || 'gemini-flash-latest';
+  const modelBox = gem ? `<div class="row gemini-model-row" style="width:100%;margin-top:6px;gap:6px;align-items:center;"><span style="font-size:12px;opacity:0.8;">מודל:</span><select class="small" data-gemini-model style="flex:1;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;">${[...new Set(['gemini-flash-latest',curModel])].map(model=>`<option value="${esc(model)}" ${curModel===model?'selected':''}>${esc(model)}</option>`).join('')}</select></div>` : '';
   const keyBox = codeBox + (mode === 'key' || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`) + modelBox;
   const tr = (S.brainTests || {})[brain];
   const testLine = !mode || !tr ? '' : tr.busy ? '<div class="test-line">בודק...</div>' : tr.ok ? `<div class="test-line ok">✓ ענה תוך ${(tr.ms / 1000).toFixed(1)} שניות</div>` : `<div class="test-line bad">✗ ${esc(tr.text || 'לא ענה')}</div>`;
@@ -1059,6 +1059,9 @@ function fillLecture(el, s) {
   if (L.lecturePdf) chips.push('<span class="chip ok">סיכום PDF מוכן ✓</span>');
   else if (L.studyPage) chips.push('<span class="chip ok">סיכום מוכן ✓</span>');
   el.querySelector('.chips').innerHTML = chips.join('');
+  el.querySelector('.quick-summary')?.remove();
+  const quickPage=L.studyPage||(L.sharedSummaries||[])[0]?.path;
+  if(quickPage){const quick=h('<button class="primary small quick-summary">פתח סיכום</button>');quick.onclick=e=>{e.stopPropagation();openViewer(quickPage,'הרצאה '+s.num+' · סיכום',L.lecturePdf||'',s.num);};el.querySelector('.lecture-head').insertBefore(quick,el.querySelector('.chevron'));}
 
   const items = el.querySelector('.items');
   items.innerHTML = '';
@@ -1095,6 +1098,8 @@ function fillLecture(el, s) {
   btn('exam', 'שיעורי בית ופתרונות מה-Moodle', hasHomework ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'homework'));
   btn('book', 'חומר מ-CS24', 'ghost', () => lectureSource(s.num, 'cs24', 'slides'));
   btn('plus', 'קבצים מהמחשב', 'ghost', () => send({ type: 'addFiles', course: course.name, folder: String(s.num), kind: '' }));
+  btn('plus','סיכום של חבר (ZIP / OneDrive)','soft',()=>showSummaryImport(course.name,s.num));
+  (L.sharedSummaries||[]).forEach(item=>btn('book','סיכום חבר: '+item.title,'soft',()=>openViewer(item.path,item.title,'',s.num)));
   btn('calendar', 'ערוך תאריכים וכותרת', 'ghost', () => {
     const existing = el.querySelector('.lecture-editor');
     if (existing) { existing.remove(); return; }
@@ -1438,7 +1443,7 @@ $('viewerShare').onclick = () => {
   $('viewerShareNote').hidden = false;
   $('viewerShareNote').classList.remove('error');
   $('viewerShareStatus').textContent = 'בחר היכן לשמור את קובץ ה־ZIP';
-  send({ type: 'shareSummary', requestId, course: S.course.name, path: S.viewer.path, pdf: S.viewer.pdf || '', title: S.viewer.title });
+  send({ type: 'shareSummary', onedrive:!!S.shareToCloud, requestId, course: S.course.name, path: S.viewer.path, pdf: S.viewer.pdf || '', title: S.viewer.title });
 };
 $('viewerShareDismiss').onclick = () => { $('viewerShareNote').hidden = true; $('viewerShare').focus(); };
 function summaryShareStatus(m) {
@@ -1872,6 +1877,7 @@ function onMessage(m) {
       if (num) toast(`העתקת קישור להקלטת Zoom`, { action: `הוסף לשיעור ${num}`, ms: 9000, onAction: () => send({ type: 'addRecording', course: S.course.name, num, url: m.url }) });
       break;
     }
+    case 'summaryChatProvider': $('summaryChatStatus').textContent=m.text; break;
     case 'summarySelectionReady': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;

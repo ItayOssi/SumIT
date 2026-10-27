@@ -359,6 +359,7 @@ class Host {
   // ---------- UI messages ----------
 
   Send(message) {
+    this.RecordUiFailure(message);
     if (this.shuttingDown || !this.ui || this.ui.wc.isDestroyed()) return;
     try { this.ui.wc.send('sumit-host-message', JSON.parse(JSON.stringify(message === undefined ? null : message))); } catch { }
   }
@@ -572,6 +573,10 @@ class Host {
       case 'skipExams': this.SkipExams(course); break;
       case 'viewFile': this.ShowFile(m); break;
       case 'selectSummary': this.SelectSummary(m); break;
+      case 'exportDiagnostics': await this.ExportDiagnostics(); break;
+      case 'importSharedSummary': await this.PickSharedSummary(m); break;
+      case 'cloudSummaryImport': this.cloudImportCourse=course; this.cloudImportLecture=Int(m,'num'); break;
+      case 'cancelCloudImport': this.cloudImportCourse=null; break;
       case 'summaryChat': this.AskSummary(m); break;
       case 'shareSummary': this.ShareSummary(m); break;
       case 'pickProfileImage': await this.SetProfileImage(false); break;
@@ -792,7 +797,10 @@ class Host {
       if (item.getSavePath && item.getSavePath()) return;
       const downloadCourse = this.siteDownloadCourse;
       const name = SafeName(item.getFilename());
-      const { dir, where } = this.SiteSaveDir(name);
+      let { dir, where } = this.SiteSaveDir(name);
+      const sharedCourse=this.cloudImportCourse, sharedLecture=this.cloudImportLecture;
+      const sharedZip=sharedCourse && sharedLecture>0 && wc===this.site.wc && this.IsOneDrivePage(wc.getURL()) && name.toLowerCase().endsWith('.zip');
+      if(sharedZip){this.cloudImportCourse=null;dir=path.join(this.CourseDir(sharedCourse),C.SumitDir,'incoming');where='סיכום להרצאה '+sharedLecture;}
       mkdirp(dir);
       this.siteDownloadsDir = dir;
       const p = this.UniquePathIn(dir, name);
@@ -812,6 +820,7 @@ class Host {
       item.once('done', (_e, state) => {
         if (state === 'completed') {
           this.Send({ type: 'siteDownload', name: shown, dir, path: p, state: 'done', where });
+          if(sharedZip)this.ImportSharedSummary(sharedCourse,sharedLecture,p);
           if (downloadCourse) this.SendCourseLocal(downloadCourse);
         } else this.Send({ type: 'siteDownload', name: shown, dir, state: 'failed' });
       });
@@ -834,7 +843,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat'])
+  'study-policy', 'summary-share', 'summary-chat', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

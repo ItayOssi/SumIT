@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { dialog } = require('electron');
+const { dialog, shell } = require('electron');
 const { Str, IsInside, SafeName, fileExists, guidN } = require('../util');
 const platform = require('../platform');
 
@@ -128,6 +128,7 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
         else:
             z.write(src, dest)
 
+    z.writestr('sumit-share.json', json.dumps({'format':'sumit-summary','version':1,'entry':'files/'+relative_fn(page_path)}))
     rel_page = relative_fn(page_path)
     escaped_target = "files/" + "/".join([x for x in rel_page.split('/')])
     html_target = html.escape(escaped_target)
@@ -168,7 +169,7 @@ module.exports = {
         const defaultFileName = SafeName(course + ' - ' + Str(message, 'title')) + '.zip';
         const saveDialog = await dialog.showSaveDialog(this.win, {
           title: 'שמירת הסיכום לשיתוף',
-          defaultPath: path.join(platform.UserHome, 'Downloads', defaultFileName),
+          defaultPath: path.join(message.onedrive?(this.HitOneDrive()||platform.Downloads):platform.Downloads, defaultFileName),
           filters: [{ name: 'קובץ ZIP לשיתוף', extensions: ['zip'] }],
         });
 
@@ -189,6 +190,7 @@ module.exports = {
         fs.renameSync(temp, destination);
         status = 'saved';
         result = 'קובץ ה-ZIP נשמר בהצלחה ומוכן לשליחה.';
+        if(message.onedrive){await shell.openPath(path.dirname(destination));result='ה-ZIP נשמר בתיקייה שבחרת. סנכרון והרשאות שיתוף מנוהלים ב-OneDrive.';}
       } catch (ex) {
         status = 'error';
         result = 'לא הצלחתי לשמור את ה-ZIP: ' + (ex.message || String(ex));

@@ -73,7 +73,7 @@ module.exports = {
     get GeminiBase() { return process.env.SUMIT_GEMINI_URL || 'https://generativelanguage.googleapis.com'; },
     get OpenAiBase() { return process.env.SUMIT_OPENAI_URL || 'https://api.openai.com'; },
     get AnthropicBase() { return process.env.SUMIT_ANTHROPIC_URL || 'https://api.anthropic.com'; },
-    get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-1.5-flash'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
+    get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-flash-latest'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
     get OpenAiModel() { return Str(this.settings, 'openaiModel').length > 0 ? Str(this.settings, 'openaiModel') : 'gpt-4o-mini'; },
     get ClaudeModel() { return Str(this.settings, 'claudeModel').length > 0 ? Str(this.settings, 'claudeModel') : 'claude-3-5-haiku-latest'; },
 
@@ -89,20 +89,6 @@ module.exports = {
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
     async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null) {
-      if (provider === 'gemini') {
-        const primary = this.GeminiModel;
-        const candidates = [primary, 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-1.5-pro'];
-        const models = Array.from(new Set(candidates));
-        let lastReply = null;
-        for (const model of models) {
-          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model);
-          if (!res.Error) return res;
-          lastReply = res;
-          // Only fallback if quota/rate limit error (HTTP 429)
-          if (!res.Limit) break;
-        }
-        return lastReply || { Text: 'שגיאה בפנייה ל-Gemini', Provider: 'gemini', Error: true, Limit: true };
-      }
       return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer);
     },
 
@@ -145,6 +131,7 @@ module.exports = {
         } else {
           url = this.OpenAiBase + '/v1/chat/completions';
           const msgs = [{ role: 'system', content: system }].concat(messages.map(m => ({ role: m[0], content: m[1] })));
+          if(imageBuffer)msgs[msgs.length-1].content=[{type:'text',text:messages[messages.length-1][1]},{type:'image_url',image_url:{url:'data:image/png;base64,'+imageBuffer.toString('base64')}}];
           body = { model: this.OpenAiModel, messages: msgs, temperature: 0.2, max_tokens: 2048, stream: !!onChunk };
           headers['Authorization'] = 'Bearer ' + key;
         }
@@ -154,6 +141,7 @@ module.exports = {
           const text = await resp.text();
           reply.Error = true;
           reply.Limit = resp.status === 429;
+          this.Diagnostic("helper-api",provider,this.FailureKind(text),resp.status);
           reply.Text = HelperErrorText(text, resp.status);
           return reply;
         }
