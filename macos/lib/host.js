@@ -613,6 +613,7 @@ class Host {
       case 'selectSummary': this.SelectSummary(m); break;
       case 'summaryChat': this.AskSummary(m); break;
       case 'flashcards': this.MakeFlashcards(m); break;
+      case 'sendDeveloperLogs': this.SendDeveloperLogs(); break;
       case 'exportDiagnostics': this.ExportDiagnostics(); break;
       case 'importSharedSummary': this.PickSharedSummary(m); break;
       case 'cloudSummaryImport': this.cloudImportCourse = course; this.cloudImportLecture = Int(m, 'num'); break;

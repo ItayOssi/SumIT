@@ -88,14 +88,14 @@ module.exports = {
 
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
-    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null) {
+    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null, extraImages = null) {
       if (provider === 'gemini') {
         const primary = this.GeminiModel;
         const candidates = [primary, 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-1.5-pro'];
         const models = Array.from(new Set(candidates));
         let lastReply = null;
         for (const model of models) {
-          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model);
+          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model, extraImages);
           if (!res.Error) return res;
           lastReply = res;
           // Only fallback if quota/rate limit error (HTTP 429)
@@ -103,10 +103,10 @@ module.exports = {
         }
         return lastReply || { Text: 'שגיאה בפנייה ל-Gemini', Provider: 'gemini', Error: true, Limit: true };
       }
-      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer);
+      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer, null, extraImages);
     },
 
-    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null) {
+    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null, extraImages = null) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       try {
         let url, body, headers = { 'Content-Type': 'application/json' };
@@ -117,13 +117,15 @@ module.exports = {
           const contents = messages.map((m, idx) => {
             const role = m[0] === 'assistant' ? 'model' : 'user';
             const parts = [{ text: m[1] }];
-            if (imageBuffer && idx === messages.length - 1) {
-              parts.push({
-                inline_data: {
-                  mime_type: 'image/png',
-                  data: Buffer.isBuffer(imageBuffer) ? imageBuffer.toString('base64') : String(imageBuffer)
+            if (idx === messages.length - 1) {
+              if (imageBuffer) {
+                parts.push({ inline_data: { mime_type: 'image/png', data: Buffer.isBuffer(imageBuffer) ? imageBuffer.toString('base64') : String(imageBuffer) } });
+              }
+              if (Array.isArray(extraImages)) {
+                for (const img of extraImages) {
+                  parts.push({ inline_data: { mime_type: 'image/png', data: Buffer.isBuffer(img) ? img.toString('base64') : String(img) } });
                 }
-              });
+              }
             }
             return { role, parts };
           });
@@ -415,10 +417,25 @@ module.exports = {
       return sb.length > 60000 ? sb.substring(0, 60000) : sb;
     },
 
+    CourseInfoHasContent(info) {
+      let known = 0;
+      for (const key of ['lecturer', 'assistants', 'officeHours', 'grading', 'homeworkRequired', 'homeworkNote', 'attendance', 'examFormat', 'importantDates', 'materialsAllowed', 'tips']) {
+        const value = info[key];
+        if (value == null) continue;
+        if (typeof value === 'boolean') { known++; continue; }
+        if (typeof value === 'string' && value.trim().length > 0) { known++; continue; }
+        if (Array.isArray(value) && value.length > 0 && value.some(x => x != null && (typeof x !== 'string' || x.trim().length > 0))) { known++; continue; }
+      }
+      return known >= 2;
+    },
+
     async HelperAnalyzeCourse(course) {
       if (this.HelperOrder().length === 0) return false;
-      const d = path.join(this.CourseDir(course), C.CourseInfoFolder);
-      const files = dirExists(d) ? listFiles(d, true) : [];
+      const files = [];
+      for (const folder of [C.CourseInfoFolder, C.General]) {
+        const d = path.join(this.CourseDir(course), folder);
+        if (dirExists(d)) files.push(...listFiles(d, true));
+      }
       const text = await this.ExtractTexts(files);
       if (text.trim().length < 200) return false;
       const system = 'אתה קורא סילבוס של קורס באוניברסיטה וממלא נתונים. החזר JSON תקין בלבד, בלי טקסט נוסף, במבנה: '
@@ -427,7 +444,7 @@ module.exports = {
       const r = await this.HelperAsk(system, [['user', 'הקורס: ' + course + '\n\n' + text]]);
       if (!r || r.Error) return false;
       const info = JsonFromAnswer(r.Text);
-      if (!info) return false;
+      if (!info || !this.CourseInfoHasContent(info)) return false;
       writeText(path.join(this.CourseDir(course), C.CourseJson), JSON.stringify(info));
       const lecturer = Str(info, 'lecturer');
       const meta = this.LoadMeta(course);

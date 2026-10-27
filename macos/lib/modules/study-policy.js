@@ -90,7 +90,7 @@ module.exports = {
   methods: {
     SummaryScopeInstructions(course, num) {
       const notes = this.SummaryNotes ? this.SummaryNotes(course, num) : '';
-      return StudyScopePolicy + (notes.length === 0 ? '' : 'הערות הסטודנט שנשמרו להרצאה זו:\n' + notes + '\nסוף הערות הסטודנט. החל אותן גם בביקורת ובתיקון, בלי להרחיב מחדש את הסיכום.\n');
+      return StudyScopePolicy + this.PriorSummaryReferences(course, num) + (notes.length === 0 ? '' : 'הערות הסטודנט שנשמרו להרצאה זו:\n' + notes + '\nסוף הערות הסטודנט. החל אותן גם בביקורת ובתיקון, בלי להרחיב מחדש את הסיכום.\n');
     },
 
     MissingQuestionStatements(html) {

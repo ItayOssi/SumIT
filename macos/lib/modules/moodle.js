@@ -447,7 +447,7 @@ module.exports = {
         lecturePdfs: pdfCount,
         examPrep: fileExists(prep) ? prep : null,
         lecturerProfile: fileExists(profile) ? profile : null,
-        courseInfoMd: fileExists(path.join(dir, C.CourseInfoFolder + '.md')) ? path.join(dir, C.CourseInfoFolder + '.md') : null,
+        infoText: fileExists(path.join(dir, C.CourseInfoFolder + '.md')) ? (() => { try { const t = readText(path.join(dir, C.CourseInfoFolder + '.md')); return t.length > 60000 ? t.slice(0, 60000) : t; } catch { return null; } })() : null,
         examsSkipped: Bool(meta, 'examsSkipped'),
         background: this.BackgroundFor(course),
         setupDone: true,

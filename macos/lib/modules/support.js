@@ -219,6 +219,27 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
       this.ImportSharedSummary(Str(m, 'course'), Int(m, 'num'), file);
     },
 
+    SendDeveloperLogs() {
+      try {
+        const C = require('../constants');
+        let report = 'SumIT ' + C.Version + '\nOS: ' + process.platform + ' ' + process.arch + '\nRuntime: ' + process.version + '\n\nמה קרה ומה ציפית שיקרה?\n\n\nTechnical events (no prompts or credentials):\n```text\n';
+        const file = path.join(this.DiagnosticDir(), 'events.log');
+        if (fileExists(file)) {
+          const lines = readText(file).split('\n');
+          const recent = lines.slice(Math.max(0, lines.length - 15));
+          const safe = recent.filter(s => s.length < 240 && /^[0-9TZ:.+\-]+ version=[0-9.]+ operation=[A-Za-z0-9_.-]* provider=[A-Za-z0-9_.-]* kind=[A-Za-z0-9_.-]* code=-?\d+$/.test(s));
+          report += safe.join('\n');
+        }
+        report += '\n```';
+        const { shell } = require('electron');
+        const url = 'https://github.com/Pinkel-Kinkel/SumIT/issues/new?title=' + encodeURIComponent('SumIT ' + C.Version + ' — דוח תקלה') + '&body=' + encodeURIComponent(report);
+        shell.openExternal(url);
+        this.Toast('נפתח דוח ב-GitHub עם הלוג הטכני. הוסף תיאור ולחץ Submit כדי לשלוח למפתח.', false);
+      } catch (ex) {
+        this.Toast('לא ניתן לפתוח דיווח: ' + (ex.message || String(ex)) + '. אפשר לייצא דוח תקלות ולשלוח אותו ידנית.', true);
+      }
+    },
+
     IsOneDrivePage(value) {
       try {
         const u = new URL(value);

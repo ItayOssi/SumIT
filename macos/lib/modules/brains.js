@@ -170,10 +170,18 @@ module.exports = {
         let prompt = CliPrompt(system, messages);
         let r, text = '';
         if (provider === 'gemini') {
-          if (imageBuffer) {
-            prompt = prompt.replace('אל תשתמש בכלים ואל תקרא או תכתוב קבצים.', 'מותר לקרוא רק את material.txt ואת selection.png לצורך התשובה; אל תריץ פקודות ואל תכתוב קבצים.');
-            fs.writeFileSync(path.join(dir, 'selection.png'), imageBuffer);
-            prompt += '\nThe student\'s selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.';
+          const extraImages = Array.isArray(opts.extraImages) ? opts.extraImages : [];
+          if (imageBuffer || extraImages.length > 0) {
+            prompt = prompt.replace('אל תשתמש בכלים ואל תקרא או תכתוב קבצים.', 'מותר לקרוא רק את material.txt ואת selection.png ואת קבצי attachment-*.png לצורך התשובה; אל תריץ פקודות ואל תכתוב קבצים.');
+            if (imageBuffer) {
+              fs.writeFileSync(path.join(dir, 'selection.png'), imageBuffer);
+              prompt += '\nThe student\'s selected region is in selection.png in this folder. Read the image to interpret formulas or diagrams. If you cannot view it, say so; do not guess.';
+            }
+            for (let i = 0; i < extraImages.length; i++) {
+              const name = 'attachment-' + (i + 2) + '.png';
+              fs.writeFileSync(path.join(dir, name), extraImages[i]);
+              prompt += '\nRead ' + name + '.';
+            }
           }
           const inline = opts.fast && !imageBuffer && prompt.length <= 100000;
           let pArgs = prompt;

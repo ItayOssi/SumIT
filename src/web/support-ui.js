@@ -5,6 +5,7 @@ $('collapseSidebar').onclick=()=>{
  requestAnimationFrame(()=>placeSite(false));
 };
 try{if(localStorage.getItem('sumit-nav-collapsed')==='true')$('collapseSidebar').click();}catch{}
+$('sendDeveloperLogs').onclick=()=>send({type:'sendDeveloperLogs'});
 $('exportDiagnostics').onclick=()=>send({type:'exportDiagnostics'});
 $('viewerShareCloud').onclick=()=>{S.shareToCloud=true;$('viewerShare').click();S.shareToCloud=false;};
 function showSummaryImport(course,num){
