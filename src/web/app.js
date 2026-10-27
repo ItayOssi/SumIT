@@ -415,7 +415,7 @@ function homeEvents() {
 }
 function renderStats() {
   const box = $('stats'); if (!box) return;
-  const cur = (S.courses || []).filter(c => c.current);
+  const cur = thisSemester(S.courses);
   const openTasks = (S.tasks || []).filter(t => !t.done).length;
   const week = homeEvents().filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000).length;
   const exams = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && new Date(x.date + 'T12:00:00') >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
@@ -552,6 +552,23 @@ function semesterOf(c) {
   const y = m[1].replace(/["״']/g, '');
   return `${y.slice(0, -1)}״${y.slice(-1)} · סמסטר ${m[2]}`;
 }
+// "תשפ״ז · סמסטר א" as a number to compare (year in gematria * 10 + semester), or null without a semester in the name.
+const GEM = { א: 1, ב: 2, ג: 3, ד: 4, ה: 5, ו: 6, ז: 7, ח: 8, ט: 9, י: 10, כ: 20, ך: 20, ל: 30, מ: 40, ם: 40, נ: 50, ן: 50, ס: 60, ע: 70, פ: 80, ף: 80, צ: 90, ץ: 90, ק: 100, ר: 200, ש: 300, ת: 400 };
+function termOf(c) {
+  const m = ((c.short || '') + ' ' + (c.name || '')).match(/(תש[א-ת]["״']?[א-ת])[_\s-]*([אבג])['׳]?(?![א-ת])/);
+  if (!m) return null;
+  return [...m[1].replace(/["״']/g, '')].reduce((s, ch) => s + (GEM[ch] || 0), 0) * 10 + GEM[m[2]];
+}
+// Moodle calls a course "in progress" until its end date, and many old courses have none - so "current" alone
+// lists years of courses. This semester: the in-progress courses of the latest semester named in a course, plus
+// the ones the student set up here (they have a folder). Without any semester names: the set-up ones, if any.
+function thisSemester(courses) {
+  const cur = (courses || []).filter(c => c.current);
+  const latest = Math.max(0, ...cur.map(termOf).filter(t => t != null));
+  const mine = c => !!(c.local && c.local.exists);
+  if (latest) return cur.filter(c => termOf(c) === latest || (termOf(c) == null && mine(c)));
+  return cur.some(mine) ? cur.filter(mine) : cur;
+}
 function renderHome() {
   renderStats(); renderNextUp();
   const name = firstName(S.userName || S.settings.userName);
@@ -583,7 +600,7 @@ function renderHome() {
   const hc = $('homeCourses'); hc.innerHTML = '';
   if (!S.courses) for (let i = 0; i < 4; i++) hc.append(h('<div class="skeleton" style="height:170px;border-radius:18px"></div>'));
   else {
-    const cur = S.courses.filter(c => c.current);
+    const cur = $('homeCourseFilter').value === 'active' ? S.courses.filter(c => c.current) : thisSemester(S.courses);
     if (!cur.length) hc.append(h('<div class="empty" style="grid-column:1/-1">אין קורסים פעילים כרגע.</div>'));
     cur.forEach((c, i) => hc.append(courseCard(c, i)));
   }
@@ -594,6 +611,11 @@ $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
 $('heroPaste').onclick = () => { show('tasks'); setTimeout(() => { const f = document.querySelector('#tasksPage [data-t-title]'); if (f) f.focus(); }, 80); };
 $('allCourses').onclick = () => show('courses');
+try { if (localStorage.getItem('sumit-home-courses') === 'active') $('homeCourseFilter').value = 'active'; } catch { }
+$('homeCourseFilter').onchange = () => {
+  try { localStorage.setItem('sumit-home-courses', $('homeCourseFilter').value); } catch { }
+  renderHome();
+};
 (function quick() {
   const items = [
     ['c3', 'user', 'פורטל מידע אישי', 'ציונים, מערכת שעות ובחינות', () => openSite('portal')],
@@ -690,8 +712,9 @@ function renderCourses() {
     }
   }
 
+  const semesterNow = new Set(thisSemester(S.courses));
   const list = (S.courses || []).filter(c => {
-    if (filterVal === 'current' && !c.current) return false;
+    if (filterVal === 'current' && !semesterNow.has(c)) return false;
     if (filterVal !== 'current' && filterVal !== 'all' && semesterOf(c) !== filterVal) return false;
     if (query) {
       const name = (c.name || '').toLowerCase();
