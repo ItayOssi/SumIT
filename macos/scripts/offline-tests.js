@@ -392,6 +392,10 @@ async function runHelperTests(app, root, check) {
     );
     check('the question reached the helper with the lecture\'s text', requests[requests.length - 1].includes('SECTION-TWO') && requests[requests.length - 1].includes('תסביר לי'));
 
+    // geminiSignedOverride is still false and geminiKey is still set → mode === 'key'
+    const sgr = await app.SummaryGemini('system text', [['user', 'מה זה?']], null, null);
+    check('SummaryGemini resolves with API key without throwing', !sgr.Error && sgr.Provider === 'gemini');
+
     app.settings.studyRoot = path.join(root, 'courses');
     app.ApplySchedule({
       classes: [{ day: 'ראשון', start: '08:30', end: '11:00', course: 'אינפי' }],

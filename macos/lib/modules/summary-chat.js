@@ -3,7 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Str, Bool, Int, Trunc, IsInside, guidN, fileExists, readText } = require('../util');
+const { Str, Bool, Int, Trunc, IsInside, guidN, fileExists, readText, Unprotect } = require('../util');
 const platform = require('../platform');
 
 module.exports = {
@@ -106,7 +106,7 @@ module.exports = {
       const mode = this.HelperMode('gemini');
       if (mode === 'account') return await this.HelperCallCli('gemini', system, messages, imageBuffer, { fast: true, onChunk });
       if (mode === 'key') {
-        const key = this.Unprotect(Str(this.settings, this.KeySetting('gemini')));
+        const key = Unprotect(Str(this.settings, 'geminiKey'));
         return await this.HelperCall('gemini', key, system, messages, onChunk, imageBuffer);
       }
       return { Provider: 'gemini', Error: true, Text: 'Gemini לא מחובר. חבר אותו בהגדרות כדי לשאול כאן; השאלה לא הועברה למודל אחר.' };
