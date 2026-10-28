@@ -20,7 +20,7 @@ Study app for HIT students. The UI is Hebrew and RTL.
 
 ## Releases
 - Bump the version in `macos/package.json` and `macos/lib/constants.js`, add `docs/release-<version>.md` in Hebrew, and add a line at the top of the README.
-- Release tag `v<version>-mac` on `ItayOssi/SumIT`, with the DMG and the ZIP attached.
+- Release tag `v<version>-mac` on `ItayOssi/SumIT`, with the DMG and the ZIP attached. Pushing the tag (`git tag v<version>-mac && git push origin v<version>-mac`) runs `.github/workflows/release-mac.yml`: it tests, builds on a GitHub Mac and publishes the release with `docs/release-<version>.md` as the notes. The app's automatic update reads these releases.
 
 ## Rules
 - Push only to `ItayOssi/SumIT` (the user's fork). Never push to `Pinkel-Kinkel/SumIT`.

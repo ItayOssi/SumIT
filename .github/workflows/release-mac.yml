@@ -1,0 +1,72 @@
+# Builds SumIT for macOS (Apple Silicon) on a GitHub Mac and publishes the release.
+# Push a tag v<version>-mac whose version matches macos/package.json; the notes come from docs/release-<version>.md.
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*-mac']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release, e.g. v1.0.25-mac'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Check the tag matches the version
+        run: |
+          VERSION=$(node -p "require('./macos/package.json').version")
+          test "$TAG" = "v$VERSION-mac" || { echo "Tag $TAG does not match version $VERSION"; exit 1; }
+          test -f "docs/release-$VERSION.md" || { echo "docs/release-$VERSION.md is missing"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install
+        working-directory: macos
+        run: npm ci
+
+      - name: Checks and offline tests
+        working-directory: macos
+        run: npm test
+
+      - name: Build DMG and ZIP
+        working-directory: macos
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          bash scripts/make-icns.sh
+          npx electron-builder --mac --arm64 --publish never
+          ls -lh dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            cat "docs/release-$VERSION.md"
+            echo
+            echo "### התקנה (Apple Silicon / M1-M4)"
+            echo "1. הורידו את \`SumIT-$VERSION-arm64.dmg\`, פתחו אותו וגררו את **SumIT.app** לתיקיית \`Applications\`."
+            echo "2. הגרסה לא חתומה אצל Apple, ולכן לפני ההפעלה הראשונה הריצו פעם אחת ב-Terminal:"
+            echo '   ```bash'
+            echo '   xattr -cr /Applications/SumIT.app'
+            echo '   ```'
+            echo "3. מגרסה 1.0.25 והלאה האפליקציה מתעדכנת לבד: כשיוצאת גרסה חדשה מופיע \"הורד והתקן בסגירה\"."
+          } > notes.md
+          gh release create "$TAG" \
+            "macos/dist/SumIT-$VERSION-arm64.dmg" "macos/dist/SumIT-$VERSION-arm64.zip" \
+            --repo "$GITHUB_REPOSITORY" --title "SumIT $VERSION ל-macOS (Apple Silicon)" --notes-file notes.md --verify-tag
