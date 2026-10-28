@@ -39,14 +39,23 @@ jobs:
         working-directory: macos
         run: env -u CI npm test
 
+      # Signed ad-hoc ("identity": "-" in package.json): unsigned, macOS calls a downloaded copy "damaged".
       - name: Build DMG and ZIP
         working-directory: macos
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           bash scripts/make-icns.sh
           npx electron-builder --mac --arm64 --publish never
           ls -lh dist
+
+      - name: Check the signature
+        working-directory: macos
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/SumIT.app
+          codesign -dv dist/mac-arm64/SumIT.app 2>&1 | tee sign.txt
+          grep -q "Signature=adhoc" sign.txt
+          # The zip that the automatic update installs must carry the same signature.
+          rm -rf ziptest && mkdir ziptest && ditto -x -k "dist/SumIT-$VERSION-arm64.zip" ziptest
+          codesign --verify --deep --strict --verbose=2 ziptest/SumIT.app
 
       - name: Publish the release
         env:
@@ -57,11 +66,12 @@ jobs:
             echo
             echo "### התקנה (Apple Silicon / M1-M4)"
             echo "1. הורידו את \`SumIT-$VERSION-arm64.dmg\`, פתחו אותו וגררו את **SumIT.app** לתיקיית \`Applications\`."
-            echo "2. הגרסה לא חתומה אצל Apple, ולכן לפני ההפעלה הראשונה הריצו פעם אחת ב-Terminal:"
+            echo "2. פתחו את SumIT. בפעם הראשונה macOS יגיד שאי אפשר לאמת את המפתח, כי האפליקציה לא רשומה אצל Apple. לחצו \"סיום\", פתחו את **הגדרות המערכת ← פרטיות ואבטחה**, גללו למטה ולחצו **\"פתח בכל זאת\"** ליד SumIT."
+            echo "3. אם זה לא עובד, אפשר להריץ פעם אחת ב-Terminal:"
             echo '   ```bash'
             echo '   xattr -cr /Applications/SumIT.app'
             echo '   ```'
-            echo "3. מגרסה 1.0.25 והלאה האפליקציה מתעדכנת לבד: כשיוצאת גרסה חדשה מופיע \"הורד והתקן בסגירה\"."
+            echo "4. מגרסה 1.0.25 והלאה האפליקציה מתעדכנת לבד: כשיוצאת גרסה חדשה מופיע \"הורד והתקן בסגירה\"."
           } > notes.md
           gh release create "$TAG" \
             "macos/dist/SumIT-$VERSION-arm64.dmg" "macos/dist/SumIT-$VERSION-arm64.zip" \
