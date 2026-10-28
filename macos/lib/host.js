@@ -20,7 +20,24 @@ const MIME = {
   '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.mp3': 'audio/mpeg',
 };
 
+// Arguments: the app's pid, the new SumIT.app, the installed SumIT.app, 1 to open it afterwards.
+const UpdateSwapScript = `#!/bin/bash
+pid="$1"; new="$2"; app="$3"; relaunch="$4"
+for i in $(seq 1 300); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+old="$app.old-update"
+rm -rf "$old"
+if mv "$app" "$old"; then
+  if mv "$new" "$app"; then rm -rf "$old"; else mv "$old" "$app"; fi
+fi
+command -v xattr >/dev/null && xattr -cr "$app" 2>/dev/null
+rm -rf "$(dirname "$new")"
+if [ "$relaunch" = "1" ]; then command -v open >/dev/null && open "$app"; fi
+exit 0
+`;
+
 class Host {
+  static get UpdateSwapScript() { return UpdateSwapScript; }
+
   constructor(args) {
     this.args = args;
     this.demo = args.includes('--demo');
@@ -280,6 +297,8 @@ class Host {
 
   onClosing() {
     this.shuttingDown = true;
+    // A downloaded update goes in when the app closes, not only on "restart now".
+    try { this.StartUpdateSwap(false); } catch { }
     if (this.statusTimer) clearInterval(this.statusTimer);
     try { if (this.CancelAgyLogin) this.CancelAgyLogin(); } catch { }
     for (const p of this.aiRuns.values()) killTree(p);
@@ -755,36 +774,58 @@ class Host {
   }
 
   // ---------- Updates ----------
-  // Each GitHub release carries SumIT.zip (Windows). On macOS the app looks for a SumIT-<version>-<arch>.dmg (or -mac.zip) asset;
-  // replacing a running, signed .app in place isn't done - the release page / DMG is opened for the student instead.
+  // The Windows releases (C.Repo) carry SumIT.zip for Windows. The Mac releases are on C.MacRepo, tagged v<version>-mac, with
+  // SumIT-<version>-<arch>.zip and .dmg. The zip is downloaded, checked (GitHub's sha256, the app's own version) and unpacked
+  // next to the temp files; when the app quits, a small script swaps it in for the old SumIT.app, and "restart" opens it.
 
   async CheckForUpdate(manual = false) {
     this.lastUpdateCheck = Date.now();
     if (this.stagedUpdateDir || this.updating) return;
     try {
-      const r = await net.fetch('https://api.github.com/repos/' + C.Repo + '/releases/latest', { headers: { 'User-Agent': 'SumIT/' + C.Version } });
+      const r = await net.fetch('https://api.github.com/repos/' + C.MacRepo + '/releases?per_page=30', { headers: { 'User-Agent': 'SumIT/' + C.Version } });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const rel = await r.json();
-      const tag = Str(rel, 'tag_name').replace(/^v+/, '');
-      if (!this.newerVersion(tag, C.Version)) {
+      const rel = this.PickMacRelease(await r.json(), process.arch);
+      if (!rel || !this.newerVersion(rel.version, C.Version)) {
         this.pendingUpdate = null;
         this.Send({ type: 'updateCheck', text: 'יש לך את הגרסה האחרונה (' + C.Version + '). נבדק ' + util.formatDate(new Date(), 'HH:mm') });
         return;
       }
-      this.updateVersion = tag;
-      this.updatePage = Str(rel, 'html_url');
-      this.updateZipUrl = this.updateShaUrl = null;
-      const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-      for (const a of Array.isArray(rel.assets) ? rel.assets : []) {
-        const url = Str(a, 'browser_download_url');
-        if (!C.RepoNames.some(rn => url.toLowerCase().startsWith(('https://github.com/' + rn + '/releases/download/').toLowerCase()))) continue;
-        const name = Str(a, 'name');
-        if (/\.dmg$/i.test(name) && (name.includes(arch) || name.includes('universal'))) this.updateZipUrl = url;
-      }
-      // canAuto=false: the UI shows "download" and opens the DMG / release page.
-      this.pendingUpdate = { type: 'update', version: tag, url: this.updatePage, canAuto: false, notes: Trunc(Str(rel, 'body'), 600) };
+      this.updateVersion = rel.version;
+      this.updatePage = rel.page;
+      this.updateZipUrl = rel.zipUrl;
+      this.updateShaUrl = rel.zipSha256;
+      this.updateZipSize = rel.zipSize;
+      this.updateDmgUrl = rel.dmgUrl;
+      const canAuto = !!rel.zipUrl && !!this.UpdatableAppPath();
+      // canAuto: "download and install on close"; otherwise the DMG (or the release page) is opened.
+      this.pendingUpdate = { type: 'update', version: rel.version, url: rel.dmgUrl || rel.page, canAuto, notes: Trunc(rel.notes, 600) };
       this.Send(this.pendingUpdate);
     } catch (ex) { this.Send({ type: 'updateCheck', text: 'לא הצלחתי לבדוק עדכונים: ' + ex.message }); }
+  }
+
+  // The newest Mac release (tag v1.2.3-mac, not a draft or pre-release) with its files for this Mac's chip.
+  PickMacRelease(releases, arch) {
+    const chip = arch === 'arm64' ? 'arm64' : 'x64';
+    const prefix = ('https://github.com/' + C.MacRepo + '/releases/download/').toLowerCase();
+    let best = null;
+    for (const rel of Array.isArray(releases) ? releases : []) {
+      if (!rel || rel.draft || rel.prerelease) continue;
+      const m = /^v?(\d+(?:\.\d+){1,3})-mac$/i.exec(Str(rel, 'tag_name'));
+      if (!m || (best && !this.newerVersion(m[1], best.version))) continue;
+      const found = { version: m[1], page: Str(rel, 'html_url'), notes: Str(rel, 'body'), zipUrl: null, zipSha256: null, zipSize: 0, dmgUrl: null };
+      for (const a of Array.isArray(rel.assets) ? rel.assets : []) {
+        const url = Str(a, 'browser_download_url'), name = Str(a, 'name');
+        if (!url.toLowerCase().startsWith(prefix) || !(name.includes('-' + chip + '.') || name.includes('-universal.'))) continue;
+        if (/\.zip$/i.test(name)) {
+          found.zipUrl = url;
+          found.zipSize = Int(a, 'size');
+          const digest = /^sha256:([0-9a-f]{64})$/i.exec(Str(a, 'digest'));
+          found.zipSha256 = digest ? digest[1].toLowerCase() : null;
+        } else if (/\.dmg$/i.test(name)) found.dmgUrl = url;
+      }
+      best = found;
+    }
+    return best;
   }
 
   newerVersion(latest, mine) {
@@ -795,9 +836,105 @@ class Host {
     return false;
   }
 
-  InstallUpdate() { this.OpenExternal(this.updateZipUrl || this.updatePage || ('https://github.com/' + C.Repo + '/releases/latest')); }
-  RestartIntoUpdate() { app.relaunch(); app.quit(); }
-  CleanUpOldFiles() { }
+  // The running SumIT.app, when it can be replaced: a packaged app, not run from the DMG or a translocated copy,
+  // in a folder the student can write to.
+  UpdatableAppPath() {
+    if (!app || !app.isPackaged) return null;
+    const bundle = path.resolve(process.execPath, '..', '..', '..');
+    if (!bundle.endsWith('.app') || bundle.startsWith('/Volumes/') || bundle.includes('/AppTranslocation/')) return null;
+    try { fs.accessSync(path.dirname(bundle), fs.constants.W_OK); } catch { return null; }
+    return bundle;
+  }
+
+  async InstallUpdate() {
+    if (!this.pendingUpdate || !this.pendingUpdate.canAuto) {
+      this.OpenExternal(this.updateDmgUrl || this.updatePage || ('https://github.com/' + C.MacRepo + '/releases'));
+      return;
+    }
+    if (this.updating || this.stagedUpdateDir) return;
+    this.updating = true;
+    const version = this.updateVersion;
+    const dir = path.join(platform.TempDir, 'sumit-update-' + version);
+    const progress = (text, error = false) => this.Send({ type: 'updateProgress', text, error });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      mkdirp(dir);
+      const zip = path.join(dir, 'SumIT.zip');
+      progress('מוריד את גרסה ' + version + '...');
+      const resp = await net.fetch(this.updateZipUrl, { headers: { 'User-Agent': 'SumIT/' + C.Version } });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const total = Number(resp.headers.get('content-length')) || this.updateZipSize || 0;
+      const hash = require('crypto').createHash('sha256');
+      const out = fs.createWriteStream(zip);
+      const reader = resp.body.getReader();
+      let got = 0, shown = -1;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        hash.update(value);
+        got += value.length;
+        if (!out.write(Buffer.from(value))) await new Promise(r => out.once('drain', r));
+        const pct = total ? Math.floor(100 * got / total) : -1;
+        if (pct >= 0 && pct >= shown + 5) { shown = pct; progress('מוריד את גרסה ' + version + '... ' + pct + '%'); }
+      }
+      await new Promise((res, rej) => out.end(err => (err ? rej(err) : res())));
+      if (this.updateZipSize && got !== this.updateZipSize) throw new Error('הקובץ לא ירד במלואו');
+      if (this.updateShaUrl && hash.digest('hex') !== this.updateShaUrl) throw new Error('הקובץ שירד לא תואם לגרסה שפורסמה');
+      progress('מכין את גרסה ' + version + '...');
+      const staged = await this.UnpackUpdate(zip, dir, version);
+      fs.unlinkSync(zip);
+      this.stagedUpdateDir = staged;
+      this.pendingUpdate = null;
+      this.Send({ type: 'updateReady', version });
+    } catch (ex) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { }
+      progress('העדכון האוטומטי נכשל: ' + (ex.message || String(ex)) + '. אפשר להוריד את הגרסה מדף ההורדה.', true);
+    } finally {
+      this.updating = false;
+    }
+  }
+
+  // Unpacks the zip with ditto (keeps the app's symlinks and permissions) and checks that it is SumIT of that version.
+  async UnpackUpdate(zip, dir, version) {
+    const run = (cmd, args) => util.Exec(cmd, args, null, 300000);
+    let r = await run('/usr/bin/ditto', ['-x', '-k', zip, dir]);
+    if (r.code !== 0) throw new Error('לא הצלחתי לפתוח את הקובץ');
+    const appDir = path.join(dir, 'SumIT.app');
+    const plist = path.join(appDir, 'Contents', 'Info.plist');
+    if (!fileExists(plist)) throw new Error('בקובץ אין את SumIT.app');
+    r = await run('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', plist]);
+    if (r.code !== 0 || r.output.trim() !== version) throw new Error('בקובץ יש גרסה אחרת (' + Trunc(r.output.trim(), 20) + ')');
+    await run('/usr/bin/xattr', ['-cr', appDir]);
+    return appDir;
+  }
+
+  // The swap runs after the app has quit: old SumIT.app aside, the new one in its place, the old one removed;
+  // if the move fails the old app is put back. With relaunch, the app is opened again.
+  StartUpdateSwap(relaunch) {
+    const target = this.UpdatableAppPath();
+    if (!this.stagedUpdateDir || !target || this.swapStarted) return false;
+    this.swapStarted = true;
+    const script = path.join(platform.TempDir, 'sumit-update-swap.sh');
+    fs.writeFileSync(script, Host.UpdateSwapScript, { mode: 0o755 });
+    const { spawn } = require('child_process');
+    const child = spawn('/bin/bash', [script, String(process.pid), this.stagedUpdateDir, target, relaunch ? '1' : '0'], { detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  }
+
+  RestartIntoUpdate() {
+    if (!this.StartUpdateSwap(true)) app.relaunch();
+    app.quit();
+  }
+
+  CleanUpOldFiles() {
+    // Update folders left by an earlier run (the swap moves the new app out, so only leftovers stay).
+    try {
+      for (const n of fs.readdirSync(platform.TempDir)) {
+        if (n.startsWith('sumit-update-')) fs.rmSync(path.join(platform.TempDir, n), { recursive: true, force: true });
+      }
+    } catch { }
+  }
 
   // ---------- Sites inside the app ----------
 

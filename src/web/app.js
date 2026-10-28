@@ -1690,9 +1690,13 @@ function renderSettings() {
   $('refreshSummariesText').textContent = st.outdatedSummaries ? (st.outdatedSummaries === 1 ? 'סיכום אחד נבנה בפורמט הקודם.' : st.outdatedSummaries + ' סיכומים נבנו בפורמט הקודם.') + ' בפורמט החדש כל שאלה בשיעורי הבית כוללת את מה שצריך כדי לפתור אותה, ואפשר להתחיל ישר ממנה. הבנייה מחדש משתמשת ב-AI (אחד אחרי השני) והסיכום הישן נשמר אם היא נכשלת.' : '';
   ['optSync','optRec','optUpdate'].forEach(id => { $(id).checked = false; $(id).closest('.setting').hidden = true; });
   $('versionText').textContent = `SumIT ${st.version || ''} · מתעדכנת לבד כשיוצאת גרסה חדשה`;
+  // The update row above stays hidden, so the version is shown here.
+  $('aboutVersion').textContent = `גרסה ${st.version || ''}`;
+  $('aboutDetails').textContent = `SumIT ל-${/Macintosh|Mac OS X/.test(navigator.userAgent) ? 'macOS' : 'Windows'}. כשמבקשים עזרה או שולחים דוח למפתח, כדאי לציין את מספר הגרסה.`;
   applyTheme(st.theme || 'system');
   if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/f8Duw6RBMr';
 }
+if ($('aboutCheckUpdate')) $('aboutCheckUpdate').onclick = () => send({ type: 'checkUpdate' });
 if ($('discordUrl')) $('discordUrl').onchange = () => send({ type: 'setOption', name: 'discordUrl', value: $('discordUrl').value });
 if ($('openDiscordBtn')) $('openDiscordBtn').onclick = () => {
   const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/f8Duw6RBMr').trim();
@@ -1985,7 +1989,7 @@ function onMessage(m) {
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
-    case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; break; }
+    case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; const a = document.getElementById('aboutUpdateText'); if (a) a.textContent = m.text; break; }
     case 'update': S.update = m; renderBanners(); break;
     case 'updateProgress': S.update = Object.assign(S.update || {}, { progress: m.text, error: m.error }); renderBanners(); break;
     case 'updateReady': S.updateReady = m.version; renderBanners(); toast(`העדכון לגרסה ${m.version} מוכן. הוא ייכנס בפעם הבאה שהאפליקציה נפתחת, או עכשיו:`, { action: 'הפעל מחדש', onAction: () => send({ type: 'restartForUpdate' }), ms: 15000 }); break;

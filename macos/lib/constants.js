@@ -6,9 +6,10 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.24',
+  Version: '1.0.25',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
+  MacRepo: 'ItayOssi/SumIT',   // the macOS releases (tags v<version>-mac)
   DiscordInvite: 'https://discord.gg/f8Duw6RBMr',   // the degree's server; the student can change it in settings
 
   Sites: {

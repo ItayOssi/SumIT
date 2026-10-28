@@ -57,6 +57,39 @@ async function run() {
     check('updates default to consent', !app.Option('autoUpdate'));
     check('automatic downloads off', !app.Option('autoSync') && !app.Option('autoRecordings'));
 
+    // Mac updates: the newest v<version>-mac release, with this chip's zip and its sha256.
+    const dl = 'https://github.com/' + C.MacRepo + '/releases/download/';
+    const macReleases = [
+      { tag_name: 'v9.0.0', html_url: 'win', assets: [{ name: 'SumIT.zip', browser_download_url: 'https://github.com/' + C.Repo + '/releases/download/v9.0.0/SumIT.zip' }] },
+      { tag_name: 'v1.0.30-mac', draft: true, assets: [] },
+      { tag_name: 'v1.0.25-mac', html_url: 'page25', body: 'notes', assets: [
+        { name: 'SumIT-1.0.25-arm64.zip', size: 123, digest: 'sha256:' + 'ab'.repeat(32), browser_download_url: dl + 'v1.0.25-mac/SumIT-1.0.25-arm64.zip' },
+        { name: 'SumIT-1.0.25-arm64.dmg', browser_download_url: dl + 'v1.0.25-mac/SumIT-1.0.25-arm64.dmg' },
+        { name: 'SumIT-1.0.25-x64.zip', browser_download_url: dl + 'v1.0.25-mac/SumIT-1.0.25-x64.zip' },
+        { name: 'SumIT-1.0.25-arm64.zip', browser_download_url: 'https://evil.example/SumIT-1.0.25-arm64.zip' }] },
+      { tag_name: 'v1.0.24-mac', assets: [] },
+    ];
+    const picked = app.PickMacRelease(macReleases, 'arm64');
+    check(
+      'a Mac update comes from the newest -mac release, not the Windows one or a draft',
+      picked && picked.version === '1.0.25' && picked.page === 'page25' && picked.zipUrl === dl + 'v1.0.25-mac/SumIT-1.0.25-arm64.zip'
+        && picked.zipSha256 === 'ab'.repeat(32) && picked.zipSize === 123 && picked.dmgUrl.endsWith('-arm64.dmg')
+    );
+    check('an Intel Mac gets the Intel zip', app.PickMacRelease(macReleases, 'x64').zipUrl.endsWith('-x64.zip'));
+    check('outside a packaged app nothing is replaced', app.UpdatableAppPath() === null);
+    const swapDir = path.join(root, 'swap');
+    const installed = path.join(swapDir, 'Applications', 'SumIT.app');
+    const staged = path.join(swapDir, 'sumit-update-1.0.25', 'SumIT.app');
+    mkdirp(installed); mkdirp(staged);
+    writeText(path.join(installed, 'v.txt'), 'old'); writeText(path.join(staged, 'v.txt'), 'new');
+    const swapScript = path.join(swapDir, 'swap.sh');
+    writeText(swapScript, Host.UpdateSwapScript);
+    const swapped = spawnSync('/bin/bash', [swapScript, '999999', staged, installed, '0'], { encoding: 'utf8' });
+    check(
+      'after the app quits, the new SumIT.app takes the old one\'s place',
+      swapped.status === 0 && readText(path.join(installed, 'v.txt')) === 'new' && !dirExists(installed + '.old-update') && !dirExists(path.dirname(staged))
+    );
+
     // 2. Course & Lecture management
     const course = 'test-course';
     app.SaveLecture(course, { num: 1, title: 'Lecture 1', date: '2026-10-25', due: '' });
