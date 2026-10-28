@@ -297,7 +297,7 @@ function helperCard(kind) {
   else act = `<button class="primary small" data-login>התחבר עם חשבון ${gem ? 'Google' : 'ChatGPT'}</button>`;
   // While the Google page is open: say what to do (the app carries on by itself when the account is saved).
   const codeBox = gem && S.authCode ? `<div class="auth-code" dir="rtl"><b>כמעט סיימנו</b>
-    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const curModel = (S.settings && S.settings.geminiModel) || (mode === 'account' ? 'gemini-3.8-flash-low' : 'gemini-1.5-flash');
+    <small>${S.authCode.phase === 'verify' ? 'בודק שהחשבון יכול לענות. הבדיקה אורכת עד 45 שניות.' : 'נפתח חלון ההתחברות הרשמי של Google Antigravity. בחר Google ופעל לפי ההוראות בחלון. אם מוצג קוד בדפדפן, הדבק אותו בחלון ההתחברות. לאחר האישור נחזור לאפליקציה.'}</small><button class="ghost small" data-cancel-login>בטל התחברות</button></div>` : '';  const curModel = (S.settings && S.settings.geminiModel) || (mode === 'account' ? 'gemini-3.8-flash-low' : 'gemini-flash-latest');
   const modelOptions = mode === 'account'
     ? `<option value="gemini-3.8-flash-low" ${curModel === 'gemini-3.8-flash-low' ? 'selected' : ''}>Gemini 3.8 Flash (Low - מהיר וללא מכסה)</option>
        <option value="gemini-3.8-flash-medium" ${curModel === 'gemini-3.8-flash-medium' ? 'selected' : ''}>Gemini 3.8 Flash (Medium)</option>
@@ -305,10 +305,9 @@ function helperCard(kind) {
        <option value="claude-sonnet-5-5-low" ${curModel === 'claude-sonnet-5-5-low' ? 'selected' : ''}>Claude Sonnet 5.5 (Low - גיבוי)</option>
        <option value="gemini-4-argon-low" ${curModel === 'gemini-4-argon-low' ? 'selected' : ''}>Gemini 4 Argon (Low)</option>
        <option value="gemini-4-argon-medium" ${curModel === 'gemini-4-argon-medium' ? 'selected' : ''}>Gemini 4 Argon (Medium)</option>`
-    : `<option value="gemini-1.5-flash" ${curModel === 'gemini-1.5-flash' ? 'selected' : ''}>Gemini 1.5 Flash (מהיר וחסכוני)</option>
-       <option value="gemini-1.5-flash-8b" ${curModel === 'gemini-1.5-flash-8b' ? 'selected' : ''}>Gemini 1.5 Flash-8B (מכסה גבוהה)</option>
-       <option value="gemini-2.0-flash" ${curModel === 'gemini-2.0-flash' ? 'selected' : ''}>Gemini 2.0 Flash (הדור החדש)</option>
-       <option value="gemini-1.5-pro" ${curModel === 'gemini-1.5-pro' ? 'selected' : ''}>Gemini 1.5 Pro (חכם ומעמיק)</option>`;
+    : `<option value="gemini-flash-latest" ${curModel === 'gemini-flash-latest' ? 'selected' : ''}>Gemini Flash (מהיר וחסכוני)</option>
+       <option value="gemini-flash-lite-latest" ${curModel === 'gemini-flash-lite-latest' ? 'selected' : ''}>Gemini Flash-Lite (מכסה גבוהה)</option>
+       <option value="gemini-pro-latest" ${curModel === 'gemini-pro-latest' ? 'selected' : ''}>Gemini Pro (חכם ומעמיק)</option>`;
   const modelBox = gem ? `<div class="row gemini-model-row" style="width:100%;margin-top:6px;gap:6px;align-items:center;"><span style="font-size:12px;opacity:0.8;">מודל:</span><select class="small" data-gemini-model style="flex:1;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;">${modelOptions}</select></div>` : '';
   const keyBox = codeBox + (mode === 'key' || busy ? '' : `<details class="adv"><summary>יש לי מפתח API</summary><div class="row" style="width:100%"><input type="password" class="ltr" placeholder="הדבק מפתח API" data-key autocomplete="off"><button class="small" data-save>חבר</button></div><button class="link" data-getkey>איך משיגים מפתח?</button></details>`) + modelBox;
   const tr = (S.brainTests || {})[brain];

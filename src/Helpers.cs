@@ -19,10 +19,10 @@ partial class HitStudent
     // The addresses can be pointed at a local test server.
     static string GeminiBase { get { return Environment.GetEnvironmentVariable("SUMIT_GEMINI_URL") ?? "https://generativelanguage.googleapis.com"; } }
     static string OpenAiBase { get { return Environment.GetEnvironmentVariable("SUMIT_OPENAI_URL") ?? "https://api.openai.com"; } }
-    string GeminiModel { get { string m = Str(settings, "geminiModel").Trim(); string raw = m.Length > 0 ? m : "gemini-1.5-flash"; return raw.StartsWith("models/") ? raw.Substring(7) : raw; } }
+    string GeminiModel { get { string m = Str(settings, "geminiModel").Trim(); string raw = m.Length > 0 ? m : "gemini-flash-latest"; return raw.StartsWith("models/") ? raw.Substring(7) : raw; } }
     string OpenAiModel { get { return Str(settings, "openaiModel").Length > 0 ? Str(settings, "openaiModel") : "gpt-4o-mini"; } }
 
-    class HelperReply { public string Text = "", Provider = ""; public bool Error, Limit; }
+    class HelperReply { public string Text = "", Provider = ""; public bool Error, Limit; public int Status; }
 
     static string KeySetting(string provider) { return provider == "gemini" ? "geminiKey" : "openaiKey"; }
     bool HasHelperKey(string provider) { return Str(settings, KeySetting(provider)).Length > 0; }
@@ -39,25 +39,27 @@ partial class HitStudent
 
     string HelperProvider() { return HelperOrder().FirstOrDefault(); }
 
-    async Task<HelperReply> HelperCall(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null)
+    async Task<HelperReply> HelperCall(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null, int maxTokens = 2048)
     {
         if (provider == "gemini")
         {
-            var candidates = new List<string> { GeminiModel, "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash", "gemini-1.5-pro" }.Distinct().ToList();
+            // The -latest aliases follow Google's current Flash models, so they don't retire like fixed versions.
+            var candidates = new List<string> { GeminiModel, "gemini-flash-latest", "gemini-flash-lite-latest" }.Distinct().ToList();
             HelperReply lastReply = null;
             foreach (var mod in candidates)
             {
-                var res = await HelperCallSingle("gemini", key, system, messages, image, mod);
+                var res = await HelperCallSingle("gemini", key, system, messages, image, mod, maxTokens);
                 if (!res.Error) return res;
                 lastReply = res;
-                if (!res.Limit) break;
+                // The next model only on a quota limit (429) or a model that no longer exists (404).
+                if (!res.Limit && res.Status != 404) break;
             }
             return lastReply ?? new HelperReply { Provider = "gemini", Error = true, Limit = true, Text = "שגיאה בפנייה ל-Gemini" };
         }
-        return await HelperCallSingle(provider, key, system, messages, image, null);
+        return await HelperCallSingle(provider, key, system, messages, image, null, maxTokens);
     }
 
-    async Task<HelperReply> HelperCallSingle(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null, string geminiModelOverride = null)
+    async Task<HelperReply> HelperCallSingle(string provider, string key, string system, List<Tuple<string, string>> messages, byte[] image = null, string geminiModelOverride = null, int maxTokens = 2048)
     {
         var reply = new HelperReply { Provider = provider };
         try
@@ -81,7 +83,7 @@ partial class HitStudent
                 {
                     { "systemInstruction", new Dictionary<string, object> { { "parts", new object[] { new Dictionary<string, object> { { "text", system } } } } } },
                     { "contents", contents },
-                    { "generationConfig", new Dictionary<string, object> { { "temperature", 0.3 } } }
+                    { "generationConfig", new Dictionary<string, object> { { "temperature", 0.2 }, { "maxOutputTokens", maxTokens } } }
                 };
                 req.Headers.Add("x-goog-api-key", key);
             }
@@ -90,7 +92,7 @@ partial class HitStudent
                 url = OpenAiBase + "/v1/chat/completions";
                 var msgs = new List<object> { new Dictionary<string, object> { { "role", "system" }, { "content", system } } };
                 msgs.AddRange(messages.Select(m => (object)new Dictionary<string, object> { { "role", m.Item1 }, { "content", m.Item2 } }));
-                body = new Dictionary<string, object> { { "model", OpenAiModel }, { "messages", msgs }, { "temperature", 0.3 } };
+                body = new Dictionary<string, object> { { "model", OpenAiModel }, { "messages", msgs }, { "temperature", 0.2 }, { "max_tokens", maxTokens } };
                 req.Headers.Add("Authorization", "Bearer " + key);
             }
             req.RequestUri = new Uri(url);
@@ -102,6 +104,7 @@ partial class HitStudent
                 {
                     reply.Error = true;
                     reply.Limit = (int)resp.StatusCode == 429;
+                    reply.Status = (int)resp.StatusCode;
                     reply.Text = HelperErrorText(text, (int)resp.StatusCode);
                     return reply;
                 }

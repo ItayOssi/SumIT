@@ -73,7 +73,7 @@ module.exports = {
     get GeminiBase() { return process.env.SUMIT_GEMINI_URL || 'https://generativelanguage.googleapis.com'; },
     get OpenAiBase() { return process.env.SUMIT_OPENAI_URL || 'https://api.openai.com'; },
     get AnthropicBase() { return process.env.SUMIT_ANTHROPIC_URL || 'https://api.anthropic.com'; },
-    get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-1.5-flash'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
+    get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-flash-latest'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
     get OpenAiModel() { return Str(this.settings, 'openaiModel').length > 0 ? Str(this.settings, 'openaiModel') : 'gpt-4o-mini'; },
     get ClaudeModel() { return Str(this.settings, 'claudeModel').length > 0 ? Str(this.settings, 'claudeModel') : 'claude-3-5-haiku-latest'; },
 
@@ -88,25 +88,26 @@ module.exports = {
 
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
-    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null, extraImages = null) {
+    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null, extraImages = null, maxTokens = 2048) {
       if (provider === 'gemini') {
         const primary = this.GeminiModel;
-        const candidates = [primary, 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+        // The -latest aliases follow Google's current Flash models, so they don't retire like fixed versions.
+        const candidates = [primary, 'gemini-flash-latest', 'gemini-flash-lite-latest'];
         const models = Array.from(new Set(candidates));
         let lastReply = null;
         for (const model of models) {
-          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model, extraImages);
+          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model, extraImages, maxTokens);
           if (!res.Error) return res;
           lastReply = res;
-          // Only fallback if quota/rate limit error (HTTP 429)
-          if (!res.Limit) break;
+          // The next model only on a quota limit (429) or a model that no longer exists (404).
+          if (!res.Limit && res.Status !== 404) break;
         }
         return lastReply || { Text: 'שגיאה בפנייה ל-Gemini', Provider: 'gemini', Error: true, Limit: true };
       }
-      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer, null, extraImages);
+      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer, null, extraImages, maxTokens);
     },
 
-    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null, extraImages = null) {
+    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null, extraImages = null, maxTokens = 2048) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       try {
         let url, body, headers = { 'Content-Type': 'application/json' };
@@ -132,14 +133,14 @@ module.exports = {
           body = {
             systemInstruction: { parts: [{ text: system }] },
             contents,
-            generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+            generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens },
           };
           headers['x-goog-api-key'] = key;
         } else if (provider === 'claude') {
           url = this.AnthropicBase + '/v1/messages';
           const msgs = messages.map(m => ({ role: m[0] === 'assistant' ? 'assistant' : 'user', content: m[1] }));
           body = {
-            model: this.ClaudeModel, max_tokens: 2048, system,
+            model: this.ClaudeModel, max_tokens: maxTokens, system,
             messages: msgs, temperature: 0.2, stream: !!onChunk,
           };
           headers['x-api-key'] = key;
@@ -147,7 +148,7 @@ module.exports = {
         } else {
           url = this.OpenAiBase + '/v1/chat/completions';
           const msgs = [{ role: 'system', content: system }].concat(messages.map(m => ({ role: m[0], content: m[1] })));
-          body = { model: this.OpenAiModel, messages: msgs, temperature: 0.2, max_tokens: 2048, stream: !!onChunk };
+          body = { model: this.OpenAiModel, messages: msgs, temperature: 0.2, max_tokens: maxTokens, stream: !!onChunk };
           headers['Authorization'] = 'Bearer ' + key;
         }
 
@@ -156,6 +157,7 @@ module.exports = {
           const text = await resp.text();
           reply.Error = true;
           reply.Limit = resp.status === 429;
+          reply.Status = resp.status;
           reply.Text = HelperErrorText(text, resp.status);
           return reply;
         }

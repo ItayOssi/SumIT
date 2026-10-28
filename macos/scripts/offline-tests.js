@@ -307,6 +307,7 @@ async function runHelperTests(app, root, check) {
   const requests = [];
   const heads = [];
   let geminiStatus = 200;
+  let openaiStatus = 200;
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -316,12 +317,15 @@ async function runHelperTests(app, root, check) {
       requests.push(req.url + ' ' + body);
       heads.push((req.headers['x-goog-api-key'] || '') + '|' + (req.headers['authorization'] || ''));
       const gem = req.url.includes('generateContent');
-      const status = gem ? geminiStatus : 200;
+      const claude = req.url.includes('/v1/messages');
+      const status = gem ? (req.url.includes('missing-model') ? 404 : geminiStatus) : claude ? 200 : openaiStatus;
       const reply = status !== 200
         ? '{"error":{"message":"quota"}}'
         : gem
           ? '{"candidates":[{"content":{"parts":[{"text":"תשובה מ-Gemini $x^2$"}]}}]}'
-          : '{"choices":[{"message":{"content":"תשובה מ-ChatGPT"}}]}';
+          : claude
+            ? '{"content":[{"type":"text","text":"תשובה מ-Claude"}]}'
+            : '{"choices":[{"message":{"content":"תשובה מ-ChatGPT"}}]}';
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(reply);
     });
@@ -332,6 +336,7 @@ async function runHelperTests(app, root, check) {
   const baseUrl = `http://127.0.0.1:${port}`;
   process.env.SUMIT_GEMINI_URL = baseUrl;
   process.env.SUMIT_OPENAI_URL = baseUrl;
+  process.env.SUMIT_ANTHROPIC_URL = baseUrl;
 
   try {
     app.geminiSignedOverride = false;
@@ -395,6 +400,40 @@ async function runHelperTests(app, root, check) {
     // geminiSignedOverride is still false and geminiKey is still set → mode === 'key'
     const sgr = await app.SummaryGemini('system text', [['user', 'מה זה?']], null, null);
     check('SummaryGemini resolves with API key without throwing', !sgr.Error && sgr.Provider === 'gemini');
+
+    let n0 = requests.length;
+    await app.SummaryGemini('system text', [['user', 'מה זה?']], null, null, null, { maxTokens: 350 });
+    check('the summary chat caps the answer at 350 tokens', requests[n0].includes('"maxOutputTokens":350'));
+    n0 = requests.length;
+    await app.SummaryGemini('system text', [['user', 'מה זה?']], null, null);
+    check('flashcards keep the full answer length', requests[n0].includes('"maxOutputTokens":2048'));
+    app.settings.geminiModel = 'missing-model';
+    n0 = requests.length;
+    const moved = await app.SummaryGemini('system text', [['user', 'מה זה?']], null, null);
+    check('a Gemini model that no longer exists moves to gemini-flash-latest', !moved.Error && requests.length === n0 + 2 && requests[n0 + 1].includes('/models/gemini-flash-latest:'));
+    delete app.settings.geminiModel;
+    app.settings.claudeKey = Protect('c'.repeat(30));
+    geminiStatus = 500;
+    openaiStatus = 500;
+    const switched = [];
+    const realSend = app.Send;
+    app.Send = (msg) => { if (msg.type === 'summaryChatProvider') switched.push(msg.text); };
+    const conversation = [['user', 'שאלה ראשונה'], ['assistant', 'תשובה ראשונה'], ['user', 'שאלה שנייה']];
+    const fromClaude = await app.SummaryGemini('system text', conversation, null, null, null, { maxTokens: 350 });
+    app.Send = realSend;
+    check(
+      'Gemini and ChatGPT down: Claude answers with the whole conversation',
+      !fromClaude.Error && fromClaude.Provider === 'claude' && fromClaude.Text.includes('Claude')
+        && requests[requests.length - 1].includes('תשובה ראשונה') && requests[requests.length - 1].includes('"max_tokens":350')
+    );
+    check('the student sees which AI took over', switched.length === 2 && switched[0].includes('ממשיך עם ChatGPT') && switched[1] === 'ChatGPT לא זמין — ממשיך עם Claude');
+    geminiStatus = 200;
+    openaiStatus = 200;
+    delete app.settings.claudeKey;
+    check(
+      'a pasted question loses its markup and extra spaces, not its math',
+      app.CleanChatText('  מה  זה <span style="x">אינטגרל</span>?\n\n\n\nאם a<b and c>d  ') === 'מה זה אינטגרל?\n\nאם a<b and c>d'
+    );
 
     app.settings.studyRoot = path.join(root, 'courses');
     app.ApplySchedule({

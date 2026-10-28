@@ -196,7 +196,7 @@ partial class HitStudent
                 string body = new StreamReader(c.Request.InputStream, System.Text.Encoding.UTF8).ReadToEnd();
                 lock (requests) { requests.Add(c.Request.Url.AbsolutePath + " " + body); heads.Add((c.Request.Headers["x-goog-api-key"] ?? "") + "|" + (c.Request.Headers["Authorization"] ?? "")); }
                 bool gem = c.Request.Url.AbsolutePath.Contains("generateContent");
-                int status = gem ? geminiStatus : 200;
+                int status = gem ? (c.Request.Url.AbsolutePath.Contains("missing-model") ? 404 : geminiStatus) : 200;
                 string reply = status != 200 ? "{\"error\":{\"message\":\"quota\"}}"
                     : gem ? "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"תשובה מ-Gemini $x^2$\"}]}}]}"
                     : "{\"choices\":[{\"message\":{\"content\":\"תשובה מ-ChatGPT\"}}]}";
@@ -228,7 +228,7 @@ partial class HitStudent
             check("a limit on Gemini passes the question to ChatGPT", !r.Error && r.Provider == "openai" && r.Text.Contains("ChatGPT") && heads.Last().Contains("Bearer " + new string('o', 30)));
             geminiStatus = 200;
 
-            // Summary chat must use only Gemini even when general chat prefers another provider.
+            // Summary chat starts with Gemini even when general chat prefers another provider, and falls back to ChatGPT.
             app.settings["helperPref"] = "claude";
             string fullSummary = FullSummaryContext("<script>DROP-ME</script><p>BEGIN</p>" + new string('x', 70000) + "<details><p>HIDDEN-END $x^2$</p></details><svg><text>DIAGRAM</text></svg>");
             int before = requests.Count;
@@ -236,12 +236,20 @@ partial class HitStudent
             check("summary Gemini ignores general provider order and receives complete context plus selected image", !r.Error && requests.Count == before + 1 && requests.Last().Contains("HIDDEN-END") && requests.Last().Contains("DIAGRAM") && requests.Last().Contains("inline_data") && !requests.Last().Contains("DROP-ME"));
             geminiStatus = 429; before = requests.Count;
             r = Run(() => app.SummaryGemini(fullSummary, msgs, null));
-            check("summary Gemini quota never falls back to another provider", r.Error && r.Provider == "gemini" && requests.Count == before + 1 && requests.Last().Contains("generateContent"));
-            geminiStatus = 200;
-            var savedGeminiKey = app.settings["geminiKey"]; app.settings.Remove("geminiKey"); before = requests.Count;
+            check("a Gemini limit in the summary chat passes the conversation to ChatGPT", !r.Error && r.Provider == "openai" && requests.Last().Contains("/v1/chat/completions") && requests.Last().Contains("HIDDEN-END"));
+            geminiStatus = 200; before = requests.Count;
+            r = Run(() => app.SummaryGemini(fullSummary, msgs, null, 350));
+            check("the summary chat caps the answer at 350 tokens", !r.Error && requests.Count == before + 1 && requests.Last().Contains("\"maxOutputTokens\":350"));
+            app.settings["helperPref"] = "auto"; app.settings["geminiModel"] = "missing-model"; before = requests.Count;
+            r = Run(() => app.HelperAsk("system text", msgs));
+            check("a Gemini model that no longer exists moves to gemini-flash-latest", !r.Error && requests.Count == before + 2 && requests.Last().Contains("/models/gemini-flash-latest:"));
+            app.settings.Remove("geminiModel");
+            var savedGeminiKey = app.settings["geminiKey"]; var savedOpenAiKey = app.settings["openaiKey"];
+            app.settings.Remove("geminiKey"); app.settings.Remove("openaiKey"); before = requests.Count;
             r = Run(() => app.SummaryGemini(fullSummary, msgs, null));
-            check("missing Gemini sends no requests to any provider", r.Error && requests.Count == before);
-            app.settings["geminiKey"] = savedGeminiKey; app.settings["helperPref"] = "auto";
+            check("nothing connected sends no requests to any provider", r.Error && requests.Count == before);
+            app.settings["geminiKey"] = savedGeminiKey; app.settings["openaiKey"] = savedOpenAiKey; app.settings["helperPref"] = "auto";
+            check("a pasted question loses its markup and extra spaces, not its math", CleanChatText("  מה  זה <span style=\"x\">אינטגרל</span>?\n\n\n\nאם a<b and c>d  ") == "מה זה אינטגרל?\n\nאם a<b and c>d");
 
             // A lecture question is answered from the digests and the summary the app already has.
             string course = "helper-course";

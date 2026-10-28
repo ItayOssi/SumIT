@@ -6,7 +6,7 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.23',
+  Version: '1.0.24',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
   DiscordInvite: 'https://discord.gg/f8Duw6RBMr',   // the degree's server; the student can change it in settings
