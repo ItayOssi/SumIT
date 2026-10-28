@@ -34,9 +34,10 @@ jobs:
         working-directory: macos
         run: npm ci
 
+      # Without CI: the sign-in test checks that the app answers the CLI's prompt, as on a student's Mac.
       - name: Checks and offline tests
         working-directory: macos
-        run: npm test
+        run: env -u CI npm test
 
       - name: Build DMG and ZIP
         working-directory: macos
