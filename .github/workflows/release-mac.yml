@@ -1,15 +1,12 @@
 # Builds SumIT for macOS (Apple Silicon) on a GitHub Mac and publishes the release.
-# Push a tag v<version>-mac whose version matches macos/package.json; the notes come from docs/release-<version>.md.
+# Push a tag v<version>-mac whose version matches macos/package.json, or run it by hand on a branch: then the tag
+# v<version>-mac is created on that commit. The notes come from docs/release-<version>.md.
 name: Release macOS
 
 on:
   push:
     tags: ['v*-mac']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing tag to release, e.g. v1.0.25-mac'
-        required: true
 
 permissions:
   contents: write
@@ -17,12 +14,8 @@ permissions:
 jobs:
   release:
     runs-on: macos-14
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -31,9 +24,11 @@ jobs:
       - name: Check the tag matches the version
         run: |
           VERSION=$(node -p "require('./macos/package.json').version")
-          test "$TAG" = "v$VERSION-mac" || { echo "Tag $TAG does not match version $VERSION"; exit 1; }
+          TAG="v$VERSION-mac"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then echo "Tag $GITHUB_REF_NAME does not match version $VERSION"; exit 1; fi
           test -f "docs/release-$VERSION.md" || { echo "docs/release-$VERSION.md is missing"; exit 1; }
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Install
         working-directory: macos
@@ -69,4 +64,4 @@ jobs:
           } > notes.md
           gh release create "$TAG" \
             "macos/dist/SumIT-$VERSION-arm64.dmg" "macos/dist/SumIT-$VERSION-arm64.zip" \
-            --repo "$GITHUB_REPOSITORY" --title "SumIT $VERSION ל-macOS (Apple Silicon)" --notes-file notes.md --verify-tag
+            --repo "$GITHUB_REPOSITORY" --title "SumIT $VERSION ל-macOS (Apple Silicon)" --notes-file notes.md --target "$GITHUB_SHA"
