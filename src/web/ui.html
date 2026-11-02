@@ -66,6 +66,10 @@
         </div>
         <div class="stats" id="stats"></div>
         <div class="home-grid">
+          <div class="card full" id="todayCard">
+            <div class="card-head"><span class="ic assign" data-ic="check"></span><h2>מה לעשות היום</h2><span class="chip" id="todayFree"></span><button class="small ghost" id="todayQuick">יש לי רק 30 דקות</button><button class="small ghost" id="todaySetup" aria-label="שעות לימוד ואנרגיה" title="שעות לימוד ואנרגיה"><span data-ic="settings"></span></button></div>
+            <div id="todayList"></div>
+          </div>
           <div class="card">
             <div class="card-head"><span class="ic zoom" data-ic="calendar"></span><h2>מה מחכה לי</h2><span class="chip" id="deadlineCount"></span></div>
             <div id="deadlines"></div>
@@ -249,6 +253,7 @@
         <div id="cardsProgress" hidden><small id="cardsStep" role="status" aria-live="polite"></small><div class="bar"><i id="cardsBar"></i></div><small class="muted">שלושה שלבים ב-Gemini: חילוץ, כתיבה ובדיקה. בערך חצי דקה, ובפעם הבאה הכרטיסים נפתחים מיד.</small></div>
         <div id="cardsError" hidden role="alert"></div>
         <button id="cardsCard" hidden aria-live="polite"><small id="cardsTag"></small><span id="cardsSide"></span><div id="cardsText"></div><small class="muted" id="cardsHint"></small></button>
+        <div class="row" id="cardsRate" hidden><button class="soft small" data-g="again">לא ידעתי</button><button class="soft small" data-g="hard">בערך</button><button class="primary small" data-g="good">ידעתי</button></div>
         <div class="row" id="cardsNav" hidden><button id="cardsPrev" class="soft small">הקודם</button><b class="grow" id="cardsCount"></b><button id="cardsNext" class="soft small">הבא</button></div>
       </aside>
       </div>
@@ -397,9 +402,11 @@
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <script src="vendor/katex/katex.min.js"></script>
 <script src="extras.js"></script>
+<script src="planner.js"></script>
 <script src="app.js"></script>
 <script src="summary-chat.js"></script>
 <script src="flashcards.js"></script>
+<script src="planner-ui.js"></script>
 <script src="support-ui.js"></script>
 </body>
 </html>

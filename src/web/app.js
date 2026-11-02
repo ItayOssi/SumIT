@@ -569,7 +569,7 @@ function thisSemester(courses) {
   return cur.some(mine) ? cur.filter(mine) : cur;
 }
 function renderHome() {
-  renderStats(); renderNextUp();
+  renderStats(); renderNextUp(); if (typeof renderToday === 'function') renderToday();
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
   $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
@@ -1800,6 +1800,7 @@ function onMessage(m) {
     }
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
+      if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
@@ -1986,6 +1987,7 @@ function onMessage(m) {
     }
     case 'summaryChatProvider': $('summaryChatStatus').textContent = m.text; break;
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
+    case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
@@ -2020,7 +2022,7 @@ function onMessage(m) {
     }
     case 'academicCalendar': S.academic = m.data; if (S.view === 'course') renderLectures(); break;
     case 'siteNav': { const onPortal = /webrashim\.hit\.ac\.il/i.test(m.url || ''); if (document.getElementById('portalHint').hidden === onPortal) { $('portalHint').hidden = !onPortal; requestAnimationFrame(() => placeSite(true)); } } $('siteUrl').textContent = m.url || ''; $('siteBack').disabled = !m.canBack; $('siteForward').disabled = !m.canForward; break;
-    case 'timetable': S.timetable = m.data; renderTimetable(); break;
+    case 'timetable': S.timetable = m.data; renderTimetable(); if (typeof renderToday === 'function') renderToday(); break;
     case 'prepStatus':
       S.prep = m.busy ? m : null; renderBanners();
       if (!m.busy && m.total) toast(`הקורסים שבחרת מוכנים במחשב (${m.total})`);

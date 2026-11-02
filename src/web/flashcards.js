@@ -33,6 +33,7 @@ function renderFlashcards() {
   $('cardsRedo').disabled = !!cardsJob;
   const show = !busy && set && set.cards.length;
   $('cardsCard').hidden = $('cardsNav').hidden = !show;
+  $('cardsRate').hidden = !show || !set.back;
   if (!show) return;
   const c = set.cards[set.i];
   $('cardsCard').classList.toggle('back', set.back);
@@ -65,6 +66,13 @@ $('viewerCards').onclick = () => { $('flashcards').dataset.error = ''; $('flashc
 $('cardsClose').onclick = () => { $('flashcards').hidden = true; requestAnimationFrame(() => placeSite(false)); };
 $('cardsRedo').onclick = () => { $('flashcards').dataset.error = ''; openFlashcards(true); };
 $('cardsCard').onclick = () => { const set = cardSet(); if (set) { set.back = !set.back; renderFlashcards(); } };
+// Rating a card sets when it comes back (reviews.js on the host). The next card follows.
+document.querySelectorAll('#cardsRate [data-g]').forEach(b => b.onclick = () => {
+  const set = cardSet(); if (!set || !set.back || !S.course) return;
+  const c = set.cards[set.i];
+  if (c.key) send({ type: 'rateCard', course: S.course.name, path: S.viewer.path, key: c.key, grade: b.dataset.g });
+  if (set.i < set.cards.length - 1) moveCard(1); else { set.back = false; renderFlashcards(); toast('סיימת את כל הכרטיסים בסיכום'); }
+});
 $('cardsNext').onclick = () => moveCard(1);
 $('cardsPrev').onclick = () => moveCard(-1);
 $('flashcards').addEventListener('keydown', (e) => {

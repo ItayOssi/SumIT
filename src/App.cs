@@ -356,6 +356,38 @@ partial class HitStudent : Form
     string Provider { get { return claudeLoggedIn ? "claude" : ChatGptAccountReady() ? "openai" : GeminiAccountReady() ? "gemini" : "claude"; } }
 
     // The student's own to-do list: a title, an optional course and date, done or not. Only these fields are kept.
+    // The student's study hours and energy for "what to do today": a study window, the energy of four parts of the day, and
+    // fixed weekly blocks (work, sleep, training). Only these fields are kept.
+    internal static Dictionary<string, object> CleanPlanner(Dictionary<string, object> o)
+    {
+        o = o ?? new Dictionary<string, object>();
+        Func<string, string, string> time = (v, d) =>
+        {
+            var t = System.Text.RegularExpressions.Regex.Match((v ?? "").Trim(), @"^([01]?\d|2[0-3]):([0-5]\d)$");
+            return t.Success ? int.Parse(t.Groups[1].Value).ToString("00") + ":" + t.Groups[2].Value : d;
+        };
+        Func<string, string, string> level = (v, d) => (v == "high" || v == "medium" || v == "low") ? v : d;
+        var e = Dict(o, "energy") ?? new Dictionary<string, object>();
+        var days = new[] { "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת" };
+        var blocks = new System.Collections.ArrayList();
+        var rawBlocks = o.ContainsKey("blocks") ? o["blocks"] as System.Collections.ArrayList : null;
+        if (rawBlocks != null)
+            foreach (var b in rawBlocks.OfType<Dictionary<string, object>>().Take(40))
+            {
+                string from = time(Str(b, "from"), ""), to = time(Str(b, "to"), "");
+                if (!days.Contains(Str(b, "day")) || from.Length == 0 || to.Length == 0 || string.CompareOrdinal(to, from) <= 0) continue;
+                blocks.Add(new Dictionary<string, object> { { "day", Str(b, "day") }, { "from", from }, { "to", to }, { "name", Trunc(Str(b, "name").Trim(), 60) } });
+            }
+        string studyFrom = time(Str(o, "studyFrom"), "08:00"), studyTo = time(Str(o, "studyTo"), "22:00");
+        if (string.CompareOrdinal(studyTo, studyFrom) <= 0) { studyFrom = "08:00"; studyTo = "22:00"; }
+        return new Dictionary<string, object>
+        {
+            { "setup", Bool(o, "setup") }, { "studyFrom", studyFrom }, { "studyTo", studyTo },
+            { "energy", new Dictionary<string, object> { { "morning", level(Str(e, "morning"), "high") }, { "noon", level(Str(e, "noon"), "medium") }, { "evening", level(Str(e, "evening"), "medium") }, { "night", level(Str(e, "night"), "low") } } },
+            { "blocks", blocks }
+        };
+    }
+
     internal static System.Collections.ArrayList CleanTasks(System.Collections.ArrayList raw)
     {
         var list = new System.Collections.ArrayList();
@@ -377,6 +409,7 @@ partial class HitStudent : Form
         {
             snapSeen = Bool(settings, "snapSeen"), hitOneDrive = HitOneDrive(), studyInHitOneDrive = HitOneDrive().Length > 0 && StudyRoot.StartsWith(HitOneDrive().TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase),
             tasks = settings.ContainsKey("tasks") ? settings["tasks"] : new System.Collections.ArrayList(),
+            planner = settings.ContainsKey("planner") ? settings["planner"] : null,
             type = "settings", studyRoot = StudyRoot, recordingsDir = RecordingsDir, notabilityDir = NotabilityDir,
             aiProvider = Provider, hasGeminiKey = Str(settings, "geminiKey").Length > 0, hasOpenAiKey = Str(settings, "openaiKey").Length > 0,
             helperPref = Str(settings, "helperPref").Length > 0 ? Str(settings, "helperPref") : "auto", displayName = Str(settings, "displayName"), bio = Str(settings, "bio"),
@@ -502,6 +535,10 @@ partial class HitStudent : Form
             case "setProfile":
                 settings["displayName"] = Trunc(Str(m, "name").Trim(), 40);
                 settings["bio"] = Trunc(Str(m, "bio").Trim(), 80);
+                SaveSettings(); SendSettings();
+                break;
+            case "savePlanner":
+                settings["planner"] = CleanPlanner(Dict(m, "planner"));
                 SaveSettings(); SendSettings();
                 break;
             case "saveTasks":

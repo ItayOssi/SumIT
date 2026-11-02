@@ -45,6 +45,12 @@
           emit({ type: 'job', id: 2, name: 'שיעור 1', state: 'done', status: 'הווידאו והתמלול נשמרו', progress: 100, hasVideo: true, hasTranscript: true }, 1450);
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
+        case 'getReviewQueue': emit({ type: 'reviewQueue', count: 14, due: 6, fresh: 8, overdueDays: 2, courses: { 'מבני נתונים': 6 } }, 400); break;
+        case 'startReview': emit({ type: 'reviewSession', cards: [
+          { key: 'a1b2c3d4e5f6', front: 'מה הסיבוכיות של חיפוש בינארי במערך ממוין?', back: 'O(log n): בכל צעד חצי מהמערך נפסל.', tag: 'סיבוכיות', course: 'מבני נתונים', title: 'הרצאה 3', num: 3, path: '/x/3.html' },
+          { key: 'b1b2c3d4e5f6', front: 'הגדר: גבול של סדרה', back: 'לכל $\\varepsilon>0$ קיים $N$ כך שלכל $n>N$ מתקיים $|a_n-L|<\\varepsilon$.', tag: 'הגדרה', course: 'חשבון אינפיניטסימלי 2', title: 'הרצאה 5', num: 5, path: '/x/5.html' },
+          { key: 'c1b2c3d4e5f6', front: 'מתי מטריצה הפיכה?', back: 'כשהדטרמיננטה שלה שונה מאפס.', tag: '', course: 'אלגברה לינארית 2', title: 'הרצאה 2', num: 2, path: '/x/2.html' }] }, 200); break;
+        case 'rateCard': case 'savePlanner': break;
         case 'openCourse': {
           const c = courses.find(x => x.id === m.id);
           emit({ type: 'course', id: m.id, name: c.name, folder: 'D:\\HIT\\Courses\\' + c.name, sections, lecturer: 'ד"ר כהן', lecturerGuess: [],

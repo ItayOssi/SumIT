@@ -205,6 +205,9 @@ async function run() {
     // 6. Helper HTTP tests
     await runHelperTests(app, root, check);
 
+    // 6b. Spaced repetition of the flashcards, and "what to do today"
+    await runReviewAndPlannerTests(app, root, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -694,3 +697,105 @@ run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+async function runReviewAndPlannerTests(app, root, check) {
+  const T = '2026-11-10';
+  // The schedule: good goes 1, 3, 7 days, then grows by the ease; again starts over; hard grows slowly.
+  let st = app.ReviewNextState(undefined, 'good', T);
+  check('a new card rated "good" comes back tomorrow', st.interval === 1 && st.due === '2026-11-11' && st.reps === 1);
+  st = app.ReviewNextState(st, 'good', '2026-11-11');
+  const s3 = st.interval;
+  st = app.ReviewNextState(st, 'good', '2026-11-14');
+  const s7 = st.interval;
+  st = app.ReviewNextState(st, 'good', '2026-11-21');
+  check('"good" repeated: 3 days, 7 days, then more than a week', s3 === 3 && s7 === 7 && st.interval > 7 && st.ease > 2.5);
+  st = app.ReviewNextState(st, 'again', '2026-12-10');
+  check('"again" starts over from tomorrow and counts the lapse', st.interval === 1 && st.reps === 0 && st.lapses === 1 && st.due === '2026-12-11' && st.ease === 2.5);
+  let hard = app.ReviewNextState({ interval: 10, ease: 1.35, reps: 4, lapses: 0 }, 'hard', T);
+  check('"hard" grows slowly and the ease never drops below 1.3', hard.interval === 12 && hard.ease === 1.3);
+  check('the schedule survives a damaged state', app.ReviewNextState({ interval: 'x', ease: 99, reps: -4 }, 'good', T).interval === 1);
+  check('dates cross a month end', app.ReviewAddDays('2026-11-30', 1) === '2026-12-01' && app.ReviewAddDays('2026-03-01', -1) === '2026-02-28');
+  check('a card keeps its key when only the spaces change', app.ReviewCardKey('מה זה  אינטגרל?') === app.ReviewCardKey(' מה זה אינטגרל? ') && app.ReviewCardKey('א') !== app.ReviewCardKey('ב'));
+
+  // The queue: two courses, one summary with 14 never-seen cards, one with a card due today and one for later.
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'review-courses');
+  const cardsOf = (n, p) => Array.from({ length: n }, (_, i) => ({ front: p + ' שאלה ' + i, back: p + ' תשובה ' + i, tag: 't' }));
+  const make = (course, num, cards, state) => {
+    app.SaveLecture(course, { num, title: 'הרצאה ' + num });
+    const page = app.StudyPagePath(course, num);
+    mkdirp(path.dirname(page)); writeText(page, '<html></html>');
+    writeText(app.FlashcardsFile(page), JSON.stringify({ summaryMtime: 1, cards }));
+    if (state) writeText(app.ReviewsFile(page), JSON.stringify(state));
+    return page;
+  };
+  const many = make('קורס-א', 1, cardsOf(14, 'א'));
+  const dueCards = cardsOf(2, 'ב');
+  const later = make('קורס-ב', 2, dueCards, {
+    [app.ReviewCardKey(dueCards[0].front)]: { interval: 3, ease: 2.5, reps: 2, lapses: 0, due: '2026-11-08', last: '2026-11-05' },
+    [app.ReviewCardKey(dueCards[1].front)]: { interval: 7, ease: 2.5, reps: 3, lapses: 0, due: '2026-11-20', last: '2026-11-13' },
+  });
+  const sum = app.ReviewSummary(T);
+  check('review counts: one due, 14 new (10 may join), the later one waits', sum.due === 1 && sum.fresh === 14 && sum.count === 11 && sum.overdueDays === 2 && sum.courses['קורס-ב'] === 1);
+  const cards = app.ReviewCards(T);
+  check('a review starts with what is due, then at most 10 new cards', cards.length === 11 && cards[0].course === 'קורס-ב' && cards.slice(1).every(c => c.course === 'קורס-א'));
+
+  const sent = [];
+  const realSend = app.Send, realToast = app.Toast;
+  app.Send = (m) => sent.push(m); app.Toast = () => { };
+  app.RateCard({ course: 'קורס-ב', path: later, key: app.ReviewCardKey(dueCards[0].front), grade: 'good' });
+  const after = app.LoadReviews(later)[app.ReviewCardKey(dueCards[0].front)];
+  check('rating a card saves its schedule next to the summary and refreshes the count', after.reps === 3 && after.interval === 7 && after.due === app.ReviewAddDays(app.ReviewToday(), 7) && sent.some(m => m.type === 'reviewQueue'));
+  const before = JSON.stringify(app.LoadReviews(many));
+  app.RateCard({ course: 'קורס-א', path: many, key: 'not-a-key', grade: 'good' });
+  app.RateCard({ course: 'קורס-א', path: many, key: app.ReviewCardKey('x'), grade: 'perfect' });
+  app.RateCard({ course: 'קורס-א', path: path.join(root, 'outside.html'), key: app.ReviewCardKey('x'), grade: 'good' });
+  check('a bad key, a bad grade or a path outside the course is refused', JSON.stringify(app.LoadReviews(many)) === before && !fileExists(path.join(root, 'חזרות.json')));
+  // Cards sent to the page carry their key, so the page can rate them.
+  const cachedPage = make('קורס-ג', 1, cardsOf(2, 'ג'));
+  writeText(app.FlashcardsFile(cachedPage), JSON.stringify({ summaryMtime: fs.statSync(cachedPage).mtimeMs, cards: cardsOf(2, 'ג') }));
+  sent.length = 0;
+  await app.MakeFlashcards({ requestId: 'r1', course: 'קורס-ג', path: cachedPage });
+  const result = sent.find(m => m.type === 'flashcardsResult');
+  check('cards sent to the page carry the key that the review schedule uses', result && !result.error && result.cards.length === 2 && result.cards.every(c => c.key === app.ReviewCardKey(c.front)));
+  app.Send = realSend; app.Toast = realToast;
+  app.settings.studyRoot = saved;
+
+  // "What to do today".
+  const P = require('../../src/web/planner.js');
+  const day = (h, m) => new Date(2026, 10, 10, h, m);   // Tuesday
+  const tt = { classes: [{ day: 'שלישי', start: '10:00', end: '12:00', course: 'אלגברה' }], exams: [{ course: 'אלגברה', date: '2026-11-20', time: '09:00' }] };
+  const slots = P.freeSlots(day(8, 0), { studyFrom: '08:00', studyTo: '14:00' }, tt);
+  check('free time is the study window without the class, from five minutes from now', JSON.stringify(slots.map(s => [P.fmt(s.start), P.fmt(s.end), s.energy])) === '[["08:05","10:00","high"],["12:00","14:00","medium"]]');
+  check('a free window is split where the part of the day changes', JSON.stringify(P.freeSlots(day(10, 0), { studyFrom: '11:00', studyTo: '13:00' }, null).map(s => [P.fmt(s.start), P.fmt(s.end), s.energy])) === '[["11:00","12:00","high"],["12:00","13:00","medium"]]');
+  check('a block of the student (work) takes its hours too', P.freeSlots(day(8, 0), { studyFrom: '08:00', studyTo: '14:00', blocks: [{ day: 'שלישי', from: '12:00', to: '13:30', name: 'עבודה' }] }, tt).every(s => s.end <= 12 * 60 || s.start >= 13 * 60 + 30));
+  check('after the study window there is no free time', P.freeSlots(day(23, 0), {}, tt).length === 0);
+  const events = [
+    { name: 'תרגיל 3', course: 'אלגברה', when: new Date(2026, 10, 10, 23, 59).getTime() / 1000, overdue: false },
+    { name: 'דוח מעבדה', course: 'פיזיקה', when: new Date(2026, 10, 8, 23, 59).getTime() / 1000, overdue: true },
+    { name: 'הגשה רחוקה', course: 'מבוא', when: new Date(2026, 10, 30, 23, 59).getTime() / 1000, overdue: false },
+  ];
+  const ctx = { now: day(8, 0), events, timetable: tt, review: { count: 20, overdueDays: 2 }, planner: { studyFrom: '08:00', studyTo: '20:00', energy: { morning: 'high', noon: 'low', evening: 'medium', night: 'low' } } };
+  const cand = P.candidates(ctx);
+  check('the overdue deadline comes first, then the one due today, a far one is left out', cand[0].title === 'דוח מעבדה' && cand[1].title === 'תרגיל 3' && !cand.some(i => i.title === 'הגשה רחוקה'));
+  check('an exam in 10 days and a pile of reviews are candidates, the exam outweighs the reviews', cand.some(i => i.kind === 'exam' && i.title.includes('אלגברה')) && cand.find(i => i.kind === 'exam').score > cand.find(i => i.kind === 'review').score);
+  const plan = P.planDay(ctx);
+  const heavy = plan.items.filter(i => i.heavy), light = plan.items.filter(i => !i.heavy);
+  check('the plan fits the free time and never fills more than 80% of it', plan.items.length >= 3 && plan.items.reduce((n, i) => n + i.minutes, 0) <= plan.freeMinutes * 0.8);
+  check('heavy work is placed in high-energy hours, the light review in low ones', heavy.length > 0 && heavy[0].energy === 'high' && light.every(i => i.energy === 'low' || i.energy === 'medium'));
+  check('nothing overlaps and everything is after now', plan.items.every((i, k) => i.start >= 8 * 60 + 5 && (k === 0 || i.start >= plan.items[k - 1].end)));
+  const quick = P.planDay(ctx, { quick: 30 });
+  check('"only 30 minutes" takes the most important things that fit, without times', quick.items.length >= 1 && quick.items.reduce((n, i) => n + i.minutes, 0) <= 30 && quick.items[0].start === null);
+  const late = P.planDay(Object.assign({}, ctx, { now: day(23, 0) }));
+  check('when the day is over the top items are listed without times, not hidden', late.noSlots === true && late.items.length > 0);
+  check('nothing to do gives an empty plan', P.planDay({ now: day(9, 0), events: [], timetable: null, review: null, planner: {} }).items.length === 0);
+  // What the host keeps of the student's hours: only valid fields, and defaults for the rest.
+  const clean = app.CleanPlanner({ setup: true, studyFrom: '9:30', studyTo: '23:15', energy: { morning: 'low', noon: 'huge' }, blocks: [
+    { day: 'שלישי', from: '13:00', to: '17:00', name: 'עבודה'.repeat(40) }, { day: 'שלישי', from: '17:00', to: '13:00', name: 'הפוך' }, { day: 'x', from: '01:00', to: '02:00' }, 'junk', { day: 'שני', from: '25:00', to: '26:00' }], extra: 'drop-me' });
+  check('the host keeps valid hours and block, drops a reversed, unknown or broken block and extra fields',
+    clean.setup === true && clean.studyFrom === '09:30' && clean.studyTo === '23:15' && clean.energy.morning === 'low' && clean.energy.noon === 'medium'
+      && clean.blocks.length === 1 && clean.blocks[0].name.length < 70 && !('extra' in clean));
+  check('a reversed study window goes back to the defaults, and nothing at all is valid too', app.CleanPlanner({ studyFrom: '20:00', studyTo: '08:00' }).studyFrom === '08:00' && app.CleanPlanner(null).studyTo === '22:00' && app.CleanPlanner([]).setup === false);
+  check('broken settings fall back to the defaults', P.settings({ studyFrom: 'x', studyTo: '03:00', energy: { morning: 'huge' }, blocks: [{ day: 'x' }] }).from === 8 * 60);
+}
+

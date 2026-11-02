@@ -37,7 +37,9 @@ module.exports = {
     async MakeFlashcards(m) {
       const requestId = Str(m, 'requestId');
       let fullPath = Str(m, 'path');
-      const done = (extra) => this.Send(Object.assign({ type: 'flashcardsResult', requestId, path: fullPath }, extra));
+      // Each card carries its key, so the UI can rate it for the spaced repetition (reviews.js).
+      const done = (extra) => this.Send(Object.assign({ type: 'flashcardsResult', requestId, path: fullPath }, extra,
+        extra.cards ? { cards: extra.cards.map(c => Object.assign({ key: this.ReviewCardKey(c.front) }, c)) } : {}));
       if (this.flashcardsBusy) { done({ error: true, text: 'כבר מכין כרטיסים. המתן שזה יסתיים.' }); return; }
       this.flashcardsBusy = true;
       try {

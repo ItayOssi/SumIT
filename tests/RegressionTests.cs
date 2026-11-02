@@ -95,6 +95,13 @@ partial class HitStudent
             }
             int unpacked = app.UnpackZip(zpath, zdir);
             check("zip opened safely and original archive is preserved", unpacked == 2 && File.Exists(Path.Combine(zdir, "2023_exam a.pdf")) && File.Exists(Path.Combine(zdir, "2023_solution a.pdf")) && File.Exists(zpath) && !File.Exists(Path.Combine(zdir, "evil.exe")) && !File.Exists(Path.Combine(zdir, "run.bat")));
+            // What the host keeps of the student's study hours for "what to do today".
+            var rawPlanner = app.json.Deserialize<Dictionary<string, object>>("{\"setup\":true,\"studyFrom\":\"9:30\",\"studyTo\":\"23:15\",\"energy\":{\"morning\":\"low\",\"noon\":\"huge\"},\"blocks\":[{\"day\":\"שלישי\",\"from\":\"13:00\",\"to\":\"17:00\",\"name\":\"עבודה\"},{\"day\":\"שלישי\",\"from\":\"17:00\",\"to\":\"13:00\"},{\"day\":\"x\",\"from\":\"01:00\",\"to\":\"02:00\"},{\"day\":\"שני\",\"from\":\"25:00\",\"to\":\"26:00\"}],\"extra\":\"drop-me\"}");
+            var cleanPlanner = HitStudent.CleanPlanner(rawPlanner);
+            var cleanEnergy = (Dictionary<string, object>)cleanPlanner["energy"];
+            check("the host keeps valid hours and block, drops a reversed, unknown or broken block and extra fields", Bool(cleanPlanner, "setup") && Str(cleanPlanner, "studyFrom") == "09:30" && Str(cleanPlanner, "studyTo") == "23:15" && Str(cleanEnergy, "morning") == "low" && Str(cleanEnergy, "noon") == "medium" && ((System.Collections.ArrayList)cleanPlanner["blocks"]).Count == 1 && !cleanPlanner.ContainsKey("extra"));
+            var reversed = HitStudent.CleanPlanner(app.json.Deserialize<Dictionary<string, object>>("{\"studyFrom\":\"20:00\",\"studyTo\":\"08:00\"}"));
+            check("a reversed study window goes back to the defaults, and nothing at all is valid too", Str(reversed, "studyFrom") == "08:00" && Str(HitStudent.CleanPlanner(null), "studyTo") == "22:00");
             string sdir = Path.Combine(root, "zip-syllabus"); Directory.CreateDirectory(sdir);
             string spath = Path.Combine(sdir, "syllabus.zip");
             using (var za = System.IO.Compression.ZipFile.Open(spath, System.IO.Compression.ZipArchiveMode.Create))

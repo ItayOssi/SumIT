@@ -388,6 +388,30 @@ class Host {
     return list;
   }
 
+  // The student's study hours and energy for "what to do today": a study window, the energy of four parts of the day, and
+  // fixed weekly blocks (work, sleep, training). Only these fields are kept.
+  CleanPlanner(raw) {
+    const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const time = (v, d) => { const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(Str({ v }, 'v').trim()); return m ? String(+m[1]).padStart(2, '0') + ':' + m[2] : d; };
+    const level = (v) => (['high', 'medium', 'low'].includes(v) ? v : null);
+    const e = Dict(o, 'energy') || {};
+    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const blocks = [];
+    for (const b of (Array.isArray(o.blocks) ? o.blocks : []).slice(0, 40)) {
+      if (!b || typeof b !== 'object') continue;
+      const from = time(b.from, ''), to = time(b.to, '');
+      if (!days.includes(Str(b, 'day')) || !from || !to || to <= from) continue;
+      blocks.push({ day: Str(b, 'day'), from, to, name: Trunc(Str(b, 'name').trim(), 60) });
+    }
+    let studyFrom = time(o.studyFrom, '08:00'), studyTo = time(o.studyTo, '22:00');
+    if (studyTo <= studyFrom) { studyFrom = '08:00'; studyTo = '22:00'; }
+    return {
+      setup: Bool(o, 'setup'), studyFrom, studyTo,
+      energy: { morning: level(e.morning) || 'high', noon: level(e.noon) || 'medium', evening: level(e.evening) || 'medium', night: level(e.night) || 'low' },
+      blocks,
+    };
+  }
+
   SendSettings() {
     const hitOd = this.HitOneDrive();
     const outdated = this.OutdatedSummaries ? this.OutdatedSummaries().length : 0;
@@ -396,6 +420,7 @@ class Host {
       outdatedSummaries: outdated,
       studyInHitOneDrive: hitOd.length > 0 && this.StudyRoot.toLowerCase().startsWith(hitOd.replace(/\/+$/, '').toLowerCase() + '/'),
       tasks: Array.isArray(this.settings.tasks) ? this.settings.tasks : [],
+      planner: this.settings.planner && typeof this.settings.planner === 'object' ? this.settings.planner : null,
       type: 'settings', studyRoot: this.StudyRoot, recordingsDir: this.RecordingsDir, notabilityDir: this.NotabilityDir,
       aiProvider: this.Provider, hasGeminiKey: Str(this.settings, 'geminiKey').length > 0, hasOpenAiKey: Str(this.settings, 'openaiKey').length > 0,
       helperPref: Str(this.settings, 'helperPref').length > 0 ? Str(this.settings, 'helperPref') : 'auto', displayName: Str(this.settings, 'displayName'), bio: Str(this.settings, 'bio'),
@@ -525,6 +550,10 @@ class Host {
         this.settings.bio = Trunc(Str(m, 'bio').trim(), 80);
         this.SaveSettings(); this.SendSettings();
         break;
+      case 'savePlanner':
+        this.settings.planner = this.CleanPlanner(Dict(m, 'planner'));
+        this.SaveSettings(); this.SendSettings();
+        break;
       case 'saveTasks':
         this.settings.tasks = this.CleanTasks(Arr(m, 'tasks'));
         this.SaveSettings(); this.SendSettings();
@@ -632,6 +661,9 @@ class Host {
       case 'selectSummary': this.SelectSummary(m); break;
       case 'summaryChat': this.AskSummary(m); break;
       case 'flashcards': this.MakeFlashcards(m); break;
+      case 'getReviewQueue': this.SendReviewSummary(); break;
+      case 'startReview': this.StartReview(); break;
+      case 'rateCard': this.RateCard(m); break;
       case 'sendDeveloperLogs': this.SendDeveloperLogs(); break;
       case 'exportDiagnostics': this.ExportDiagnostics(); break;
       case 'importSharedSummary': this.PickSharedSummary(m); break;
@@ -1052,7 +1084,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };
