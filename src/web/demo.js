@@ -56,6 +56,12 @@
           emit({ type: 'job', id: 2, name: 'שיעור 1', state: 'done', status: 'הווידאו והתמלול נשמרו', progress: 100, hasVideo: true, hasTranscript: true }, 1450);
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
+        case 'coachPing': emit({ type: 'coachReady' }, 300); break;
+        case 'stuckHelp': emit({ type: 'stuckResult', requestId: m.requestId, source: 'ai', steps: [
+          { title: 'כתוב על דף שלושה דברים שאתה זוכר מהקורס "' + m.course + '", בלי להסתכל בשום דבר', minutes: 3, kind: 'start', lecture: null, why: 'מתחילים משליפה מהזיכרון, וזה גם מראה מה כבר יודעים.' },
+          { title: 'נסה את שיעורי הבית של הרצאה 5 לפני שאתה מסתכל בפתרון המודרך', minutes: 25, kind: 'practice', lecture: 5, why: 'ההגשה בעוד יומיים, וניסיון לפתור מחזק זיכרון.' },
+          { title: 'חזור על 12 כרטיסי זיכרון של הקורס', minutes: 5, kind: 'cards', lecture: null, why: 'חזרה קצרה מונעת שכחה.' },
+          { title: 'קבע מתי אתה חוזר לזה מחר, ורשום את זה', minutes: 3, kind: 'plan', lecture: null, why: 'כשקובעים מתי, יותר סיכוי שעושים.' }] }, 1300); break;
         case 'getCalendars': case 'refreshCalendars': case 'addCalendar': emit({ type: 'calendars', list: [demoCalendar()] }, 350); if (m.type !== 'getCalendars') emit({ type: 'calendarStatus', busy: false, text: m.type === 'addCalendar' ? 'היומן נוסף' : '', error: false }, 700); break;
         case 'importCalendarFile': case 'removeCalendar': break;
         case 'getReviewQueue': emit({ type: 'reviewQueue', count: 14, due: 6, fresh: 8, overdueDays: 2, courses: { 'מבני נתונים': 6 } }, 400); break;

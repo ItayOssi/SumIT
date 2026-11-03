@@ -99,11 +99,13 @@
   function candidates(ctx) {
     const now = ctx.now || new Date();
     const items = [];
+    // A step made by "I'm stuck" knows its length and kind: a card review or a first small step is light work, the rest is heavy.
+    const light = (e) => !!e.manual && ['cards', 'start', 'recall', 'plan'].includes(e.kind);
     for (const e of ctx.events || []) {
-      if (!e.when) { if (e.manual) items.push({ kind: 'deadline', title: e.name, course: e.course === 'מטלה אישית' ? '' : e.course, days: null, minutes: 45, heavy: true, ref: e }); continue; }
+      if (!e.when) { if (e.manual) items.push({ kind: 'deadline', title: e.name, course: e.course === 'מטלה אישית' ? '' : e.course, days: null, minutes: e.minutes || 45, heavy: !light(e), ref: e }); continue; }
       const days = dayDiff(new Date(e.when * 1000), now);
       if (days > 7) continue;
-      items.push({ kind: 'deadline', title: e.name, course: e.course === 'מטלה אישית' ? '' : e.course, days: e.overdue ? Math.min(-1, days) : days, minutes: 60, heavy: true, ref: e });
+      items.push({ kind: 'deadline', title: e.name, course: e.course === 'מטלה אישית' ? '' : e.course, days: e.overdue ? Math.min(-1, days) : days, minutes: e.minutes || 60, heavy: !light(e), ref: e });
     }
     const seen = new Set();
     for (const x of ((ctx.timetable && ctx.timetable.exams) || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)))) {

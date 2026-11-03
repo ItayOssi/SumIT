@@ -385,7 +385,13 @@ class Host {
       if (title.length === 0) continue;
       let due = Str(o, 'due');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) due = '';
-      list.push({ id: Trunc(Str(o, 'id'), 40), title, course: Trunc(Str(o, 'course'), 120), due, done: Bool(o, 'done') });
+      const task = { id: Trunc(Str(o, 'id'), 40), title, course: Trunc(Str(o, 'course'), 120), due, done: Bool(o, 'done') };
+      // Steps made by "I'm stuck" (coach.js) know how long they take, what they are, and which lecture they are about.
+      const minutes = Int(o, 'minutes'), lecture = Int(o, 'lecture');
+      if (minutes >= 2 && minutes <= 120) task.minutes = minutes;
+      if (['start', 'recall', 'read', 'practice', 'cards', 'chat', 'exam', 'plan'].includes(Str(o, 'kind'))) task.kind = Str(o, 'kind');
+      if (lecture >= 1 && lecture <= 200) task.lecture = lecture;
+      list.push(task);
     }
     return list;
   }
@@ -664,6 +670,8 @@ class Host {
       case 'summaryChat': this.AskSummary(m); break;
       case 'flashcards': this.MakeFlashcards(m); break;
       case 'pomodoroAlert': this.SchedulePomodoroAlert(m); break;
+      case 'coachPing': this.Send({ type: 'coachReady' }); break;
+      case 'stuckHelp': this.StuckHelp(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1092,7 +1100,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

@@ -409,7 +409,7 @@ function renderProviders(force) {
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 // Four numbers at the top of the home page.
 function homeEvents() {
-  const tasks=(S.tasks||[]).filter(t=>!t.done).map(t=>({name:t.title,course:t.course||'מטלה אישית',when:t.due?new Date(t.due+'T23:59:00').getTime()/1000:null,manual:true,id:t.id,overdue:t.due?new Date(t.due+'T23:59:00').getTime()<Date.now():false}));
+  const tasks=(S.tasks||[]).filter(t=>!t.done).map(t=>({name:t.title,course:t.course||'מטלה אישית',when:t.due?new Date(t.due+'T23:59:00').getTime()/1000:null,manual:true,id:t.id,minutes:t.minutes||0,kind:t.kind||'',lecture:t.lecture||0,overdue:t.due?new Date(t.due+'T23:59:00').getTime()<Date.now():false}));
   return [...(S.events||[]),...tasks].sort((a,b)=>(a.when||Infinity)-(b.when||Infinity));
 }
 function renderStats() {
@@ -1815,6 +1815,7 @@ function onMessage(m) {
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
       if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
       if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
+      if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
@@ -2003,6 +2004,7 @@ function onMessage(m) {
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
+    case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
@@ -2281,7 +2283,7 @@ function renderTasks(box) {
     const when = days == null ? '' : days < 0 ? 'עבר המועד' : days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';
     const el = h(`<div class="task${t.done ? ' done' : ''}"><label class="task-check"><input type="checkbox"${t.done ? ' checked' : ''}><span class="box"></span></label><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div>${when ? `<span class="chip${days < 0 && !t.done ? ' bad' : days <= 2 && !t.done ? ' warn' : ''}">${when}</span>` : ''}<button class="small ghost" title="מחק" data-del><span data-ic="x"></span></button></div>`);
     el.querySelector('b').textContent = t.title;
-    el.querySelector('small').textContent = [t.course, t.due ? t.due.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ');
+    el.querySelector('small').textContent = [t.course, t.due ? t.due.split('-').reverse().join('/') : '', t.minutes ? t.minutes + ' דק׳' : ''].filter(Boolean).join(' · ');
     el.querySelector('input').onchange = (e) => { t.done = e.target.checked; saveTasks(); };
     el.querySelector('[data-del]').onclick = () => { S.tasks = S.tasks.filter(x => x !== t); saveTasks(); };
     return el;

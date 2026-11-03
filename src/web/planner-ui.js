@@ -26,7 +26,9 @@ function renderToday() {
   }
   for (const it of plan.items) {
     const when = it.start != null ? `${Planner.fmt(it.start)}–${Planner.fmt(it.end)}` : minLabel(it.minutes);
-    const sub = [KIND_LABEL[it.kind], it.course, it.kind === 'deadline' ? daysLabel(it.days) : it.kind === 'exam' ? daysLabel(it.days) : '', it.start != null ? ENERGY_LABEL[it.energy] : ''].filter(Boolean).join(' · ');
+    // A step of "I'm stuck" says what it is (a small start, practice, cards), a deadline says "submission".
+    const label = it.ref && it.ref.manual && it.ref.kind && typeof COACH_KINDS !== 'undefined' ? COACH_KINDS[it.ref.kind] : KIND_LABEL[it.kind];
+    const sub = [label, it.course, it.kind === 'deadline' ? daysLabel(it.days) : it.kind === 'exam' ? daysLabel(it.days) : '', it.start != null ? ENERGY_LABEL[it.energy] : ''].filter(Boolean).join(' · ');
     const el = h(`<div class="today-row"><span dir="ltr" class="chip${it.days != null && it.days < 0 ? ' bad' : ''}"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div><button class="ghost small" data-pomo title="התחל סבב ריכוז עם המשימה הזאת" aria-label="התחל סבב ריכוז עם המשימה הזאת"><span data-ic="clock"></span></button><button class="soft small" data-start>התחל</button></div>`);
     el.querySelector('.chip').textContent = when;
     el.querySelector('b').textContent = it.title;
@@ -47,12 +49,21 @@ function renderToday() {
 function startToday(it) {
   if (it.kind === 'review') return startReview();
   if (it.kind === 'exam') { const c = (S.courses || []).find(x => x.name === it.course); if (c) { openCourse(c); setTab('exams'); } else show('courses'); return; }
-  if (it.ref && it.ref.manual) return show('tasks');
+  if (it.ref && it.ref.manual) return startTask(it.ref);
   if (it.ref && it.ref.url) openSite('moodle', it.ref.url); else show('tasks');
 }
 
 $('todayQuick').onclick = () => { S.todayQuick = S.todayQuick ? 0 : 30; renderToday(); };
 $('todaySetup').onclick = () => openPlannerSettings();
+
+// "Start" of a task of the student. A step that "I'm stuck" made opens what it is about; a first small step on paper starts the timer.
+function startTask(task) {
+  const course = (S.courses || []).find(c => c.name === task.course);
+  if (task.kind === 'cards') return startReview();
+  if (['start', 'recall', 'plan'].includes(task.kind)) { if (typeof startPomodoroFor === 'function') startPomodoroFor(task.name); return; }
+  if (course && task.kind) { openCourse(course); if (task.kind === 'exam') setTab('exams'); return; }
+  show('tasks');
+}
 
 // ---------- Settings: study hours, energy, fixed blocks ----------
 function openPlannerSettings() {

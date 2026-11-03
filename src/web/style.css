@@ -1045,3 +1045,22 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .cal-add input:focus, .summary-options input:not([type=checkbox]):not([type=radio]):focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 4px var(--accent-soft); }
 .summary-options .row.wrap label input { min-width: 0; }
 .pomo-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* "I'm stuck" (coach-ui.js). */
+.coach-dialog { width: min(600px, 94vw); }
+.coach-field { margin: 14px 0 4px; }
+.coach-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.coach-chip { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; transition: background .2s, border-color .2s, color .2s, transform .15s var(--ease); }
+.coach-chip:hover { border-color: var(--accent); }
+.coach-chip:active { transform: scale(.96); }
+.coach-chip[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 650; }
+.coach-busy { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; color: var(--accent); }
+.coach-busy svg { width: 20px; height: 20px; animation: spin 1s linear infinite; }
+.coach-step { display: flex; align-items: center; gap: 12px; padding: 12px 4px; animation: rise .4s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.coach-step + .coach-step { border-top: 1px solid var(--border); }
+.coach-step .grow { min-width: 0; }
+.coach-step .grow b { display: block; line-height: 1.5; }
+.coach-step .chip { flex: none; }
+.coach-actions { margin-top: 14px; gap: 8px; }
+.coach-actions button:disabled { opacity: .5; }
+.summary-options textarea { width: 100%; margin-top: 6px; }

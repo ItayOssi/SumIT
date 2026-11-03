@@ -214,6 +214,9 @@ async function run() {
     // 6d. Calendars (iCal): the reader, and the host that fetches them
     await runCalendarTests(app, root, check);
 
+    // 6e. "I'm stuck": the steps, from the data of the course
+    await runCoachTests(app, root, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -1019,5 +1022,99 @@ async function runCalendarTests(app, root, check) {
     server.close(); delete process.env.SUMIT_CALENDAR_TEST_HOST;
     app.Send = realSend; app.calendarsDir = savedDir; app.settings.calendars = savedCals;
   }
+}
+
+async function runCoachTests(app, root, check) {
+  const saved = { root: app.settings.studyRoot };
+  app.settings.studyRoot = path.join(root, 'coach-courses');
+  const T = '2026-11-10', course = 'אלגברה לינארית 2 - תשפז', other = 'פיזיקה סודית';
+  const page = (c, n) => { app.SaveLecture(c, { num: n, title: 'הרצאה ' + n + ' ' + c }); const f = app.StudyPagePath(c, n); mkdirp(path.dirname(f)); writeText(f, '<html></html>'); return f; };
+  // The course: lecture 1 (summary, a digest), lecture 2 (summary, 3 cards, 2 of them due), lecture 3 (no summary, homework due in two days).
+  const p1 = page(course, 1), p2 = page(course, 2);
+  app.SaveLecture(course, { num: 3, title: 'הרצאה 3', due: '2026-11-12' });
+  mkdirp(path.join(app.CourseDir(course), '.sumit', 'digests'));
+  writeText(path.join(app.CourseDir(course), '.sumit', 'digests', 'הרצאה 1.md'), 'מרחבים וקטוריים: בסיס וממד. '.repeat(30));
+  const cards = [{ front: 'מהו בסיס?', back: 'ב' }, { front: 'מהו ממד?', back: 'מ' }, { front: 'מהי תלות לינארית?', back: 'ת' }];
+  writeText(app.FlashcardsFile(p2), JSON.stringify({ summaryMtime: 1, cards }));
+  writeText(app.ReviewsFile(p2), JSON.stringify({ [app.ReviewCardKey(cards[0].front)]: { interval: 3, ease: 2.5, reps: 2, lapses: 0, due: '2026-11-09' }, [app.ReviewCardKey(cards[1].front)]: { interval: 7, ease: 2.5, reps: 3, lapses: 0, due: '2026-12-30' } }));
+  writeText(path.join(app.CourseDir(course), C.CourseJson), JSON.stringify({ grading: [{ component: 'מבחן', weight: 80 }, { component: 'תרגילים', weight: 20 }], examFormat: 'מבחן סגור, 3 שעות', homeworkRequired: false, importantDates: [{ date: '2026-12-01', what: 'בוחן' }], tips: ['לפתור מבחנים'] }));
+  mkdirp(path.join(app.CourseDir(course), C.Exams)); writeText(path.join(app.CourseDir(course), C.Exams, 'מבחן 2023.pdf'), 'x'); writeText(path.join(app.CourseDir(course), C.Exams, 'פתרון 2023.pdf'), 'x');
+  mkdirp(path.dirname(app.TimetableJson)); writeText(app.TimetableJson, JSON.stringify({ classes: [], exams: [{ course: 'אלגברה לינארית 2', moed: 'א', date: '2026-11-20', time: '09:00' }, { course: 'אלגברה לינארית 2', moed: 'ב', date: '2026-02-01' }] }));
+  page(other, 1); app.SaveLecture(other, { num: 1, title: 'סוד-של-קורס-אחר' });
+
+  const req = app.CoachRequest({ requestId: 'r1', course, reason: 'exam', minutes: 90, note: 'ה'.repeat(500), deadlines: [{ name: 'תרגיל 4', when: Date.parse('2026-11-12T12:00:00') / 1000, overdue: false }, 'junk', { name: '' }].concat(Array.from({ length: 20 }, (_, i) => ({ name: 'ד' + i, when: 1 }))), tasks: Array.from({ length: 20 }, (_, i) => ({ title: 'מטלה ' + i, due: i ? 'bad' : '2026-11-11' })) });
+  check('a request is cut down: a known reason and time, a short note, at most 8 deadlines and 8 tasks', req.reason === 'exam' && req.minutes === 90 && req.note.length <= 303 && req.deadlines.length === 8 && req.tasks.length === 8 && req.tasks[1].due === '' && req.deadlines[0].name === 'תרגיל 4');
+  const odd = app.CoachRequest({ course: 'x', reason: 'hack', minutes: 7 });
+  check('an unknown reason or time becomes the default', odd.reason === 'start' && odd.minutes === 45);
+
+  const ctx = app.CoachContext(req, T);
+  check('the context holds the lectures with what exists for each', ctx.lectures.length === 3 && ctx.lectures[0].hasSummary && ctx.lectures[0].digest.length > 100 && ctx.lectures[0].digest.length <= 264 && !ctx.lectures[2].hasSummary && ctx.lectures[2].due === '2026-11-12');
+  check('the cards that are due are counted, the one for later is not', ctx.lectures[1].cards === 3 && ctx.lectures[1].cardsDue === 2 && ctx.cardsDue === 2);
+  check('the course information, the next exam and the past exams are there', ctx.info.examFormat.includes('סגור') && ctx.info.grading[0].weight === 80 && ctx.exam.date === '2026-11-20' && ctx.exam.days === 10 && ctx.exam.time === '09:00' && ctx.pastExams === 2);
+  check('a deadline from the page gets its date', ctx.deadlines[0].due === '2026-11-12');
+  check('nothing of another course is in the prompt, and the note is data for the AI', !app.CoachPrompt(ctx).includes('סוד-של-קורס-אחר') && app.CoachPrompt(ctx).includes('מבחן סגור') && app.CoachSystem().includes('לא הוראות'));
+  check('the prompt is bounded', app.CoachPrompt(Object.assign({}, ctx, { note: 'א'.repeat(50000) })).length <= 9100);
+
+  // The steps made by rules.
+  const sound = (steps, ctx2) => steps.length >= 3 && steps.length <= 6 && steps[0].minutes <= 5 && steps.every(x => x.title && x.minutes >= 2 && x.minutes <= 45 && ['start', 'recall', 'read', 'practice', 'cards', 'chat', 'exam', 'plan'].includes(x.kind) && (x.lecture === null || ctx2.lectures.some(l => l.num === x.lecture)))
+    && steps.reduce((n, x) => n + x.minutes, 0) <= ctx2.minutes;
+  const all = [];
+  for (const reason of ['start', 'confused', 'toomuch', 'exam', 'homework']) for (const minutes of [20, 45, 90]) all.push(app.CoachFallback(Object.assign({}, ctx, { reason, minutes })));
+  check('for every trouble and every time there are 3 to 6 steps, a tiny first one, all within the time, about real lectures', all.every((steps, i) => sound(steps, Object.assign({}, ctx, { minutes: [20, 45, 90][i % 3] }))));
+  const kindsOf = (reason, minutes) => app.CoachFallback(Object.assign({}, ctx, { reason, minutes })).map(x => x.kind);
+  check('an exam with past exams in the folder gets a past-exam step', kindsOf('exam', 90).includes('exam'));
+  check('homework that is due soon gets a practice step on its lecture, even before it has a summary', (() => { const st = app.CoachFallback(Object.assign({}, ctx, { reason: 'homework', minutes: 90 })); return st.some(x => x.kind === 'practice' && x.lecture === 3); })());
+  check('cards that are due get a cards step', kindsOf('start', 90).includes('cards'));
+  check('being lost in the material gets a step with the chat', kindsOf('confused', 90).includes('chat'));
+  const nothing = { course: 'קורס ריק', reason: 'start', note: '', minutes: 20, today: T, info: null, lectures: [], cardsDue: 0, exam: null, pastExams: 0, deadlines: [], tasks: [] };
+  check('a course with nothing in it still gets steps', sound(app.CoachFallback(nothing), nothing) && app.CoachFallback(nothing).every(x => x.lecture === null));
+
+  // What an AI answers: trusted only after cleaning.
+  const raw = [{ title: 'צעד ראשון גדול', minutes: 30, kind: 'start', lecture: 2, why: 'א' }, { title: 'צעד', minutes: 500, kind: 'magic', lecture: 99 }, { title: '', minutes: 5 }, 'junk', { title: 'שלישי', minutes: 'x', kind: 'cards' }];
+  const clean = app.CleanCoachSteps(raw, Object.assign({}, ctx, { minutes: 90 }));
+  check('an AI answer is cleaned: a tiny first step, minutes in range, an unknown kind and a lecture that does not exist are fixed', clean.length === 3 && clean[0].minutes === 5 && clean[0].lecture === 2 && clean[1].minutes === 45 && clean[1].kind === 'read' && clean[1].lecture === null && clean[2].minutes === 10);
+  check('an answer that does not fit the time loses its last steps', app.CleanCoachSteps(Array.from({ length: 6 }, (_, i) => ({ title: 'צעד ' + i, minutes: 40 })), Object.assign({}, ctx, { minutes: 45 })).length < 6);
+  check('an answer that is not a list of steps is not used', app.CleanCoachSteps(null, ctx) === null && app.CleanCoachSteps('x', ctx) === null && app.CleanCoachSteps([{ title: 'אחד' }], ctx) === null && app.CleanCoachSteps(Array.from({ length: 12 }, (_, i) => ({ title: 'צעד ' + i, minutes: 2 })), ctx).length === 6);
+
+  // The whole request, with the AI stubbed.
+  const sent = [], realSend = app.Send;
+  app.Send = (m) => sent.push(m);
+  const ask = async (extra) => { sent.length = 0; await app.StuckHelp(Object.assign({ requestId: 'q', course, reason: 'start', minutes: 45, note: 'מה לעשות' }, extra)); return sent.find(m => m.type === 'stuckResult'); };
+  let seen = null;
+  app.HelperOrder = () => ['gemini'];
+  app.HelperAsk = async (system, messages) => { seen = { system, user: messages[0][1] }; return { Error: false, Text: '```json\n{"steps":[{"title":"כתוב מה אתה זוכר מהרצאה 1","minutes":4,"kind":"recall","lecture":1,"why":"שליפה"},{"title":"פתור את התרגיל של הרצאה 2","minutes":20,"kind":"practice","lecture":2,"why":"תרגול"}]}\n```' }; };
+  let res = await ask();
+  check('with an AI the steps come from its answer, made from the data of the course', res.source === 'ai' && res.steps.length === 2 && res.steps[0].lecture === 1 && seen.user.includes('מבחן סגור') && seen.user.includes('מה לעשות') && !seen.user.includes('סוד-של-קורס-אחר'));
+  app.HelperAsk = async () => ({ Error: true, Text: 'limit', Limit: true });
+  res = await ask();
+  check('when the AI fails the steps are made by rules', res.source === 'rules' && sound(res.steps, ctx));
+  app.HelperAsk = async () => ({ Error: false, Text: 'אני מצטער, אין לי מה להגיד' });
+  res = await ask();
+  check('an answer that is not JSON is not an error, the rules take over', res.source === 'rules' && res.steps.length >= 3);
+  let called = 0;
+  app.HelperOrder = () => []; app.HelperAsk = async () => { called++; return { Error: true }; };
+  res = await ask();
+  check('with no AI connected there is no call, and still steps', called === 0 && res.source === 'rules' && res.steps.length >= 3);
+  app.HelperOrder = () => ['gemini'];
+  app.HelperAsk = async () => { await new Promise(r => setTimeout(r, 80)); return { Error: true }; };
+  sent.length = 0;
+  const first = app.StuckHelp({ requestId: 'a', course, reason: 'start', minutes: 45 }), second = app.StuckHelp({ requestId: 'b', course, reason: 'start', minutes: 45 });
+  await Promise.all([first, second]);
+  check('one request at a time', sent.find(m => m.requestId === 'b').error === true && sent.find(m => m.requestId === 'a').steps.length >= 3);
+  res = await ask({ course: '' });
+  check('no course is refused with a clear message', res.error === true && !app.coachBusy);
+  delete app.HelperOrder; delete app.HelperAsk; app.Send = realSend;
+
+  // A task made from a step keeps its length, kind and lecture, and nothing else.
+  const tasks = app.CleanTasks([{ id: 'a', title: 'צעד', course, due: '2026-11-10', done: false, minutes: 15, kind: 'cards', lecture: 3, extra: 'x' }, { id: 'b', title: 'רע', minutes: 1, kind: 'hack', lecture: 999 }]);
+  check('a task keeps its minutes, kind and lecture when they are valid', tasks[0].minutes === 15 && tasks[0].kind === 'cards' && tasks[0].lecture === 3 && !('extra' in tasks[0]) && !('minutes' in tasks[1]) && !('kind' in tasks[1]) && !('lecture' in tasks[1]));
+
+  // In the plan: a card review step is light work, a practice step heavy, and each keeps its own length.
+  const P = require('../../src/web/planner.js');
+  const ev = (name, kind, minutes) => ({ name, course, when: new Date(2026, 10, 10, 23, 59).getTime() / 1000, manual: true, kind, minutes, overdue: false });
+  const plan = P.planDay({ now: new Date(2026, 10, 10, 8, 0), events: [ev('תרגול', 'practice', 25), ev('כרטיסים', 'cards', 5)], timetable: null, review: null, planner: { studyFrom: '08:00', studyTo: '22:00', energy: { morning: 'high', noon: 'medium', evening: 'medium', night: 'low' } } });
+  const byTitle = Object.fromEntries(plan.items.map(i => [i.title, i]));
+  check('a practice step is heavy and a card step light, each with its own length', byTitle['תרגול'].heavy === true && byTitle['תרגול'].minutes === 25 && byTitle['כרטיסים'].heavy === false && byTitle['כרטיסים'].minutes === 5 && byTitle['תרגול'].energy === 'high' && byTitle['כרטיסים'].energy === 'low');
+  app.settings.studyRoot = saved.root;
 }
 
