@@ -1,6 +1,17 @@
 // Demo host for ui.html?demo=1: answers the page with sample data, for screenshots and visual QA.
 (function () {
   const listeners = [];
+  // A calendar for the screenshots: a meeting today, one tomorrow, and a weekly one.
+  const demoCalendar = () => {
+    const d = new Date(), p = (n) => String(n).padStart(2, '0'), stamp = (x, h, m) => '' + x.getFullYear() + p(x.getMonth() + 1) + p(x.getDate()) + 'T' + p(h) + p(m) + '00';
+    const later = new Date(d.getTime() + 3 * 3600000), tomorrow = new Date(d.getTime() + 86400000);
+    const ev = (uid, title, s, e, extra) => ['BEGIN:VEVENT', 'UID:' + uid, 'SUMMARY:' + title, 'DTSTART:' + s, 'DTEND:' + e].concat(extra || [], ['END:VEVENT']).join('\r\n');
+    return { id: '0123456789abcdef0123456789abcdef', name: 'Google', source: 'url', host: 'calendar.google.com', updated: Date.now() - 4 * 60000, error: '',
+      ics: ['BEGIN:VCALENDAR', 'VERSION:2.0',
+        ev('1', 'פגישה עם המנחה', stamp(later, later.getHours(), 0), stamp(later, later.getHours() + 1, 0), ['LOCATION:חדר 304']),
+        ev('2', 'אימון כושר', stamp(tomorrow, 9, 30), stamp(tomorrow, 10, 30)),
+        ev('3', 'קבוצת לימוד', stamp(d, 19, 0), stamp(d, 20, 0), ['RRULE:FREQ=WEEKLY']), 'END:VCALENDAR'].join('\r\n') };
+  };
   const emit = (data, delay = 250) => setTimeout(() => listeners.forEach(fn => fn({ data })), delay);
   const now = Math.floor(Date.now() / 1000);
   const courses = [
@@ -45,6 +56,8 @@
           emit({ type: 'job', id: 2, name: 'שיעור 1', state: 'done', status: 'הווידאו והתמלול נשמרו', progress: 100, hasVideo: true, hasTranscript: true }, 1450);
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
+        case 'getCalendars': case 'refreshCalendars': case 'addCalendar': emit({ type: 'calendars', list: [demoCalendar()] }, 350); if (m.type !== 'getCalendars') emit({ type: 'calendarStatus', busy: false, text: m.type === 'addCalendar' ? 'היומן נוסף' : '', error: false }, 700); break;
+        case 'importCalendarFile': case 'removeCalendar': break;
         case 'getReviewQueue': emit({ type: 'reviewQueue', count: 14, due: 6, fresh: 8, overdueDays: 2, courses: { 'מבני נתונים': 6 } }, 400); break;
         case 'startReview': emit({ type: 'reviewSession', cards: [
           { key: 'a1b2c3d4e5f6', front: 'מה הסיבוכיות של חיפוש בינארי במערך ממוין?', back: 'O(log n): בכל צעד חצי מהמערך נפסל.', tag: 'סיבוכיות', course: 'מבני נתונים', title: 'הרצאה 3', num: 3, path: '/x/3.html' },

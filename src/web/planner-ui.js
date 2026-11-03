@@ -10,7 +10,7 @@ function minLabel(m) { const hr = Math.floor(m / 60), r = m % 60; return hr ? (r
 function daysLabel(d) { return d == null ? '' : d < 0 ? 'עבר המועד' : d === 0 ? 'היום' : d === 1 ? 'מחר' : 'בעוד ' + d + ' ימים'; }
 
 function todayContext() {
-  return { now: new Date(), events: homeEvents(), timetable: S.timetable, review: S.review && S.review.count > 0 ? S.review : null, planner: S.settings && S.settings.planner };
+  return { now: new Date(), events: homeEvents(), timetable: S.timetable, calendar: S.calOcc || [], review: S.review && S.review.count > 0 ? S.review : null, planner: S.settings && S.settings.planner };
 }
 
 function renderToday() {
@@ -27,11 +27,12 @@ function renderToday() {
   for (const it of plan.items) {
     const when = it.start != null ? `${Planner.fmt(it.start)}–${Planner.fmt(it.end)}` : minLabel(it.minutes);
     const sub = [KIND_LABEL[it.kind], it.course, it.kind === 'deadline' ? daysLabel(it.days) : it.kind === 'exam' ? daysLabel(it.days) : '', it.start != null ? ENERGY_LABEL[it.energy] : ''].filter(Boolean).join(' · ');
-    const el = h(`<div class="today-row"><span dir="ltr" class="chip${it.days != null && it.days < 0 ? ' bad' : ''}"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div><button class="soft small">התחל</button></div>`);
+    const el = h(`<div class="today-row"><span dir="ltr" class="chip${it.days != null && it.days < 0 ? ' bad' : ''}"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div><button class="ghost small" data-pomo title="התחל סבב ריכוז עם המשימה הזאת" aria-label="התחל סבב ריכוז עם המשימה הזאת"><span data-ic="clock"></span></button><button class="soft small" data-start>התחל</button></div>`);
     el.querySelector('.chip').textContent = when;
     el.querySelector('b').textContent = it.title;
     el.querySelector('small').textContent = sub;
-    el.querySelector('button').onclick = () => startToday(it);
+    el.querySelector('[data-start]').onclick = () => startToday(it);
+    el.querySelector('[data-pomo]').onclick = () => { if (typeof startPomodoroFor === 'function') startPomodoroFor(it.title); };
     list.append(el);
   }
   const p = S.settings && S.settings.planner;

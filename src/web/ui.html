@@ -42,6 +42,7 @@
     <div class="nav-label nav-text"></div>
     <button class="nav-item" data-view="settings"><span class="ni" data-ic="settings"></span><span class="nav-text">הגדרות</span></button>
     <div class="grow"></div>
+    <div class="pomo" id="pomo"></div>
     <button class="theme-toggle" id="themeToggle" title="מצב בהיר / כהה"><span id="themeIcon"></span><span class="nav-text" id="themeText">מצב כהה</span></button>
     <button class="status-pill" id="moodlePill"><span class="dot" id="moodleDot"></span><span><span id="moodleText">Moodle</span><small id="moodleSub">בודק...</small></span></button>
     <button class="status-pill" id="aiPill"><span class="dot" id="aiDot"></span><span><span id="aiText">AI</span><small id="aiSub">בודק...</small></span></button>
@@ -323,6 +324,10 @@
             <button class="ghost" id="showWelcome">הצג</button>
           </div>
         </section>
+        <section class="card pad-lg" id="calendarsCard" hidden style="margin-top:16px">
+          <div class="card-head"><span class="ic zoom" data-ic="calendar"></span><h2>יומנים</h2><span class="chip" id="calCount"></span></div>
+          <div id="calBody"></div>
+        </section>
         <section class="card pad-lg" style="margin-top:16px">
           <div class="card-head"><h2>אודות</h2></div>
           <div class="setting">
@@ -403,10 +408,14 @@
 <script src="vendor/katex/katex.min.js"></script>
 <script src="extras.js"></script>
 <script src="planner.js"></script>
+<script src="pomodoro.js"></script>
+<script src="ical.js"></script>
 <script src="app.js"></script>
 <script src="summary-chat.js"></script>
 <script src="flashcards.js"></script>
 <script src="planner-ui.js"></script>
+<script src="calendar-ui.js"></script>
+<script src="pomodoro-ui.js"></script>
 <script src="support-ui.js"></script>
 </body>
 </html>

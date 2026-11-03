@@ -31,7 +31,8 @@
   }
 
   // Free time left today as slots { start, end, energy }, split where the part of the day changes.
-  function freeSlots(now, planner, timetable) {
+  // calendar: the occurrences of the student's calendars ({ start, end } in ms, busy, allDay), see ical.js.
+  function freeSlots(now, planner, timetable, calendar) {
     const p = settings(planner), today = dayName(now);
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const busy = [];
@@ -46,6 +47,14 @@
       if (x.date === ymd && a != null) busy.push([Math.max(0, a - 30), a + 180]);
     }
     for (const b of p.blocks) if (b.day === today) busy.push([b.from, b.to]);
+    // A meeting of the calendar takes only the part that falls today. A whole day or a "free" event takes nothing.
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+    const minOf = (ms) => (ms >= dayEnd ? 1440 : ms <= dayStart ? 0 : new Date(ms).getHours() * 60 + new Date(ms).getMinutes());
+    for (const o of calendar || []) {
+      if (!o || !o.busy || o.allDay || !(o.end > dayStart && o.start < dayEnd)) continue;
+      const a = minOf(o.start), b = minOf(o.end);
+      if (b > a) busy.push([a, b]);
+    }
     busy.sort((a, b) => a[0] - b[0]);
 
     const start = Math.max(p.from, Math.ceil((nowMin + 5) / 5) * 5);
@@ -125,7 +134,7 @@
       }
       return { items: out, quick: true, freeMinutes: opts.quick, noSlots: false };
     }
-    const slots = freeSlots(now, ctx.planner, ctx.timetable);
+    const slots = freeSlots(now, ctx.planner, ctx.timetable, ctx.calendar);
     const total = slots.reduce((n, s) => n + (s.end - s.start), 0);
     if (!total) return { items: items.slice(0, 3).map(i => Object.assign({}, i, { start: null, end: null })), freeMinutes: 0, noSlots: true };
     const order = (heavy) => (heavy ? ['high', 'medium', 'low'] : ['low', 'medium', 'high']);

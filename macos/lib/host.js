@@ -291,12 +291,14 @@ class Host {
       await this.PollStatus(false);
       // The app often stays open for days: look for a new version every few hours, not only at start.
       if (Date.now() - this.lastUpdateCheck > 4 * 3600 * 1000) this.CheckForUpdate();
+      this.RefreshCalendarsIfStale();
     }, 45000);
     this.CheckForUpdate();
   }
 
   onClosing() {
     this.shuttingDown = true;
+    try { this.CancelPomodoroAlert(); } catch { }
     // A downloaded update goes in when the app closes, not only on "restart now".
     try { this.StartUpdateSwap(false); } catch { }
     if (this.statusTimer) clearInterval(this.statusTimer);
@@ -661,6 +663,12 @@ class Host {
       case 'selectSummary': this.SelectSummary(m); break;
       case 'summaryChat': this.AskSummary(m); break;
       case 'flashcards': this.MakeFlashcards(m); break;
+      case 'pomodoroAlert': this.SchedulePomodoroAlert(m); break;
+      case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
+      case 'addCalendar': this.AddCalendar(m); break;
+      case 'importCalendarFile': this.ImportCalendarFile(); break;
+      case 'removeCalendar': this.RemoveCalendar(m); break;
+      case 'refreshCalendars': this.RefreshCalendars(true); break;
       case 'getReviewQueue': this.SendReviewSummary(); break;
       case 'startReview': this.StartReview(); break;
       case 'rateCard': this.RateCard(m); break;
@@ -1084,7 +1092,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

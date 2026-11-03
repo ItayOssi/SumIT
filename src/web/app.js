@@ -431,8 +431,9 @@ function renderStats() {
 function renderNextUp() {
   const box = $('nextUp'); if (!box) return;
   box.innerHTML = '';
-  const tt = S.timetable;
-  if (!tt || !((tt.classes || []).length || (tt.exams || []).length)) {
+  const tt = S.timetable || { classes: [], exams: [] };
+  const calNext = typeof nextCalendarEvents === 'function' ? nextCalendarEvents(2) : [];
+  if (!((tt.classes || []).length || (tt.exams || []).length) && !calNext.length) {
     const e = h('<div class="empty" style="border:none;padding:6px"><b>עוד אין מערכת</b>אפשר לטעון אותה מהפורטל, והאפליקציה תראה כאן מה הבא בתור.</div>');
     box.append(e); return;
   }
@@ -461,6 +462,18 @@ function renderNextUp() {
     r.querySelector('.chip').textContent = days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';
     box.append(r);
   }
+  // The next events of the student's calendar (today and tomorrow). They slide in when they change, not at every redraw.
+  const calSig = calNext.map(e => e.start + e.title).join('|'), calFresh = calSig !== S.calNextSig;
+  S.calNextSig = calSig;
+  calNext.forEach((ev, i) => {
+    const d = new Date(ev.start), t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    const when = ev.start <= Date.now() ? 'עכשיו' : (d.toDateString() === now.toDateString() ? 'היום' : 'מחר') + ' · ' + t;
+    const r = h(`<div class="next-row cal-next${calFresh ? ' enter' : ''}" style="--i:${i}"><span class="ic zoom" data-ic="calendar"></span><div class="grow"><small>${i === 0 ? 'האירוע הבא ביומן' : 'אחר כך ביומן'}</small><b dir="auto"></b><span class="muted" dir="auto"></span></div><span class="chip accent"></span></div>`);
+    r.querySelector('b').textContent = ev.title || 'ללא כותרת';
+    r.querySelector('.muted').textContent = [ev.location, ev.calendar].filter(Boolean).join(' · ');
+    r.querySelector('.chip').textContent = when;
+    box.append(r);
+  });
   if (!box.children.length) box.append(h('<div class="muted" style="padding:8px">אין שיעורים או מבחנים קרובים במערכת.</div>'));
   icons(box);
 }
@@ -1801,6 +1814,7 @@ function onMessage(m) {
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
       if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
+      if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
@@ -1988,6 +2002,7 @@ function onMessage(m) {
     case 'summaryChatProvider': $('summaryChatStatus').textContent = m.text; break;
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
+    case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;

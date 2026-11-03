@@ -208,6 +208,12 @@ async function run() {
     // 6b. Spaced repetition of the flashcards, and "what to do today"
     await runReviewAndPlannerTests(app, root, check);
 
+    // 6c. Pomodoro timer
+    await runPomodoroTests(app, check);
+
+    // 6d. Calendars (iCal): the reader, and the host that fetches them
+    await runCalendarTests(app, root, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -797,5 +803,221 @@ async function runReviewAndPlannerTests(app, root, check) {
       && clean.blocks.length === 1 && clean.blocks[0].name.length < 70 && !('extra' in clean));
   check('a reversed study window goes back to the defaults, and nothing at all is valid too', app.CleanPlanner({ studyFrom: '20:00', studyTo: '08:00' }).studyFrom === '08:00' && app.CleanPlanner(null).studyTo === '22:00' && app.CleanPlanner([]).setup === false);
   check('broken settings fall back to the defaults', P.settings({ studyFrom: 'x', studyTo: '03:00', energy: { morning: 'huge' }, blocks: [{ day: 'x' }] }).from === 8 * 60);
+}
+
+async function runPomodoroTests(app, check) {
+  const P = require('../../src/web/pomodoro.js');
+  const cfg = P.config(null), T0 = Date.UTC(2026, 10, 10, 8, 0, 0), MIN = 60000;
+  check('the classic timer is 25/5, a long break of 15 every 4 rounds', cfg.focus === 25 && cfg.short === 5 && cfg.long === 15 && cfg.rounds === 4 && cfg.auto && cfg.sound && cfg.notify);
+  const custom = P.config({ preset: 'custom', focus: 500, short: 'x', long: 0, rounds: 99, auto: false });
+  check('custom values are kept within limits, a bad value falls back to the classic one', custom.focus === 120 && custom.short === 5 && custom.long === 1 && custom.rounds === 8 && custom.auto === false && P.config({ preset: 'nope' }).focus === 25);
+  check('a ready preset ignores stray numbers', P.config({ preset: 'deep', focus: 3 }).focus === 50);
+
+  let s = P.start(P.initial(), cfg, T0, 'תרגיל 3');
+  check('a round starts running and ends 25 minutes later, with its label', s.phase === 'focus' && s.running && s.endsAt === T0 + 25 * MIN && s.label === 'תרגיל 3' && s.round === 1);
+  check('the time left and the progress follow the clock', P.remaining(s, cfg, T0 + 5 * MIN) === 20 * MIN && Math.abs(P.progress(s, cfg, T0 + 12.5 * MIN) - 0.5) < 1e-9 && P.fmt(20 * MIN) === '20:00' && P.fmt(1) === '00:01' && P.fmt(0) === '00:00');
+  check('nothing happens before the end', P.tick(s, cfg, T0 + 25 * MIN - 1).event === null);
+  let r = P.tick(s, cfg, T0 + 25 * MIN + 2000);
+  check('at the end the break starts by itself and the page is told once', r.event && r.event.type === 'end' && r.event.phase === 'focus' && r.state.phase === 'short' && r.state.running && r.state.endsAt === T0 + 25 * MIN + 2000 + 5 * MIN);
+  check('the break is followed by a round that waits for the student', (() => { const n = P.tick(r.state, cfg, r.state.endsAt).state; return n.phase === 'focus' && !n.running && n.round === 2 && n.remainingMs === 25 * MIN && n.label === 'תרגיל 3'; })());
+
+  // The fourth round is followed by the long break, and after it the count starts again.
+  let x = Object.assign(P.start(P.initial(), cfg, T0), { round: 4 });
+  const fourth = P.tick(x, cfg, x.endsAt);
+  check('after the fourth round comes the long break', fourth.state.phase === 'long' && fourth.state.endsAt - x.endsAt === 15 * MIN);
+  check('after the long break the first round again', P.tick(fourth.state, cfg, fourth.state.endsAt).state.round === 1);
+
+  // Pause and resume keep the time that was left.
+  const paused = P.pause(s, T0 + 10 * MIN);
+  check('a paused timer stops and keeps what is left', !paused.running && paused.remainingMs === 15 * MIN && paused.endsAt === null && P.remaining(paused, cfg, T0 + 99 * MIN) === 15 * MIN);
+  const back = P.resume(paused, T0 + 40 * MIN);
+  check('resuming counts from the new time', back.running && back.endsAt === T0 + 55 * MIN && P.pause(P.initial(), T0).phase === 'idle');
+
+  check('skipping a round goes to its break, skipping a break to the next round', (() => { const k = P.skip(s, cfg, T0); const j = P.skip(k, cfg, T0); return k.phase === 'short' && k.running && j.phase === 'focus' && !j.running && j.round === 2; })());
+  check('with the automatic break off, the break waits too', (() => { const n = P.tick(s, Object.assign({}, cfg, { auto: false }), s.endsAt).state; return n.phase === 'short' && !n.running && n.remainingMs === 5 * MIN; })());
+  const late = P.tick(s, cfg, s.endsAt + 40 * MIN);
+  check('a computer that slept past the end does not start a break that is already over', late.event.late === 40 * MIN && late.state.phase === 'short' && !late.state.running);
+  check('reset goes back to nothing', P.reset().phase === 'idle');
+
+  check('a state that was stored is read back safely', (() => {
+    const ok = P.sanitize({ phase: 'focus', running: true, endsAt: T0 + MIN, round: 9, label: 'x'.repeat(500), extra: 1 }, cfg);
+    return ok.running && ok.endsAt === T0 + MIN && ok.round === 4 && ok.label.length === 120 && !('extra' in ok)
+      && P.sanitize('junk', cfg).phase === 'idle' && P.sanitize({ phase: 'boom' }, cfg).phase === 'idle'
+      && P.sanitize({ phase: 'short', running: false, remainingMs: 9e9 }, cfg).remainingMs === 5 * MIN;
+  })());
+
+  // The alert of the system, from the host: on time, one at a time, cancelled, and only for a sensible time.
+  const shown = [];
+  app.PomodoroNotify = (title, body) => shown.push(title + '|' + body);
+  const wait = (ms) => new Promise(res => setTimeout(res, ms));
+  app.SchedulePomodoroAlert({ endsAt: Date.now() + 60, title: 'הריכוז הסתיים', body: 'זמן להפסקה' });
+  await wait(250);
+  check('the alert arrives when the phase ends', shown.length === 1 && shown[0] === 'הריכוז הסתיים|זמן להפסקה');
+  app.SchedulePomodoroAlert({ endsAt: Date.now() + 80, title: 'ראשון', body: '' });
+  app.SchedulePomodoroAlert({ endsAt: Date.now() + 80, title: 'שני', body: '' });
+  await wait(250);
+  check('a new alert replaces the one that was waiting', shown.length === 2 && shown[1].startsWith('שני'));
+  app.SchedulePomodoroAlert({ endsAt: Date.now() + 80, title: 'מבוטל', body: '' });
+  app.SchedulePomodoroAlert({ cancel: true });
+  app.SchedulePomodoroAlert({ endsAt: Date.now() - 5000, title: 'עבר', body: '' });
+  app.SchedulePomodoroAlert({ endsAt: Date.now() + 9 * 3600 * 1000, title: 'רחוק', body: '' });
+  app.SchedulePomodoroAlert({ endsAt: 'soon', title: 'לא מספר', body: '' });
+  await wait(250);
+  check('a cancelled, past, too distant or broken alert never shows', shown.length === 2 && app.pomodoroTimer === null);
+  delete app.PomodoroNotify;
+}
+
+async function runCalendarTests(app, root, check) {
+  const ICal = require('../../src/web/ical.js');
+  const ics = (...events) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...events.map(e => ['BEGIN:VEVENT', ...e, 'END:VEVENT'].join('\r\n')), 'END:VCALENDAR'].join('\r\n');
+  const win = (a, b) => [Date.UTC(...a), Date.UTC(...b)];
+  const iso = (o) => new Date(o.start).toISOString().replace('.000Z', 'Z');
+
+  // Reading: folded lines, escapes, UTC, zones with summer time, a Windows zone name.
+  let [from, to] = win([2026, 10, 1], [2026, 10, 30]);
+  let occ = ICal.expand(ics(['UID:1', 'SUMMARY:שיעור\\, אלגברה', ' ' + ' לינארית', 'DTSTART:20261110T090000Z', 'DTEND:20261110T103000Z', 'LOCATION:חדר 5']), from, to);
+  check('a folded title with an escaped comma is read as one line', occ.length === 1 && occ[0].title === 'שיעור, אלגברה לינארית');
+  check('a UTC event keeps its time and length', occ[0].start === Date.UTC(2026, 10, 10, 9) && occ[0].end === Date.UTC(2026, 10, 10, 10, 30) && occ[0].location === 'חדר 5' && occ[0].busy);
+  const zone = (z, d) => ICal.expand(ics(['UID:z', 'SUMMARY:x', 'DTSTART;TZID=' + z + ':' + d, 'DTEND;TZID=' + z + ':' + d.replace('10', '11')]), Date.UTC(2026, 0, 1), Date.UTC(2027, 0, 1))[0];
+  check('10:00 in Jerusalem is 08:00 UTC in winter and 07:00 UTC in summer', zone('Asia/Jerusalem', '20261110T100000').start === Date.UTC(2026, 10, 10, 8) && zone('Asia/Jerusalem', '20260715T100000').start === Date.UTC(2026, 6, 15, 7));
+  check('a Windows zone name is understood', zone('Israel Standard Time', '20261110T100000').start === Date.UTC(2026, 10, 10, 8));
+  check('an unknown zone does not break the event (the computer\'s own time is used)', Number.isFinite(zone('Nowhere/Land', '20261110T100000').start));
+
+  // Repeating: the wall-clock time stays the same through the change of summer time.
+  const weekly = ICal.expand(ics(['UID:w', 'SUMMARY:תרגול', 'DTSTART;TZID=Asia/Jerusalem:20260906T100000', 'DTEND;TZID=Asia/Jerusalem:20260906T113000', 'RRULE:FREQ=WEEKLY;BYDAY=SU,WE']), Date.UTC(2026, 9, 15), Date.UTC(2026, 10, 10));
+  check('a weekly lesson on two days keeps 10:00 local before and after summer time ends (Oct 25)',
+    weekly.map(iso).join(',') === ['2026-10-18T07:00:00Z', '2026-10-21T07:00:00Z', '2026-10-25T08:00:00Z', '2026-10-28T08:00:00Z', '2026-11-01T08:00:00Z', '2026-11-04T08:00:00Z', '2026-11-08T08:00:00Z'].join(','));
+  check('every occurrence keeps the length of the event', weekly.every(o => o.end - o.start === 90 * 60000));
+  const every2 = ICal.expand(ics(['UID:e', 'SUMMARY:x', 'DTSTART:20261101T080000Z', 'DTEND:20261101T090000Z', 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU']), from, Date.UTC(2026, 11, 31));
+  check('every second week is every second week', every2.map(iso).join(',') === '2026-11-01T08:00:00Z,2026-11-15T08:00:00Z,2026-11-29T08:00:00Z,2026-12-13T08:00:00Z,2026-12-27T08:00:00Z');
+  const counted = ICal.expand(ics(['UID:c', 'SUMMARY:x', 'DTSTART:20261102T080000Z', 'DTEND:20261102T090000Z', 'RRULE:FREQ=DAILY;COUNT=3']), from, Date.UTC(2027, 0, 1));
+  check('COUNT limits a series', counted.length === 3);
+  const until = ICal.expand(ics(['UID:u', 'SUMMARY:x', 'DTSTART:20261102T080000Z', 'DTEND:20261102T090000Z', 'RRULE:FREQ=DAILY;UNTIL=20261104T080000Z']), from, Date.UTC(2027, 0, 1));
+  check('UNTIL limits a series, and includes its last day', until.length === 3);
+  const first = ICal.expand(ics(['UID:m', 'SUMMARY:x', 'DTSTART:20261102T080000Z', 'DTEND:20261102T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=1MO']), from, Date.UTC(2027, 1, 1));
+  check('the first Monday of each month', first.map(iso).join(',') === '2026-11-02T08:00:00Z,2026-12-07T08:00:00Z,2027-01-04T08:00:00Z');
+  const lastDay = ICal.expand(ics(['UID:l', 'SUMMARY:x', 'DTSTART:20261130T080000Z', 'DTEND:20261130T090000Z', 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1']), from, Date.UTC(2027, 2, 1));
+  check('the last day of each month, February included', lastDay.map(o => new Date(o.start).getUTCDate()).join(',') === '30,31,31,28');
+  const lastFri = ICal.expand(ics(['UID:f', 'SUMMARY:x', 'DTSTART:20261127T080000Z', 'DTEND:20261127T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=-1FR']), from, Date.UTC(2027, 0, 1));
+  check('the last Friday of each month', lastFri.map(iso).join(',') === '2026-11-27T08:00:00Z,2026-12-25T08:00:00Z');
+  const yearly = ICal.expand(ics(['UID:y', 'SUMMARY:x', 'DTSTART:20240229T080000Z', 'DTEND:20240229T090000Z', 'RRULE:FREQ=YEARLY']), Date.UTC(2024, 0, 1), Date.UTC(2029, 0, 1));
+  check('a yearly event on Feb 29 comes back only in leap years', yearly.map(o => new Date(o.start).getUTCFullYear()).join(',') === '2024,2028');
+
+  // One occurrence removed, one moved, one cancelled.
+  const series = ['UID:s', 'SUMMARY:הרצאה', 'DTSTART:20261102T080000Z', 'DTEND:20261102T090000Z', 'RRULE:FREQ=WEEKLY'];
+  const exd = ICal.expand(ics([...series, 'EXDATE:20261109T080000Z']), from, Date.UTC(2026, 10, 23));
+  check('EXDATE removes one occurrence', exd.map(iso).join(',') === '2026-11-02T08:00:00Z,2026-11-16T08:00:00Z');
+  const moved = ICal.expand(ics(series, ['UID:s', 'SUMMARY:הרצאה (הועברה)', 'RECURRENCE-ID:20261109T080000Z', 'DTSTART:20261110T140000Z', 'DTEND:20261110T150000Z']), from, Date.UTC(2026, 10, 23));
+  check('a moved occurrence appears once, at its new time', moved.length === 3 && moved.some(o => o.start === Date.UTC(2026, 10, 10, 14) && o.title.includes('הועברה')) && !moved.some(o => o.start === Date.UTC(2026, 10, 9, 8)));
+  const cancelledOne = ICal.expand(ics(series, ['UID:s', 'SUMMARY:x', 'RECURRENCE-ID:20261109T080000Z', 'DTSTART:20261109T080000Z', 'DTEND:20261109T090000Z', 'STATUS:CANCELLED']), from, Date.UTC(2026, 10, 23));
+  check('a cancelled occurrence is gone, the rest stay', cancelledOne.length === 2);
+
+  // Which events block time.
+  const kinds = ICal.expand(ics(['UID:a', 'SUMMARY:יום הולדת', 'DTSTART;VALUE=DATE:20261110', 'DTEND;VALUE=DATE:20261111'], ['UID:b', 'SUMMARY:פנוי', 'DTSTART:20261110T080000Z', 'DTEND:20261110T090000Z', 'TRANSP:TRANSPARENT'], ['UID:c', 'SUMMARY:בוטל', 'DTSTART:20261110T080000Z', 'DTEND:20261110T090000Z', 'STATUS:CANCELLED'], ['UID:d', 'SUMMARY:פגישה', 'DTSTART:20261110T100000Z', 'DURATION:PT45M']), from, to);
+  check('a whole day or a "free" event does not block, a cancelled one is not there, DURATION gives the end',
+    kinds.length === 3 && kinds.find(o => o.title === 'יום הולדת').allDay && !kinds.find(o => o.title === 'יום הולדת').busy && !kinds.find(o => o.title === 'פנוי').busy
+      && kinds.find(o => o.title === 'פגישה').busy && kinds.find(o => o.title === 'פגישה').end - kinds.find(o => o.title === 'פגישה').start === 45 * 60000);
+  check('an event that began before the window and runs into it is included, one outside is not',
+    ICal.expand(ics(['UID:o', 'SUMMARY:x', 'DTSTART:20261031T220000Z', 'DTEND:20261101T020000Z'], ['UID:p', 'SUMMARY:y', 'DTSTART:20261201T080000Z', 'DTEND:20261201T090000Z']), from, to).length === 1);
+  const approx = ICal.expand(ics(['UID:b', 'SUMMARY:x', 'DTSTART:20261102T080000Z', 'DTEND:20261102T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1']), from, Date.UTC(2027, 0, 1));
+  check('a rule that is not supported shows the first occurrence, marked approximate, and does not fail', approx.length === 1 && approx[0].approx === true);
+  check('garbage is not an error', ICal.expand('not a calendar', from, to).length === 0 && ICal.expand('', from, to).length === 0 && ICal.expand(null, from, to).length === 0
+    && ICal.expand('BEGIN:VEVENT\r\nSUMMARY:no start\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:junk\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261110T0', from, to).length === 0);
+
+  // A big calendar, and a series that began years ago, are read quickly.
+  const many = [];
+  for (let i = 0; i < 1000; i++) many.push(['UID:g' + i, 'SUMMARY:אירוע ' + i, 'DTSTART;TZID=Asia/Jerusalem:2015' + String(1 + i % 12).padStart(2, '0') + '10T090000', 'DTEND;TZID=Asia/Jerusalem:2015' + String(1 + i % 12).padStart(2, '0') + '10T100000', i % 2 ? 'RRULE:FREQ=WEEKLY;BYDAY=MO' : 'RRULE:FREQ=DAILY']);
+  const t0 = Date.now();
+  const bigOcc = ICal.expand(ics(...many), from, Date.UTC(2027, 0, 1));
+  check('1,000 repeating events since 2015 are read for two months in under 3 seconds', Date.now() - t0 < 3000 && bigOcc.length > 20000);
+  check('a daily series from 2015 gives the right days in the window', ICal.expand(ics(['UID:d', 'SUMMARY:x', 'DTSTART:20150101T080000Z', 'DTEND:20150101T090000Z', 'RRULE:FREQ=DAILY']), Date.UTC(2026, 10, 1), Date.UTC(2026, 10, 4)).length === 3);
+
+  // The planner: an event of the calendar takes its hours out of today.
+  const P = require('../../src/web/planner.js');
+  const now = new Date(2026, 10, 10, 8, 0);
+  const todayEv = (h1, m1, h2, m2, extra) => Object.assign({ start: new Date(2026, 10, 10, h1, m1).getTime(), end: new Date(2026, 10, 10, h2, m2).getTime(), busy: true, allDay: false }, extra);
+  const slots = (cal) => P.freeSlots(now, { studyFrom: '08:00', studyTo: '14:00' }, null, cal).map(x => [P.fmt(x.start), P.fmt(x.end)]).join(' ');
+  check('a meeting in the calendar takes its hours out of today', slots([todayEv(9, 0, 10, 30)]) === '08:05,09:00 10:30,12:00 12:00,14:00');
+  check('a whole-day event, a free event and another day\'s event do not block', slots([todayEv(9, 0, 10, 0, { allDay: true, busy: false }), todayEv(9, 0, 10, 0, { busy: false }), { start: new Date(2026, 10, 11, 9).getTime(), end: new Date(2026, 10, 11, 10).getTime(), busy: true, allDay: false }]) === slots([]));
+  check('an event that crosses midnight blocks only the part that is today', slots([{ start: new Date(2026, 10, 9, 22).getTime(), end: new Date(2026, 10, 10, 9, 0).getTime(), busy: true, allDay: false }]).startsWith('09:00,'));
+
+  // The host: a calendar from a local server.
+  const http = require('http');
+  const secret = 'SECRET-' + guidN();
+  let version = 1, mode = 'ok';
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/private-' + secret)) {
+      if (mode === 'down') { res.writeHead(500); res.end('oops'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/calendar' });
+      res.end(ics(['UID:h', 'SUMMARY:גרסה ' + version, 'DTSTART:20261110T090000Z', 'DTEND:20261110T100000Z']));
+    } else if (req.url === '/notcal') { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<html>login</html>'); }
+    else if (req.url === '/gone') { res.writeHead(404); res.end(); }
+    else if (req.url === '/big') { res.writeHead(200); res.write('BEGIN:VCALENDAR\n'); const chunk = 'X'.repeat(1024 * 1024); for (let i = 0; i < 6; i++) res.write(chunk); res.end(); }
+    else if (req.url === '/bounce') { res.writeHead(302, { Location: 'http://localhost:' + server.address().port + '/private-' + secret }); res.end(); }
+    else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  process.env.SUMIT_CALENDAR_TEST_HOST = '127.0.0.1';
+  const savedDir = app.calendarsDir, savedCals = app.settings.calendars, realSend = app.Send;
+  app.calendarsDir = path.join(root, 'calendars-test'); app.settings.calendars = [];
+  const sent = []; app.Send = (m) => sent.push(m);
+  const last = (type) => sent.filter(m => m.type === type).pop();
+  const url = base + '/private-' + secret + '/basic.ics';
+  try {
+    delete process.env.SUMIT_CALENDAR_TEST_HOST;
+    const bad = ['http://calendar.example.com/x.ics', 'https://localhost/x.ics', 'https://192.168.1.5/x.ics', 'https://10.1.2.3/x.ics', 'https://172.20.0.1/x.ics', 'https://169.254.169.254/x.ics', 'https://127.1/x.ics', 'https://[::1]/x.ics', 'https://user:pw@calendar.example.com/x.ics', 'https://printer.local/x.ics', 'https://intranet/x.ics', 'not a url', ''];
+    check('only a real https address on the internet is accepted', bad.every(u => !app.CalendarUrlCheck(u).ok) && app.CalendarUrlCheck('https://calendar.google.com/calendar/ical/a%40b.com/private-abc/basic.ics').ok
+      && app.CalendarUrlCheck('webcal://p01-caldav.icloud.com/published/2/x').url.startsWith('https://') && !app.CalendarUrlCheck(url).ok);
+    process.env.SUMIT_CALENDAR_TEST_HOST = '127.0.0.1';
+    check('a test server is allowed only when the test says so', app.CalendarUrlCheck(url).ok);
+
+    await app.AddCalendar({ name: 'הלימודים', url });
+    const added = last('calendars'), cal = app.settings.calendars[0];
+    check('a calendar is added, fetched and sent to the page with its text', added && added.list.length === 1 && added.list[0].name === 'הלימודים' && added.list[0].ics.includes('גרסה 1') && last('calendarStatus').error === false);
+    check('the secret address is kept encrypted and never sent to the page', cal.url !== url && !JSON.stringify(app.settings.calendars).includes(secret) && !JSON.stringify(sent).includes(secret) && Unprotect(cal.url) === app.CalendarUrlCheck(url).url && added.list[0].host === '127.0.0.1');
+    check('the text of the calendar is kept in the data folder of the app', fileExists(path.join(app.calendarsDir, cal.id + '.ics')));
+    await app.AddCalendar({ name: 'שוב', url });
+    check('the same address is not added twice', app.settings.calendars.length === 1 && last('calendarStatus').error === true);
+
+    version = 2; await app.RefreshCalendars(true);
+    check('a refresh brings the new version', last('calendars').list[0].ics.includes('גרסה 2') && last('calendars').list[0].error === '' && last('calendarStatus').busy === false);
+    mode = 'down'; await app.RefreshCalendars(false);
+    check('when the server fails the last copy stays and the reason is shown', last('calendars').list[0].ics.includes('גרסה 2') && last('calendars').list[0].error.includes('500'));
+    mode = 'ok'; await app.RefreshCalendars(false);
+    check('the next refresh clears the error', last('calendars').list[0].error === '');
+
+    const stale = Date.now(); app.lastCalendarRefresh = stale; app.RefreshCalendarsIfStale();
+    check('a calendar is not refreshed again before half an hour', app.lastCalendarRefresh === stale);
+
+    const tries = async (u) => { await app.AddCalendar({ name: 'x', url: u }); return last('calendarStatus'); };
+    check('an address that is not a calendar is refused', (await tries(base + '/notcal')).error === true);
+    const gone = await tries(base + '/gone');
+    check('a cancelled address says so', gone.error === true && gone.text.includes('בוטלה'));
+    check('a calendar over 5MB is refused', (await tries(base + '/big')).error === true);
+    check('an address that redirects to a forbidden one is refused', (await tries(base + '/bounce')).error === true);
+    check('none of the failed ones was kept', app.settings.calendars.length === 1);
+
+    // A file.
+    const good = path.join(root, 'לימודים.ics'), junk = path.join(root, 'junk.ics'), huge = path.join(root, 'huge.ics');
+    writeText(good, ics(['UID:f', 'SUMMARY:מקובץ', 'DTSTART:20261110T090000Z', 'DTEND:20261110T100000Z']));
+    writeText(junk, 'hello'); writeText(huge, 'BEGIN:VCALENDAR\n' + 'X'.repeat(6 * 1024 * 1024));
+    await app.ImportCalendarPath(good);
+    const imported = last('calendars').list.find(c => c.source === 'file');
+    check('an .ics file is imported with its name, and refresh leaves it alone', imported && imported.name === 'לימודים' && imported.ics.includes('מקובץ') && imported.host === '');
+    await app.ImportCalendarPath(junk); const j = last('calendarStatus');
+    await app.ImportCalendarPath(huge);
+    check('a file that is not a calendar, or is too big, is refused', j.error === true && last('calendarStatus').error === true && app.settings.calendars.length === 2);
+
+    for (let i = 0; i < 6; i++) await app.ImportCalendarPath(good);
+    check('at most five calendars', app.settings.calendars.length === 5 && last('calendarStatus').error === true);
+
+    const gonePath = path.join(app.calendarsDir, cal.id + '.ics');
+    app.RemoveCalendar({ id: 'not-an-id' }); app.RemoveCalendar({ id: cal.id });
+    check('removing a calendar deletes its text and its secret', !fileExists(gonePath) && !app.settings.calendars.some(c => c.id === cal.id) && !JSON.stringify(app.settings).includes(secret));
+  } finally {
+    server.close(); delete process.env.SUMIT_CALENDAR_TEST_HOST;
+    app.Send = realSend; app.calendarsDir = savedDir; app.settings.calendars = savedCals;
+  }
 }
 
