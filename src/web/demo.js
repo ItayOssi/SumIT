@@ -57,6 +57,12 @@
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
+        case 'blockPing': emit({ type: 'blockReady' }, 300); break;
+        case 'blockPlan': emit({ type: 'blockResult', requestId: m.requestId, source: 'ai', minutes: m.minutes, steps: [
+          { title: 'כתוב על דף מה אתה כבר יודע על "' + m.title + '", בלי להסתכל בשום דבר', minutes: 5, kind: 'recall', why: 'מתחילים משליפה מהזיכרון.' },
+          { title: 'למד נושא אחד חדש, והעתק לדף את הדוגמה הקטנה ביותר שלו', minutes: Math.max(5, Math.round(m.minutes * 0.4)), kind: 'learn', why: 'נושא אחד בכל פעם.' },
+          { title: 'נסה לעשות בעצמך משהו קטן עם מה שלמדת', minutes: Math.max(5, m.minutes - 5 - Math.max(5, Math.round(m.minutes * 0.4)) - 5), kind: 'practice', why: 'ניסיון בעצמך מחזק זיכרון.' },
+          { title: 'סגור הכל וכתוב מה למדת ומה עדיין לא ברור', minutes: 5, kind: 'review', why: 'שליפה מהזיכרון בסוף.' }] }, 1200); break;
         case 'stuckHelp': emit({ type: 'stuckResult', requestId: m.requestId, source: 'ai', steps: [
           { title: 'כתוב על דף שלושה דברים שאתה זוכר מהקורס "' + m.course + '", בלי להסתכל בשום דבר', minutes: 3, kind: 'start', lecture: null, why: 'מתחילים משליפה מהזיכרון, וזה גם מראה מה כבר יודעים.' },
           { title: 'נסה את שיעורי הבית של הרצאה 5 לפני שאתה מסתכל בפתרון המודרך', minutes: 25, kind: 'practice', lecture: 5, why: 'ההגשה בעוד יומיים, וניסיון לפתור מחזק זיכרון.' },

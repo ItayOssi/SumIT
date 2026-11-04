@@ -1816,6 +1816,7 @@ function onMessage(m) {
       if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
       if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
       if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
+      if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); }
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
@@ -2005,6 +2006,7 @@ function onMessage(m) {
     case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
+    case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;

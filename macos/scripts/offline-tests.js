@@ -217,6 +217,9 @@ async function run() {
     // 6e. "I'm stuck": the steps, from the data of the course
     await runCoachTests(app, root, check);
 
+    // 6f. "What to do in this block?": a plan that fills a block of the calendar
+    await runBlockPlanTests(app, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -1022,6 +1025,73 @@ async function runCalendarTests(app, root, check) {
     server.close(); delete process.env.SUMIT_CALENDAR_TEST_HOST;
     app.Send = realSend; app.calendarsDir = savedDir; app.settings.calendars = savedCals;
   }
+}
+
+// "What to do in this block?" (block-plan.js): a plan that fills exactly the block, by rules or from an AI answer.
+async function runBlockPlanTests(app, check) {
+  const kinds = ['recall', 'learn', 'practice', 'review', 'break', 'plan'];
+  const sum = (steps) => steps.reduce((n, s) => n + s.minutes, 0);
+  const sound = (steps, minutes) => steps.length >= 3 && steps.length <= 8 && sum(steps) === minutes && steps[0].kind === 'recall' && steps[0].minutes <= 5
+    && steps.every(s => s.title && s.minutes >= 2 && kinds.includes(s.kind));
+
+  const req = app.BlockRequest({ requestId: 'r', title: 'ל'.repeat(300), minutes: 9999, note: 'ה'.repeat(500), course: 'ק'.repeat(300) });
+  check('a block request is cut down: a short title, a length within range, a short note', req.title.length <= 123 && req.minutes === 240 && req.note.length <= 303 && req.course.length <= 123 && app.BlockRequest({ title: 'x', minutes: 3 }).minutes === 10 && app.BlockRequest({ title: 'x' }).minutes === 60);
+
+  const titles = ['ללמוד שפת C', 'לימוד פייתון', 'חזרה על חדו"א', 'Study Linux'];
+  const lengths = [10, 15, 20, 30, 45, 60, 75, 90, 120, 180, 240];
+  const all = [];
+  for (const title of titles) for (const minutes of lengths) all.push([minutes, app.BlockFallback({ title, minutes })]);
+  check('for every block length the plan fills exactly the block, starts small from memory and has known kinds', all.every(([m, steps]) => sound(steps, m)));
+  check('a long block has a break in the middle and a short one has none', all.filter(([m]) => m >= 75).every(([, s]) => s.some(x => x.kind === 'break') && s[s.length - 1].kind !== 'break') && all.filter(([m]) => m < 75).every(([, s]) => !s.some(x => x.kind === 'break')));
+  const c60 = app.BlockFallback({ title: 'ללמוד שפת C', minutes: 60 }).map(s => s.title).join('|');
+  check('the word "study" is dropped from the topic, and a programming topic is practised by writing and running code', c60.includes('"שפת C"') && !c60.includes('"ללמוד') && c60.includes('כתוב והרץ'));
+  check('a topic that is not programming gets exercises instead of code', app.BlockFallback({ title: 'חזרה על חדו"א', minutes: 60 }).some(s => s.kind === 'practice' && !s.title.includes('כתוב והרץ')));
+
+  // What an AI answers: trusted only after cleaning.
+  const raw = [{ title: 'שלוף מהזיכרון', minutes: 40, kind: 'recall' }, { title: 'למד', minutes: 25, kind: 'magic', why: 'א' }, { title: '', minutes: 5 }, { title: 'תרגל', minutes: 20, kind: 'practice' }];
+  const clean = app.BlockCleanSteps(raw, { minutes: 60 });
+  check('an AI plan is cleaned: a small first step, an unknown kind fixed, and the total is exactly the block', clean.length === 3 && clean[0].minutes <= 10 && clean[1].kind === 'learn' && sum(clean) === 60);
+  const short = app.BlockCleanSteps([{ title: 'א', minutes: 5, kind: 'recall' }, { title: 'ב', minutes: 10, kind: 'learn' }], { minutes: 60 });
+  check('a plan that is too short gets the missing minutes in its longest step', sum(short) === 60 && short[1].minutes === 55);
+  const long = app.BlockCleanSteps(Array.from({ length: 5 }, (_, i) => ({ title: 'צעד ' + i, minutes: 30, kind: 'learn' })), { minutes: 60 });
+  check('a plan that is too long is shortened to the block', sum(long) <= 60 && long.length >= 2 && long.every(s => s.minutes >= 2));
+  check('an answer that is not a list of steps is not used', app.BlockCleanSteps(null, { minutes: 60 }) === null && app.BlockCleanSteps('x', { minutes: 60 }) === null && app.BlockCleanSteps([{ title: 'אחד' }], { minutes: 60 }) === null);
+
+  // The whole request, with the AI stubbed.
+  const sent = [], realSend = app.Send, realCtx = app.CoachContext, realPrompt = app.CoachPrompt;
+  app.Send = (m) => sent.push(m);
+  const ask = async (extra) => { sent.length = 0; await app.BlockHelp(Object.assign({ requestId: 'q', title: 'ללמוד שפת C', minutes: 60 }, extra)); return sent.find(m => m.type === 'blockResult'); };
+  let seen = null;
+  app.HelperOrder = () => ['gemini'];
+  app.HelperAsk = async (system, messages) => { seen = { system, user: messages[0][1] }; return { Error: false, Text: '```json\n{"steps":[{"title":"שלוף מהזיכרון","minutes":5,"kind":"recall"},{"title":"למד מצביעים","minutes":40,"kind":"learn"},{"title":"סכם","minutes":15,"kind":"review"}]}\n```' }; };
+  let res = await ask({ note: 'מצביעים' });
+  check('with an AI the plan comes from its answer, made from the title, the length and the note', res.source === 'ai' && res.steps.length === 3 && sum(res.steps) === 60 && seen.user.includes('שפת C') && seen.user.includes('60') && seen.user.includes('מצביעים') && seen.system.includes('JSON'));
+  check('a block that is not a course sends no course data', !seen.user.includes('נתוני הקורס'));
+  app.CoachContext = () => ({ course: 'x' }); app.CoachPrompt = () => 'DATA-OF-THE-COURSE';
+  await ask({ title: 'אלגברה', course: 'אלגברה לינארית 2' });
+  check('a block of one of the courses sends the data of that course', seen.user.includes('DATA-OF-THE-COURSE'));
+  app.CoachContext = () => { throw new Error('no folder'); };
+  res = await ask({ title: 'אלגברה', course: 'קורס שאין' });
+  check('a course that cannot be read does not stop the plan', res.source === 'ai' && res.steps.length === 3 && !seen.user.includes('DATA-OF-THE-COURSE'));
+  app.CoachContext = realCtx; app.CoachPrompt = realPrompt;
+  app.HelperAsk = async () => ({ Error: true, Text: 'limit', Limit: true });
+  res = await ask();
+  check('when the AI fails the plan is made by rules and still fills the block', res.source === 'rules' && sound(res.steps, 60));
+  app.HelperAsk = async () => ({ Error: false, Text: 'אין לי מה להגיד' });
+  res = await ask({ minutes: 45 });
+  check('an answer that is not JSON is not an error, the rules take over', res.source === 'rules' && sound(res.steps, 45));
+  let called = 0;
+  app.HelperOrder = () => []; app.HelperAsk = async () => { called++; return { Error: true }; };
+  res = await ask();
+  check('with no AI connected there is no call, and still a plan', called === 0 && res.source === 'rules' && res.steps.length >= 3);
+  app.HelperOrder = () => ['gemini'];
+  app.HelperAsk = async () => { await new Promise(r => setTimeout(r, 80)); return { Error: true }; };
+  sent.length = 0;
+  await Promise.all([app.BlockHelp({ requestId: 'a', title: 'ללמוד C', minutes: 60 }), app.BlockHelp({ requestId: 'b', title: 'ללמוד C', minutes: 60 })]);
+  check('one request at a time', sent.find(m => m.requestId === 'b').error === true && sent.find(m => m.requestId === 'a').steps.length >= 3);
+  res = await ask({ title: '  ' });
+  check('a block without a name is refused with a clear message', res.error === true && !app.blockBusy);
+  delete app.HelperOrder; delete app.HelperAsk; app.Send = realSend;
 }
 
 async function runCoachTests(app, root, check) {

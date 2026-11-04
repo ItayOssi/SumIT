@@ -18,13 +18,13 @@ function pomoBuild() {
   el.dataset.built = '1';
   el.innerHTML = `<button class="theme-toggle pomo-idle" data-act="toggle" title="התחל סבב ריכוז"><span data-ic="clock"></span><span class="nav-text">פומודורו</span><small class="pomo-preset nav-text" dir="ltr"></small></button>
     <div class="pomo-run" hidden>
-      <div class="pomo-ring" data-act="toggle" role="button" tabindex="0"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="19"/><circle class="bar" cx="22" cy="22" r="19" pathLength="100"/></svg><b class="pomo-time" dir="ltr"></b></div>
+      <div class="pomo-ring" data-act="expand" role="button" tabindex="0"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="19"/><circle class="bar" cx="22" cy="22" r="19" pathLength="100"/></svg><b class="pomo-time" dir="ltr"></b></div>
       <div class="pomo-info"><b class="pomo-phase"></b><small class="pomo-label" dir="auto"></small></div>
       <div class="pomo-btns"><button data-act="toggle" class="pomo-toggle"></button><button data-act="skip" title="דלג לשלב הבא" aria-label="דלג לשלב הבא"><span data-ic="skip"></span></button><button data-act="reset" title="אפס את הטיימר" aria-label="אפס את הטיימר"><span data-ic="reset"></span></button><button data-act="cfg" title="הגדרות הטיימר" aria-label="הגדרות הטיימר"><span data-ic="settings"></span></button></div>
     </div>`;
   icons(el);
   el.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b) pomoAct(b.dataset.act); });
-  el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.pomo-ring')) { e.preventDefault(); pomoAct('toggle'); } });
+  el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.pomo-ring')) { e.preventDefault(); pomoAct('expand'); } });
 }
 
 function pomoRender() {
@@ -36,7 +36,7 @@ function pomoRender() {
   el.querySelector('.pomo-run').hidden = idle;
   el.querySelector('.pomo-preset').textContent = cfg.focus + '/' + cfg.short;
   el.dataset.phase = idle ? 'idle' : s.phase;
-  if (idle) return;
+  if (idle) { pomoBigRender(); return; }
   const left = Pomodoro.remaining(s, cfg, now);
   el.dataset.running = s.running ? '1' : '0';
   el.dataset.last = s.running && left <= 10000 ? '1' : '0';
@@ -51,8 +51,45 @@ function pomoRender() {
     tog.classList.remove('swap'); void tog.offsetWidth; tog.classList.add('swap');
   }
   const text = (POMO_PHASE[s.phase]) + ' ' + Pomodoro.fmt(left) + (s.running ? '' : ' (מושהה)');
-  el.querySelector('.pomo-ring').title = text; el.querySelector('.pomo-ring').setAttribute('aria-label', text);
-  tog.title = tog.ariaLabel = s.running ? 'השהה' : (s.phase === 'focus' && left === Pomodoro.durationMs('focus', cfg) ? 'התחל ריכוז' : 'המשך');
+  el.querySelector('.pomo-ring').title = 'הגדל את השעון'; el.querySelector('.pomo-ring').setAttribute('aria-label', text + ' - הגדל את השעון');
+  tog.title = tog.ariaLabel = pomoToggleLabel(s, left);
+  pomoBigRender();
+}
+
+function pomoToggleLabel(s, left) {
+  return s.running ? 'השהה' : (s.phase === 'focus' && left === Pomodoro.durationMs('focus', pomo.cfg) ? 'התחל ריכוז' : 'המשך');
+}
+
+// The enlarged clock: a click on the ring in the sidebar opens it, so the time can be read from across the desk.
+function pomoBig() {
+  if ($('pomoBig') || pomo.state.phase === 'idle') return;
+  const dialog = h(`<dialog class="pomo-big" id="pomoBig" dir="rtl" aria-label="טיימר פומודורו"><div class="pomo-big-body" data-phase="">
+    <b class="pomo-big-phase"></b><small class="pomo-big-label" dir="auto"></small>
+    <div class="pomo-big-ring"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="19"/><circle class="bar" cx="22" cy="22" r="19" pathLength="100"/></svg><b class="pomo-big-time" dir="ltr" aria-live="off"></b></div>
+    <div class="pomo-big-btns"><button type="button" data-act="toggle" class="primary pomo-big-toggle"></button><button type="button" data-act="skip" class="ghost">דלג לשלב הבא</button><button type="button" data-act="reset" class="ghost">אפס</button><button type="button" data-close class="ghost">סגור</button></div>
+  </div></dialog>`);
+  document.body.append(dialog);
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog || e.target.closest('[data-close]')) { dialog.close(); return; }
+    const b = e.target.closest('[data-act]'); if (b) pomoAct(b.dataset.act);
+  });
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
+  pomoBigRender();
+}
+
+function pomoBigRender() {
+  const d = $('pomoBig'); if (!d) return;
+  const { state: s, cfg } = pomo;
+  if (s.phase === 'idle') { d.close(); return; }
+  const left = Pomodoro.remaining(s, cfg, Date.now());
+  const body = d.querySelector('.pomo-big-body');
+  body.dataset.phase = s.phase; body.dataset.running = s.running ? '1' : '0'; body.dataset.last = s.running && left <= 10000 ? '1' : '0';
+  d.querySelector('.pomo-big-ring').style.setProperty('--p', String(Math.round(Pomodoro.progress(s, cfg, Date.now()) * 1000) / 10));
+  d.querySelector('.pomo-big-time').textContent = Pomodoro.fmt(left);
+  d.querySelector('.pomo-big-phase').textContent = POMO_PHASE[s.phase] + (s.phase === 'focus' ? ` ${s.round}/${cfg.rounds}` : '');
+  d.querySelector('.pomo-big-label').textContent = s.label || '';
+  d.querySelector('.pomo-big-toggle').textContent = pomoToggleLabel(s, left);
 }
 
 // The alert of the system for the moment the phase ends (macOS; the host ignores it elsewhere).
@@ -116,6 +153,7 @@ function pomoAct(act) {
   else if (act === 'skip') pomoApply(Pomodoro.skip(s, pomo.cfg, now));
   else if (act === 'reset') pomoApply(Pomodoro.reset());
   else if (act === 'cfg') pomoSettings();
+  else if (act === 'expand') pomoBig();
 }
 
 // A focus round for something the student is about to work on (the "⏱" button of a task in "what to do today").

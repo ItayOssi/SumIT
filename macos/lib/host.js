@@ -672,6 +672,8 @@ class Host {
       case 'pomodoroAlert': this.SchedulePomodoroAlert(m); break;
       case 'coachPing': this.Send({ type: 'coachReady' }); break;
       case 'stuckHelp': this.StuckHelp(m); break;
+      case 'blockPing': this.Send({ type: 'blockReady' }); break;
+      case 'blockPlan': this.BlockHelp(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1100,7 +1102,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

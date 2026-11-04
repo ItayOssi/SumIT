@@ -44,6 +44,7 @@ function renderToday() {
     list.append(hint);
   }
   icons(list);
+  if (typeof renderBlocks === 'function') renderBlocks();
 }
 
 function startToday(it) {

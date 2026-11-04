@@ -1064,3 +1064,27 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .coach-actions { margin-top: 14px; gap: 8px; }
 .coach-actions button:disabled { opacity: .5; }
 .summary-options textarea { width: 100%; margin-top: 6px; }
+
+/* The enlarged pomodoro clock (pomodoro-ui.js, opened by a click on the ring in the sidebar). */
+.pomo-big { width: min(640px, 94vw); border: 1px solid var(--border); border-radius: 28px; padding: 0; color: var(--text); background: var(--surface); box-shadow: var(--shadow-lg); }
+.pomo-big::backdrop { background: rgba(0, 0, 0, .6); }
+.pomo-big-body { --pomo-c: var(--accent); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px 28px; }
+.pomo-big-body[data-phase="short"], .pomo-big-body[data-phase="long"] { --pomo-c: var(--ok); }
+.pomo-big-body[data-running="0"] { --pomo-c: var(--muted); }
+.pomo-big-phase { font-size: 26px; color: var(--pomo-c); }
+.pomo-big-label { color: var(--muted); font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 1.2em; }
+.pomo-big-ring { position: relative; width: min(420px, 72vw, 56vh); aspect-ratio: 1; display: grid; place-items: center; margin: 8px 0 14px; --p: 0; }
+.pomo-big-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.pomo-big-ring circle { fill: none; stroke-width: 2.2; }
+.pomo-big-ring .trk { stroke: var(--surface-3); }
+.pomo-big-ring .bar { stroke: var(--pomo-c); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--p)); transition: stroke-dashoffset 1s linear, stroke .4s var(--ease); }
+.pomo-big-time { font-size: clamp(64px, 17vw, 124px); font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.pomo-big-body[data-last="1"] .pomo-big-time { animation: pulse 1s ease-in-out infinite; }
+.pomo-big-btns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.pomo-big-btns button { font-size: 17px; padding: 12px 22px; border-radius: 14px; }
+.pomo-big-toggle { min-width: 150px; }
+
+/* "What to do in this block?" (block-plan-ui.js): the blocks of the calendar under "what to do today". */
+#todayBlocks { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border); }
+#todayBlocks .block-head { margin: 6px 0 2px; }
+#todayBlocks .today-row [data-plan] { flex: none; }
