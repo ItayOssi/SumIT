@@ -1088,3 +1088,43 @@ html[data-theme=dark] .card { border-color: #274a82; }
 #todayBlocks { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--border); }
 #todayBlocks .block-head { margin: 6px 0 2px; }
 #todayBlocks .today-row [data-plan] { flex: none; }
+
+/* The study track, beta (track-ui.js). */
+#trackPage { display: grid; gap: 16px; }
+#trackPage h2 { margin: 0 0 4px; font-size: 18px; }
+.track-top .row, .track-card .row { gap: 10px; align-items: flex-end; }
+.track-top label, .track-fields label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); min-width: 0; }
+.track-top input, .track-fields input, .track-fields select, .track-add input, .track-log select, .track-topic input[type=text] {
+  height: 40px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; outline: none; user-select: text; }
+.track-top input:focus, .track-fields input:focus, .track-fields select:focus, .track-add input:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 4px var(--accent-soft); }
+.track-fields input[type=number] { width: 110px; }
+.track-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0 4px; }
+.track-stat { display: grid; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.track-stat b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.track-note { margin: 10px 0 0; font-size: 12.5px; }
+.track-course { padding: 14px 0; }
+.track-course + .track-course { border-top: 1px solid var(--border); }
+.track-fields { margin-top: 10px; }
+.track-add { margin-top: 14px; }
+.track-days { margin: 14px 0 12px; }
+.track-day { margin-top: 16px; }
+.track-day-head { display: flex; gap: 10px; align-items: baseline; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.track-block { align-items: center; gap: 10px; }
+.track-block.done { opacity: .6; }
+.track-block.done b { text-decoration: line-through; }
+.track-block .grow { min-width: 0; }
+.track-block .grow small { display: block; }
+.track-prow { padding: 10px 0; }
+.track-prow + .track-prow { border-top: 1px solid var(--border); }
+.track-log { margin-top: 14px; }
+.track-h3 { margin: 16px 0 4px; font-size: 14px; }
+.track-ul { margin: 0; padding-inline-start: 20px; line-height: 1.7; }
+.track-topic { display: flex; align-items: center; gap: 10px; padding: 8px 2px; cursor: pointer; }
+.track-topic + .track-topic { border-top: 1px solid var(--border); }
+.track-topic input { width: 18px; height: 18px; accent-color: var(--accent); }
+.track-tool-course { display: grid; gap: 6px; font-size: 13px; color: var(--muted); max-width: 320px; margin-top: 8px; }
+.track-tool-course select { height: 40px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
+.track-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px; }
+.track-tool { display: grid; gap: 8px; align-content: start; padding: 14px; border-radius: 14px; background: var(--surface-2); }
+.track-tool small { line-height: 1.55; }
+.track-tool button { justify-self: start; }

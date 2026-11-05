@@ -28,6 +28,7 @@
     <button class="nav-item active" data-view="home"><span class="ni" data-ic="home"></span><span class="nav-text">בית</span></button>
     <button class="nav-item" data-view="courses"><span class="ni" data-ic="book"></span><span class="nav-text">הקורסים שלי</span></button>
     <button class="nav-item" data-view="tasks"><span class="ni" data-ic="check"></span><span class="nav-text">המטלות שלי</span><span class="count" id="taskCount" hidden>0</span></button>
+    <button class="nav-item" data-view="track" id="navTrack" hidden><span class="ni" data-ic="calendar"></span><span class="nav-text">מסלול למידה</span><span class="count">בטא</span></button>
     <button class="nav-item" data-view="recordings" id="navDownloads" hidden><span class="ni" data-ic="download"></span><span class="nav-text">הורדות</span><span class="count" id="jobCount" hidden>0</span></button>
     <div class="nav-label nav-text">אתרים</div>
     <button class="nav-item" data-site-link="moodle"><span class="ni" data-ic="globe"></span><span class="nav-text">Moodle</span></button>
@@ -102,6 +103,14 @@
       <div class="page">
         <div class="head"><div class="grow"><h1>המטלות שלי</h1><p>מטלות שאתה מוסיף בעצמך: הגשות, הכנות למבחן, כל מה שלא מופיע ב-Moodle.</p></div></div>
         <div class="card pad-lg"><div id="tasksPage"></div></div>
+      </div>
+    </section>
+
+    <!-- Study track (beta, macOS) -->
+    <section class="view" id="view-track">
+      <div class="page">
+        <div class="head"><div class="grow"><h1>מסלול למידה <span class="chip accent">בטא</span></h1><p>הקורסים שלך, איך ללמוד כל אחד מהם, בלוקים לשבוע ומעקב אחרי ההתקדמות. עובד גם כשהאתר של המכללה לא זמין.</p></div></div>
+        <div id="trackPage"></div>
       </div>
     </section>
 
@@ -417,6 +426,7 @@
 <script src="planner-ui.js"></script>
 <script src="coach-ui.js"></script>
 <script src="block-plan-ui.js"></script>
+<script src="track-ui.js"></script>
 <script src="calendar-ui.js"></script>
 <script src="pomodoro-ui.js"></script>
 <script src="support-ui.js"></script>

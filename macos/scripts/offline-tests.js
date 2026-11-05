@@ -220,6 +220,12 @@ async function run() {
     // 6f. "What to do in this block?": a plan that fills a block of the calendar
     await runBlockPlanTests(app, check);
 
+    // 6g. Study track (beta): the profile, the strategy, the week of blocks and the progress
+    await runStudyTrackTests(app, root, check);
+
+    // 6h. Study tools: iCal for the blocks, a NotebookLM bundle, Anki cards
+    await runStudyExportTests(app, root, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -1025,6 +1031,234 @@ async function runCalendarTests(app, root, check) {
     server.close(); delete process.env.SUMIT_CALENDAR_TEST_HOST;
     app.Send = realSend; app.calendarsDir = savedDir; app.settings.calendars = savedCals;
   }
+}
+
+// Study tools (study-export.js): the files that take the material to a calendar, to NotebookLM and to Anki.
+async function runStudyExportTests(app, root, check) {
+  const unfold = (t) => t.replace(/\r\n /g, '');
+  const blocks = [{ id: 'b1', day: 2, start: '10:00', minutes: 60, course: 'אלגברה', goal: 'תרגול, חזרה; ושאלות\nשורה שנייה' }, { id: 'b2', day: 3, start: '23:30', minutes: 60, course: 'מבני נתונים', goal: 'ש'.repeat(300) }, { id: 'bad', day: 1, start: 'x', minutes: 60, course: 'ללא שעה', goal: '' }];
+  const ics = app.ToolsIcs(blocks, '2026-11-01', new Date(Date.UTC(2026, 10, 1, 8, 0, 0)));
+  const un = unfold(ics);
+  check('the blocks become an iCal file with CRLF lines, one event per valid block, and a reminder', ics.startsWith('BEGIN:VCALENDAR\r\n') && ics.endsWith('END:VCALENDAR\r\n') && !/[^\r]\n/.test(ics) && (un.match(/BEGIN:VEVENT/g) || []).length === 2 && (un.match(/BEGIN:VALARM/g) || []).length === 2 && un.includes('TRIGGER:-PT10M'));
+  check('the times are the local times of the block, and a block that crosses midnight ends on the next day', un.includes('DTSTART:20261103T100000') && un.includes('DTEND:20261103T110000') && un.includes('DTSTART:20261104T233000') && un.includes('DTEND:20261105T003000') && un.includes('DTSTAMP:20261101T080000Z'));
+  check('commas, semicolons and new lines in the text are escaped', un.includes('DESCRIPTION:תרגול\\, חזרה\\; ושאלות\\nשורה שנייה') && un.includes('SUMMARY:לימוד: אלגברה'));
+  check('no line is longer than 75 bytes, a cut never splits a letter, and the long text comes back whole', ics.split('\r\n').every(l => Buffer.byteLength(l, 'utf8') <= 75) && un.includes('ש'.repeat(300)) && !ics.includes('�'));
+
+  const anki = app.ToolsAnki([{ front: 'מהו <b>בסיס</b>?', back: 'שורה 1\nשורה\t2 & עוד', course: 'אלגברה לינארית 2', num: 2 }, { front: '', back: 'x' }, { front: 'y', back: ' ' }, null, { front: 'ללא קורס', back: 'ת' }]);
+  const rows = anki.trim().split('\n');
+  check('the cards file tells Anki the separator, that the text is HTML, and which column has the tags', rows[0] === '#separator:tab' && rows[1] === '#html:true' && rows[2] === '#tags column:3');
+  check('every card is one line of three fields, the tags have no spaces, and cards without a front or a back are skipped', rows.length === 5 && rows.slice(3).every(r => r.split('\t').length === 3) && rows[3].split('\t')[2] === 'SumIT אלגברה_לינארית_2 הרצאה_2' && rows[4].split('\t')[2] === 'SumIT');
+  check('the text of a card is made safe: tags shown as text, new lines as breaks, tabs as spaces', rows[3].includes('&lt;b&gt;בסיס&lt;/b&gt;') && rows[3].includes('שורה 1<br>שורה 2 &amp; עוד'));
+  const md = app.ToolsCardsMarkdown('קורס', [{ num: 2, title: 'מרחבים', cards: [{ front: 'מהו בסיס?', back: 'קבוצה' }] }]);
+  const info = app.ToolsInfoMarkdown('קורס', { grading: [{ component: 'מבחן', weight: 80 }], examFormat: 'סגור', tips: ['לפתור'], importantDates: [{ date: '2026-12-01', what: 'בוחן' }] });
+  check('the cards and the course information are written as markdown that NotebookLM reads', md.includes('## הרצאה 2: מרחבים') && md.includes('**שאלה:** מהו בסיס?') && md.includes('**תשובה:** קבוצה') && info.includes('- מבחן: 80%') && info.includes('## מבנה המבחן') && info.includes('- 2026-12-01: בוחן'));
+
+  // The files, through the host: a course with a PDF summary, a digest only, and nothing; another course with cards.
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'export-app', 'קורסים');
+  const course = 'אלגברה לינארית 2 - תשפז', other = 'פיזיקה 1 - תשפז', empty = 'היסטוריה - תשפז';
+  const page = (c, n) => { app.SaveLecture(c, { num: n, title: 'נושא ' + n }); const f = app.StudyPagePath(c, n); mkdirp(path.dirname(f)); writeText(f, '<html></html>'); return f; };
+  const p1 = page(course, 1), p2 = page(course, 2); app.SaveLecture(course, { num: 3, title: 'ללא סיכום' });
+  mkdirp(path.dirname(app.LecturePdfPath(course, 1))); fs.writeFileSync(app.LecturePdfPath(course, 1), '%PDF-1.4 test');
+  mkdirp(path.join(app.CourseDir(course), '.sumit', 'digests')); writeText(path.join(app.CourseDir(course), '.sumit', 'digests', 'הרצאה 2.md'), '# תקציר\nבסיס וממד');
+  writeText(app.FlashcardsFile(p2), JSON.stringify({ cards: [{ front: 'מהו בסיס?', back: 'ב' }, { front: 'מהו ממד?', back: 'מ' }] }));
+  writeText(path.join(app.CourseDir(course), C.CourseJson), JSON.stringify({ grading: [{ component: 'מבחן', weight: 100 }], examFormat: 'סגור' }));
+  const po = page(other, 1); writeText(app.FlashcardsFile(po), JSON.stringify({ cards: [{ front: 'מהו כוח?', back: 'מסה כפול תאוצה' }] }));
+  page(empty, 1);
+
+  const toasts = [], opened = [], realToast = app.Toast, realSave = app.savePath, realOpen = platform.openExternal, realReveal = platform.revealInFinder;
+  app.Toast = (text, error) => toasts.push({ text, error: !!error });
+  platform.openExternal = (u) => { opened.push(u); return Promise.resolve(); }; platform.revealInFinder = () => { };
+  const last = () => toasts[toasts.length - 1];
+
+  check('the folder of a course is found by a name that is part of it, and a course that is not there is not found', app.ToolsFolder('אלגברה לינארית 2') === course && app.ToolsFolder(course) === course && app.ToolsFolder('קורס שאין') === '' && app.ToolsFolder('') === '');
+  await app.ExportToolHandle({ op: 'notebook', course: 'אלגברה לינארית 2' });
+  const bundle = path.join(app.AppRoot, 'NotebookLM', course);
+  const names = fs.existsSync(bundle) ? fs.readdirSync(bundle).sort() : [];
+  check('the NotebookLM bundle has the PDF summary, the digest of a lecture with no PDF, the cards and the course information, and nothing for a lecture with no summary',
+    names.includes('הרצאה 01 - סיכום.pdf') && names.includes('הרצאה 02 - תקציר.md') && names.includes('שאלות ותשובות - כרטיסי זיכרון.md') && names.includes('על הקורס.md') && names.length === 4 && !names.some(n => n.includes('03')));
+  check('the bundle is opened for upload: NotebookLM is opened, and the student is told how many sources there are', opened.length === 1 && opened[0].includes('notebooklm.google.com') && last().text.includes('4 מקורות') && !last().error);
+  check('the cards in the bundle are the cards of this course only', readText(path.join(bundle, 'שאלות ותשובות - כרטיסי זיכרון.md')).includes('מהו בסיס?') && !readText(path.join(bundle, 'שאלות ותשובות - כרטיסי זיכרון.md')).includes('כוח'));
+  opened.length = 0;
+  await app.ExportToolHandle({ op: 'notebook', course: 'היסטוריה' });
+  check('a course with no summary gets a clear message, no folder and no page opened', last().error && last().text.includes('אין עדיין סיכומים') && !fs.existsSync(path.join(app.AppRoot, 'NotebookLM', empty)) && opened.length === 0);
+  await app.ExportToolHandle({ op: 'notebook', course: 'קורס שאין' });
+  await app.ExportToolHandle({ op: 'notebook', course: '' });
+  check('an unknown course or no course is refused with a message', last().error && opened.length === 0);
+
+  const out = path.join(root, 'export-out.txt');
+  app.savePath = async () => out;
+  await app.ExportToolHandle({ op: 'anki', course: 'פיזיקה 1' });
+  check('the cards of one course are exported', readText(out).includes('מהו כוח?') && !readText(out).includes('בסיס') && last().text.includes('1 כרטיסים'));
+  await app.ExportToolHandle({ op: 'anki', course: '' });
+  check('with no course, the cards of all courses are exported', readText(out).includes('מהו כוח?') && readText(out).includes('מהו בסיס?') && last().text.includes('3 כרטיסים'));
+  fs.rmSync(out, { force: true });
+  await app.ExportToolHandle({ op: 'anki', course: 'היסטוריה' });
+  check('a course with no cards gets a message and no file', last().error && !fs.existsSync(out));
+  app.savePath = async () => null;
+  await app.ExportToolHandle({ op: 'anki', course: '' });
+  check('a cancelled save dialog writes nothing and says nothing', !fs.existsSync(out));
+
+  // The blocks of the week to a calendar file: only what is not done, and only when there is a plan.
+  const ical = path.join(root, 'export-out.ics');
+  app.savePath = async () => ical;
+  await app.ExportToolHandle({ op: 'ics' });
+  check('with no plan there is nothing to export, and a message says so', last().error && !fs.existsSync(ical));
+  const prof = app.TrackLoad(); prof.courses = [{ name: 'אלגברה', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: false }];
+  prof.plan = { weekStart: '2026-11-01', blocks: [{ id: 'b1', day: 1, start: '10:00', minutes: 60, course: 'אלגברה', goal: 'תרגול', done: false, doneMinutes: 0 }, { id: 'b2', day: 2, start: '10:00', minutes: 60, course: 'אלגברה', goal: 'סיכום', done: true, doneMinutes: 60 }] };
+  app.TrackSave(prof);
+  await app.ExportToolHandle({ op: 'ics' });
+  const file = readText(ical);
+  check('the calendar file has the blocks that are not done yet', (file.match(/BEGIN:VEVENT/g) || []).length === 1 && file.includes('DTSTART:20261102T100000') && last().text.includes('1 בלוקים'));
+
+  app.Toast = realToast; app.savePath = realSave; platform.openExternal = realOpen; platform.revealInFinder = realReveal;
+  app.settings.studyRoot = saved;
+}
+
+// Study track (study-track.js): the profile on disk, a strategy per course, a week of blocks around the timetable, and the progress.
+async function runStudyTrackTests(app, root, check) {
+  const sumMin = (blocks) => blocks.reduce((n, b) => n + b.minutes, 0);
+  const mins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+
+  // A profile from any source (file, page, import) comes out clean.
+  const bad = app.TrackClean({ name: 'ש'.repeat(200), courses: [{ name: '  א   ב  ', level: 9, hoursPerWeek: 99, examDate: 'לא תאריך' }, { name: 'א ב' }, { name: '' }, 'x', null].concat(Array.from({ length: 100 }, (_, i) => ({ name: 'קורס' + i }))),
+    strategies: { 'א ב': { summary: 's', steps: [{ title: '1' }, { title: '2' }, { title: '3' }] }, 'קורס שאין': { summary: 's', steps: [{ title: '1' }, { title: '2' }, { title: '3' }] } },
+    plan: { weekStart: '2026-11-01', blocks: [{ id: 'b1', day: 9, start: '10:00', minutes: 60, course: 'א ב' }, { id: 'b2', day: 1, start: '25:99', minutes: 60, course: 'א ב' }, { id: 'b3', day: 1, start: '10:00', minutes: 9999, course: 'א ב', done: true }] },
+    log: [{ date: 'x', minutes: 5 }, { date: '2026-11-02', course: 'א ב', minutes: 5000 }] });
+  check('a profile is cleaned: short name, at most 40 courses, no duplicates, level and hours in range, a bad date dropped', bad.name.length <= 63 && bad.courses.length === 40 && bad.courses[0].name === 'א ב' && bad.courses.filter(c => c.name === 'א ב').length === 1 && bad.courses[0].level === 3 && bad.courses[0].hoursPerWeek === 30 && bad.courses[0].examDate === '');
+  check('only a strategy of a known course is kept, and blocks with a bad day or time are dropped', Object.keys(bad.strategies).join() === 'א ב' && bad.plan.blocks.length === 1 && bad.plan.blocks[0].id === 'b3' && bad.plan.blocks[0].minutes === 240 && bad.plan.blocks[0].doneMinutes <= 600);
+  check('a log entry needs a real date, and its minutes are limited', bad.log.length === 1 && bad.log[0].minutes === 600);
+  check('anything that is not a profile gives an empty one', app.TrackClean(null).courses.length === 0 && app.TrackClean('x').log.length === 0 && app.TrackClean([1]).version === 1);
+  check('the week starts on Sunday', app.TrackWeekStart('2026-11-05') === '2026-11-01' && app.TrackWeekStart('2026-11-01') === '2026-11-01' && app.TrackWeekStart('2026-11-07') === '2026-11-01' && app.TrackWeekStart('2026-11-08') === '2026-11-08');
+
+  // The week: time by difficulty and exam, around the classes, with no overlap.
+  const profile = app.TrackClean({ courses: [{ name: 'מבני נתונים', level: 3, examDate: '2026-11-12' }, { name: 'אלגברה', level: 2 }, { name: 'היסטוריה', level: 1, hoursPerWeek: 2 }] });
+  const classes = [{ day: 'ראשון', start: '10:00', end: '12:00', course: 'אלגברה' }, { day: 'שני', start: '08:00', end: '21:00', course: 'מעבדה' }];
+  const week = app.TrackBuildWeek(profile, classes, { weekStart: '2026-11-01', today: '2026-10-30', hours: 10, days: [0, 1, 2, 3, 4], from: '09:00', to: '20:00' });
+  check('every course gets its time: what was set exactly, the rest by difficulty and a close exam, and all of it fits', week.unplaced === 0 && week.perCourse['היסטוריה'] === 120 && week.perCourse['מבני נתונים'] === 360 && week.perCourse['אלגברה'] === 120 && sumMin(week.blocks) === 600);
+  const byDay = (d) => week.blocks.filter(b => b.day === d).sort((a, b) => mins(a.start) - mins(b.start));
+  check('no block on a day that is full of classes, and none inside a class or a quarter of an hour around it', byDay(1).length === 0 && byDay(0).every(b => mins(b.start) + b.minutes <= 585 || mins(b.start) >= 735));
+  check('blocks stay inside the hours, are at least half an hour, and leave a gap between them', week.blocks.every(b => mins(b.start) >= 540 && mins(b.start) + b.minutes <= 1200 && b.minutes >= 30)
+    && [0, 1, 2, 3, 4].every(d => byDay(d).every((b, i, a) => i === 0 || mins(a[i - 1].start) + a[i - 1].minutes + 10 <= mins(b.start))));
+  check('block ids are unique, and a course with an exam in a month gets a past-exam block', new Set(week.blocks.map(b => b.id)).size === week.blocks.length && week.blocks.some(b => b.course === 'מבני נתונים' && b.goal.includes('מבחן קודם')) && !week.blocks.some(b => b.course === 'אלגברה' && b.goal.includes('מבחן קודם')));
+  check('a course is not studied twice on the same day when there is room', [...new Set(week.blocks.map(b => b.course))].every(c => new Set(week.blocks.filter(b => b.course === c).map(b => b.day)).size === week.blocks.filter(b => b.course === c).length || week.blocks.filter(b => b.course === c).length > 4));
+
+  const mid = app.TrackBuildWeek(profile, classes, { weekStart: '2026-11-01', today: '2026-11-03', nowMin: 900, hours: 10, days: [0, 1, 2, 3, 4] });
+  check('days that have passed get no blocks, and today starts after now', mid.blocks.every(b => b.day >= 2) && mid.blocks.filter(b => b.day === 2).every(b => mins(b.start) >= 915));
+  const tight = app.TrackBuildWeek(profile, [], { weekStart: '2026-11-01', today: '2026-10-30', hours: 10, days: [0], from: '09:00', to: '10:00' });
+  check('what does not fit is counted, not squeezed in', tight.unplaced > 0 && sumMin(tight.blocks) <= 60 && sumMin(tight.blocks) + tight.unplaced === 600);
+  check('no courses, no days, or no hours give an empty week', app.TrackBuildWeek(app.TrackNew(), [], { weekStart: '2026-11-01' }).blocks.length === 0 && app.TrackBuildWeek(profile, [], { weekStart: '2026-11-01', days: [] }).blocks.length === 0 && app.TrackBuildWeek(profile, [], { weekStart: '2026-11-01', from: '09:00', to: '09:10' }).blocks.length === 0);
+
+  const kept = JSON.parse(JSON.stringify(profile));
+  kept.plan = { weekStart: '2026-11-01', blocks: week.blocks.map((b, i) => (i === 0 ? Object.assign({}, b, { done: true, doneMinutes: b.minutes }) : b)) };
+  const again = app.TrackBuildWeek(kept, classes, { weekStart: '2026-11-01', today: '2026-10-30', hours: 10, days: [0, 1, 2, 3, 4] });
+  const first = kept.plan.blocks[0];
+  check('a block that was done stays when the week is built again, with its id, and nothing is placed over it', again.blocks.filter(b => b.id === first.id).length === 1 && again.blocks.find(b => b.id === first.id).done
+    && new Set(again.blocks.map(b => b.id)).size === again.blocks.length && again.blocks.filter(b => b.id !== first.id && b.day === first.day).every(b => mins(b.start) >= mins(first.start) + first.minutes + 10 || mins(b.start) + b.minutes <= mins(first.start)));
+
+  // Progress: minutes of the week, the streak, topics.
+  const logged = app.TrackClean({ courses: [{ name: 'א' }, { name: 'ב' }], progress: { א: { topics: [{ id: 'x', title: 'עצים', done: true }, { id: 'y', title: 'גרפים' }] } },
+    log: [{ date: '2026-11-05', course: 'א', minutes: 30 }, { date: '2026-11-04', course: 'א', minutes: 45 }, { date: '2026-11-03', course: 'ב', minutes: 20 }, { date: '2026-10-30', course: 'ב', minutes: 60 }] });
+  const st = app.TrackStats(logged, '2026-11-05');
+  check('progress: minutes of this week, the total, a streak that skips the older day, and the topics', st.weekMinutes === 95 && st.totalMinutes === 155 && st.streak === 3 && st.perCourse['א'].week === 75 && st.perCourse['ב'].total === 80 && st.perCourse['א'].topicsDone === 1 && st.perCourse['א'].topics === 2);
+  check('a streak survives a day that has not been logged yet, and ends after two', app.TrackStats(logged, '2026-11-06').streak === 3 && app.TrackStats(logged, '2026-11-07').streak === 0);
+
+  // The strategy: by the kind of course, from the exam, and cleaned when it comes from an AI.
+  check('courses are told apart by name', app.TrackKind('חדו"א 1') === 'math' && app.TrackKind('מבני נתונים') === 'theory' && app.TrackKind('תכנות בשפת C') === 'code' && app.TrackKind('פסיכולוגיה') === 'general');
+  const codeS = app.TrackFallback({ course: 'תכנות בשפת C', level: 2 }), mathS = app.TrackFallback({ course: 'אלגברה לינארית', level: 2 });
+  check('a strategy by rules is different for code and for math, and passes the same cleaning as an AI answer', codeS.summary !== mathS.summary && JSON.stringify(codeS.steps) !== JSON.stringify(mathS.steps) && [codeS, mathS, app.TrackFallback({ course: 'x', level: 3, examDays: 5 })].every(s => app.TrackCleanStrategy(s) && s.steps.length >= 3));
+  const near = app.TrackFallback({ course: 'אלגברה', level: 2, examDays: 5 }), far = app.TrackFallback({ course: 'אלגברה', level: 2, examDays: 60 });
+  check('a close exam puts the exam first, a far one does not', near.steps[0].title.includes('5 ימים') && !far.steps.some(s => s.title.includes('המבחן בעוד')));
+  check('an AI strategy needs a summary and at least three steps, and is cut down', app.TrackCleanStrategy({ summary: 'ס', steps: [{ title: 'א' }] }) === null && app.TrackCleanStrategy({ steps: [{ title: 'א' }, { title: 'ב' }, { title: 'ג' }] }) === null && app.TrackCleanStrategy('x') === null
+    && app.TrackCleanStrategy({ summary: 'ס', steps: Array.from({ length: 9 }, (_, i) => ({ title: 'צעד ' + i, detail: 'ד'.repeat(500) })), routine: Array.from({ length: 9 }, () => 'ר'), avoid: 'לא מערך' }).steps.length === 6);
+
+  // The whole thing through the host, with the file on disk and the AI stubbed.
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'track-app', 'קורסים');
+  const sent = [], realSend = app.Send, realAsk = app.ask, realSave = app.savePath, realPick = app.pickFiles, realToast = app.Toast;
+  app.Send = (m) => sent.push(m); app.Toast = () => { };
+  const op = async (m) => { sent.length = 0; await app.TrackHandle(Object.assign({ type: 'track' }, m)); return sent.find(x => x.type === (m.op === 'strategy' ? 'trackStrategy' : 'trackState')) || sent[0]; };
+  let state = await op({ op: 'load', courses: ['קורס מהאפליקציה'] });
+  check('a new profile is empty, and suggests the courses the app knows', state.profile.courses.length === 0 && state.suggested.some(s => s.name === 'קורס מהאפליקציה'));
+  writeText(app.TimetableJson, JSON.stringify({ classes: [{ day: 'ראשון', start: '10:00', end: '12:00', course: 'מבני נתונים' }], exams: [{ course: 'מבני נתונים', date: '2099-01-10', moed: 'א' }] }));
+  state = await op({ op: 'load' });
+  check('the timetable and the exams give suggestions too, with the date of the exam', state.suggested.some(s => s.name === 'מבני נתונים' && s.examDate === '2099-01-10'));
+  state = await op({ op: 'addCourses', courses: [{ name: 'מבני נתונים', examDate: '2099-01-10' }, { name: 'קורס ידני', manual: true }, { name: 'מבני נתונים' }] });
+  check('courses are added once, and are saved in a file that is written whole', state.profile.courses.length === 2 && fileExists(app.TrackFile) && !fileExists(app.TrackFile + '.tmp') && app.TrackLoad().courses.length === 2 && !state.suggested.some(s => s.name === 'מבני נתונים'));
+  state = await op({ op: 'editCourse', course: 'קורס ידני', values: { level: 17, hoursPerWeek: 3.3, examDate: 'bad', notes: 'ה'.repeat(500) } });
+  const manual = state.profile.courses.find(c => c.name === 'קורס ידני');
+  check('editing a course keeps it in range', manual.level === 3 && manual.hoursPerWeek === 3.25 && manual.examDate === '' && manual.notes.length <= 303);
+
+  let asks = 0, seen = '';
+  app.HelperOrder = () => ['gemini'];
+  app.HelperAsk = async (system, messages) => { asks++; seen = messages[0][1]; return { Error: false, Text: '{"summary":"סיכום","steps":[{"title":"א","detail":"ד"},{"title":"ב"},{"title":"ג"},{"title":"ד"}],"routine":["ר"],"avoid":["ל"]}' }; };
+  app.CoachContext = () => { throw new Error('no folder'); };
+  let res = await op({ op: 'strategy', course: 'מבני נתונים' });
+  check('a strategy comes from the AI, with the course, the difficulty and the exam, and is saved', res.type === 'trackStrategy' && res.strategy.source === 'ai' && asks === 1 && seen.includes('מבני נתונים') && seen.includes('ימים_למבחן') && app.TrackLoad().strategies['מבני נתונים'].summary === 'סיכום');
+  res = await op({ op: 'strategy', course: 'מבני נתונים' });
+  check('a saved strategy is shown without asking again, and "again" asks again', res.strategy.summary === 'סיכום' && asks === 1 && (await op({ op: 'strategy', course: 'מבני נתונים', refresh: true }), asks === 2));
+  app.HelperAsk = async () => ({ Error: true, Text: 'limit' });
+  res = await op({ op: 'strategy', course: 'קורס ידני', refresh: true });
+  check('without a usable AI answer the strategy is made by rules', res.strategy.source === 'rules' && res.strategy.steps.length >= 3 && !res.error);
+  res = await op({ op: 'strategy', course: 'קורס שאין' });
+  check('a strategy for a course that is not in the profile is refused', !!res.error);
+  delete app.HelperOrder; delete app.HelperAsk; delete app.CoachContext;
+
+  // Blocks: built, done, undone. A fixed plan, so that the result does not depend on the day of the week.
+  const fixed = app.TrackLoad();
+  const nowD = new Date(), localToday = nowD.getFullYear() + '-' + String(nowD.getMonth() + 1).padStart(2, '0') + '-' + String(nowD.getDate()).padStart(2, '0');
+  fixed.plan = { weekStart: app.TrackWeekStart(localToday), blocks: [{ id: 'b1', day: 1, start: '10:00', minutes: 60, course: 'מבני נתונים', goal: 'תרגול', done: false, doneMinutes: 0 }, { id: 'b2', day: 2, start: '10:00', minutes: 45, course: 'קורס ידני', goal: 'סיכום', done: false, doneMinutes: 0 }] };
+  app.TrackSave(fixed);
+  state = await op({ op: 'done', id: 'b1', minutes: 50 });
+  check('a block marked done puts its minutes in the log, and the stats follow', state.profile.plan.blocks[0].done && state.profile.plan.blocks[0].doneMinutes === 50 && state.profile.log.length === 1 && state.stats.weekMinutes === 50 && state.stats.doneBlocks === 1 && state.stats.streak === 1);
+  state = await op({ op: 'done', id: 'b1', minutes: 40 });
+  check('marking it twice does not count it twice', state.profile.log.length === 1 && state.profile.log[0].minutes === 40);
+  state = await op({ op: 'undo', id: 'b1' });
+  check('undo takes the minutes out again', !state.profile.plan.blocks[0].done && state.profile.log.length === 0 && state.stats.totalMinutes === 0);
+  state = await op({ op: 'log', course: 'מבני נתונים', minutes: 25, note: 'חזרה' });
+  await op({ op: 'log', course: 'קורס שאין', minutes: 25 });
+  await op({ op: 'log', course: 'מבני נתונים', minutes: 0 });
+  state = app.TrackSnapshot();
+  check('time can be logged by hand, only for a course in the profile and only when above zero', state.profile.log.length === 1 && state.stats.perCourse['מבני נתונים'].total === 25);
+  state = await op({ op: 'removeBlock', id: 'b2' });
+  check('a block can be removed', state.profile.plan.blocks.length === 1);
+  state = await op({ op: 'build', hours: 8, days: [0, 1, 2, 3, 4, 5], from: '09:00', to: '20:00' });
+  check('building the week answers with the new plan, for this week or the next', !!state.built && state.profile.plan.weekStart >= state.weekStart && state.profile.plan.blocks.length === state.built.blocks);
+
+  // Topics.
+  state = await op({ op: 'topic', course: 'מבני נתונים', act: 'add', title: 'עצי חיפוש' });
+  await op({ op: 'topic', course: 'מבני נתונים', act: 'add', title: 'גרפים' });
+  const tid = state.profile.progress['מבני נתונים'].topics[0].id;
+  state = await op({ op: 'topic', course: 'מבני נתונים', act: 'toggle', id: tid });
+  check('topics are added and ticked, and show in the stats', state.stats.perCourse['מבני נתונים'].topics === 2 && state.stats.perCourse['מבני נתונים'].topicsDone === 1);
+  state = await op({ op: 'topic', course: 'מבני נתונים', act: 'remove', id: tid });
+  check('a topic can be removed', state.stats.perCourse['מבני נתונים'].topics === 1);
+
+  // Export and import: the file can move to another computer, and a bad file changes nothing.
+  const out = path.join(root, 'track-export.json');
+  app.savePath = async () => out; app.pickFiles = async () => [out]; app.ask = async () => true;
+  await op({ op: 'export' });
+  const exported = JSON.parse(readText(out));
+  check('the profile is exported to a file', exported.courses.length === 2 && exported.log.length === 1);
+  state = await op({ op: 'removeCourse', course: 'קורס ידני' });
+  check('removing a course removes its blocks, log and strategy too', state.profile.courses.length === 1 && !state.profile.strategies['קורס ידני'] && state.profile.plan.blocks.every(b => b.course !== 'קורס ידני'));
+  state = await op({ op: 'import' });
+  check('importing brings back the exported profile, replacing the current one', state.profile.courses.length === 2 && state.profile.log.length === 1);
+  writeText(out, '{ not json');
+  const before = readText(app.TrackFile);
+  await op({ op: 'import' });
+  check('a file that is not a profile changes nothing', readText(app.TrackFile) === before);
+  writeText(out, JSON.stringify({ courses: [{ name: 'ייבוא' }], log: [{ date: 'x', minutes: 5 }, { date: '2026-11-02', course: 'ייבוא', minutes: 5000 }] }));
+  state = await op({ op: 'import' });
+  check('an imported file is cleaned like any other source', state.profile.courses.length === 1 && state.profile.log.length === 1 && state.profile.log[0].minutes === 600);
+  app.ask = async () => false;
+  await op({ op: 'removeCourse', course: 'ייבוא' });
+  check('removing a course asks first, and "no" keeps it', app.TrackLoad().courses.length === 1);
+  writeText(app.TrackFile, '{ broken');
+  check('a profile file that is broken gives an empty profile, not a crash', app.TrackLoad().courses.length === 0);
+
+  app.Send = realSend; app.ask = realAsk; app.savePath = realSave; app.pickFiles = realPick; app.Toast = realToast;
+  app.settings.studyRoot = saved;
 }
 
 // "What to do in this block?" (block-plan.js): a plan that fills exactly the block, by rules or from an AI answer.

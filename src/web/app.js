@@ -91,6 +91,12 @@ function greeting() {
 const dayFmt = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
 const monFmt = new Intl.DateTimeFormat('he-IL', { month: 'short' });
 const timeFmt = new Intl.DateTimeFormat('he-IL', { hour: '2-digit', minute: '2-digit' });
+// Whole days from today to a date written YYYY-MM-DD (0 = today). Both sides are local midnight, so there is no half day to round up.
+function daysFromToday(iso) {
+  const p = String(iso || '').split('-').map(Number); if (p.length < 3 || p.some(n => !Number.isFinite(n))) return null;
+  const n = new Date();
+  return Math.round((new Date(p[0], p[1] - 1, p[2]) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+}
 function relDay(ts) {
   const d = new Date(ts * 1000), now = new Date();
   const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
@@ -203,6 +209,7 @@ function show(view) {
   }
   if (view === 'home') renderHome();
   if (view === 'tasks') renderTasks($('tasksPage'), false);
+  if (view === 'track' && typeof trackLoad === 'function') trackLoad();
   if (view === 'settings' && window.renderStoneField) setTimeout(renderStoneField, 120); else { const sf = document.getElementById('stoneField'); if (sf) sf.remove(); }
   if (view === 'courses' && !S.courses) loadCourses();
 }
@@ -418,7 +425,7 @@ function renderStats() {
   const openTasks = (S.tasks || []).filter(t => !t.done).length;
   const week = homeEvents().filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000).length;
   const exams = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && new Date(x.date + 'T12:00:00') >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
-  const days = exams.length ? Math.max(0, Math.round((new Date(exams[0].date + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000)) : null;
+  const days = exams.length ? Math.max(0, daysFromToday(exams[0].date)) : null;
   const tile = (ic, cls, value, label) => `<div class="stat-tile"><span class="ic ${cls}" data-ic="${ic}"></span><div><b>${value}</b><small>${label}</small></div></div>`;
   box.innerHTML = tile('book', 'file', S.courses ? cur.length : '·', 'קורסים בסמסטר')
     + tile('check', 'assign', openTasks, openTasks === 1 ? 'מטלה פתוחה שלי' : 'מטלות פתוחות שלי')
@@ -455,7 +462,7 @@ function renderNextUp() {
   }
   const exams = (tt.exams || []).filter(x => x.date && new Date(x.date + 'T12:00:00') >= new Date(now.toDateString())).sort((a, b) => a.date.localeCompare(b.date));
   if (exams.length) {
-    const x = exams[0], days = Math.round((new Date(x.date + 'T12:00:00') - new Date(now.toDateString())) / 86400000);
+    const x = exams[0], days = daysFromToday(x.date);
     const r = h(`<div class="next-row"><span class="ic assign" data-ic="exam"></span><div class="grow"><small>המבחן הבא</small><b dir="auto"></b><span class="muted" dir="auto"></span></div><span class="chip ${days < 14 ? 'warn' : ''}"></span></div>`);
     r.querySelector('b').textContent = x.course + (x.moed ? ' · מועד ' + x.moed : '');
     r.querySelector('.muted').textContent = [x.date.split('-').reverse().join('/'), x.time, x.room].filter(Boolean).join(' · ');
@@ -1816,7 +1823,7 @@ function onMessage(m) {
       if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
       if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
       if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
-      if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); }
+      if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); askTrack(); }
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
@@ -2007,6 +2014,7 @@ function onMessage(m) {
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
+    case 'trackReady': case 'trackState': case 'trackStrategy': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
@@ -2279,7 +2287,7 @@ function renderTasks(box) {
     saveTasks();
   };
   box.append(form);
-  const dayDiff = (t) => t.due ? Math.round((new Date(t.due + 'T12:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
+  const dayDiff = (t) => t.due ? daysFromToday(t.due) : null;
   const row = (t) => {
     const days = dayDiff(t);
     const when = days == null ? '' : days < 0 ? 'עבר המועד' : days === 0 ? 'היום' : days === 1 ? 'מחר' : 'בעוד ' + days + ' ימים';

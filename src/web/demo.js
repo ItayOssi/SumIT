@@ -14,6 +14,43 @@
   };
   const emit = (data, delay = 250) => setTimeout(() => listeners.forEach(fn => fn({ data })), delay);
   const now = Math.floor(Date.now() / 1000);
+  // The study track (track-ui.js): a small profile kept in memory, so that every button of the page does something in the demo.
+  const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const trackProfile = { version: 1, name: '', created: iso(new Date()), strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [],
+    courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 0, examDate: iso(new Date(Date.now() + 12 * 86400000)), notes: '', manual: false }, { name: 'אלגברה לינארית 2', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: false }] };
+  const trackSnapshot = (extra) => {
+    const today = new Date(), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
+    const p = trackProfile, wsIso = iso(ws), wl = p.log.filter(e => e.date >= wsIso), per = {};
+    p.courses.forEach(c => { per[c.name] = { week: wl.filter(e => e.course === c.name).reduce((n, e) => n + e.minutes, 0), total: p.log.filter(e => e.course === c.name).reduce((n, e) => n + e.minutes, 0), topicsDone: ((p.progress[c.name] || {}).topics || []).filter(t => t.done).length, topics: ((p.progress[c.name] || {}).topics || []).length }; });
+    const bl = p.plan.blocks;
+    return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0,
+      suggested: ['פיזיקה 1', 'חשבון אינפיניטסימלי 2'].filter(n => !p.courses.some(c => c.name === n)).map(name => ({ name, where: 'מערכת השעות' })),
+      stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: p.log.length ? 1 : 0, perCourse: per } }, extra || {});
+  };
+  const trackDemo = (m) => {
+    const p = trackProfile, c = p.courses.find(x => x.name === m.course);
+    if (m.op === 'load') return emit(trackSnapshot(), 200);
+    if (m.op === 'addCourses') (m.courses || []).forEach(x => { if (!p.courses.some(y => y.name === x.name)) p.courses.push({ name: x.name, level: 2, hoursPerWeek: 0, examDate: x.examDate || '', notes: '', manual: !!x.manual }); });
+    if (m.op === 'editCourse' && c) Object.assign(c, m.values);
+    if (m.op === 'removeCourse') p.courses = p.courses.filter(x => x.name !== m.course);
+    if (m.op === 'name') p.name = m.value;
+    if (m.op === 'log' && c) p.log.push({ date: iso(new Date()), course: m.course, minutes: m.minutes, note: '', block: '' });
+    if (m.op === 'topic' && c) { const row = p.progress[m.course] || (p.progress[m.course] = { topics: [] }); if (m.act === 'add') row.topics.push({ id: 't' + row.topics.length + Date.now(), title: m.title, done: false }); const t = row.topics.find(x => x.id === m.id); if (t && m.act === 'toggle') t.done = !t.done; if (t && m.act === 'remove') row.topics = row.topics.filter(x => x !== t); }
+    if (m.op === 'done' || m.op === 'undo') { const b = p.plan.blocks.find(x => x.id === m.id); if (b) { p.log = p.log.filter(e => e.block !== b.id); b.done = m.op === 'done'; b.doneMinutes = b.done ? b.minutes : 0; if (b.done) p.log.push({ date: iso(new Date()), course: b.course, minutes: b.minutes, note: b.goal, block: b.id }); } }
+    if (m.op === 'removeBlock') p.plan.blocks = p.plan.blocks.filter(x => x.id !== m.id);
+    if (m.op === 'build') {
+      const ws = trackSnapshot().weekStart, goals = ['חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון'];
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: goals[k], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
+      return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length } }), 500);
+    }
+    if (m.op === 'strategy') return emit({ type: 'trackStrategy', course: m.course, strategy: { source: 'ai', summary: 'במבני נתונים מבינים דרך ציור ופתרון: כל מבנה מציירים לפני שמקודדים אותו.', steps: [
+      { title: 'המבחן בעוד 12 ימים', detail: 'פתור מבחן קודם בתנאי מבחן, והתחל מהנושאים שאתה הכי פחות בטוח בהם.' },
+      { title: 'אחרי כל הרצאה: הסבר בקול', detail: 'הסבר לעצמך את הרעיון המרכזי בשלוש משפטים, בלי להסתכל.' },
+      { title: 'צייר את המבנה', detail: 'מצב לפני, צעד אחד, מצב אחרי.' },
+      { title: 'תרגיל בית לפני פתרון', detail: 'נסה לפחות 15 דקות לבד וכתוב מה ניסית.' }],
+      routine: ['הוכחה אחת בשבוע מהזיכרון', 'עשר דקות כרטיסים בכל יום'], avoid: ['לא לשנן הוכחה בלי להבין את הצעד הראשון'] } }, 900);
+    emit(trackSnapshot(), 120);
+  };
   const courses = [
     { id: 101, name: 'חשבון אינפיניטסימלי 2', category: 'מדעי המחשב · שנה א', current: true, local: { exists: true, studyPages: 6, exams: 8 } },
     { id: 102, name: 'מבני נתונים', category: 'מדעי המחשב · שנה א', current: true, local: { exists: true, studyPages: 3, exams: 4 } },
@@ -57,6 +94,9 @@
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
+        case 'trackPing': emit({ type: 'trackReady' }, 300); break;
+        case 'track': trackDemo(m); break;
+        case 'exportTool': emit({ type: 'toast', text: 'בדמו לא נכתבים קבצים. באפליקציה האמיתית נפתח חלון שמירה.', error: false }, 300); break;
         case 'blockPing': emit({ type: 'blockReady' }, 300); break;
         case 'blockPlan': emit({ type: 'blockResult', requestId: m.requestId, source: 'ai', minutes: m.minutes, steps: [
           { title: 'כתוב על דף מה אתה כבר יודע על "' + m.title + '", בלי להסתכל בשום דבר', minutes: 5, kind: 'recall', why: 'מתחילים משליפה מהזיכרון.' },
