@@ -77,7 +77,7 @@ module.exports = {
         const id = Int(c, 'id');
         if (!Bool(this.LoadMeta(name), 'setupDone')) continue;
         try {
-          const v = await this.WithMoodle(() => this.EvalAsync(this.moodle, this.SectionsJs().replace(/COURSE_ID/g, String(id)), 120000));
+          const v = await this.WithMoodleQuiet(() => this.EvalAsync(this.moodle, this.SectionsJs().replace(/COURSE_ID/g, String(id)), 120000));
           const parsed = JSON.parse(v);
           const meta = this.LoadMeta(name);
           meta.sectionsCache = parsed;

@@ -226,6 +226,9 @@ async function run() {
     // 6h. Study tools: iCal for the blocks, a NotebookLM bundle, Anki cards
     await runStudyExportTests(app, root, check);
 
+    // 6i. Courses open offline: the saved list, the quiet background reads
+    await runOfflineCoursesTests(app, root, check);
+
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
 
@@ -1116,6 +1119,63 @@ async function runStudyExportTests(app, root, check) {
 }
 
 // Study track (study-track.js): the profile on disk, a strategy per course, a week of blocks around the timetable, and the progress.
+async function runOfflineCoursesTests(app, root, check) {
+  const saved = { studyRoot: app.settings.studyRoot, send: app.Send, ensure: app.EnsureMoodle, withMoodle: app.WithMoodle, last: app.lastCourses, fresh: app.coursesFresh, toFront: app.bringToFront };
+  app.settings.studyRoot = path.join(root, 'offline-courses');
+  const cacheFile = app.MoodleCacheFile; // follows the study folder
+  try { fs.unlinkSync(cacheFile); } catch { }
+  app.lastCourses = null; app.coursesFresh = false;
+  const sent = [], interactive = [];
+  app.Send = (m) => sent.push(m); app.bringToFront = () => { };
+  app.EnsureMoodle = async (inter) => { interactive.push(inter); throw new Error('Moodle is down'); };
+  const real = saved.withMoodle;
+  const messages = () => { const o = sent.slice(); sent.length = 0; return o; };
+
+  check('with nothing saved and no folders there are no offline courses', app.OfflineCourses().length === 0);
+  app.SaveMeta('קורס אופליין', { courseId: 4321 }); app.SaveMeta('בלי מזהה', { x: 1 });
+  check('the course folders that remember their Moodle id are the offline courses', app.OfflineCourses().length === 1 && app.OfflineCourses()[0].id === 4321 && app.OfflineCourses()[0].name === 'קורס אופליין');
+
+  app.WriteMoodleCache('courses', [{ id: 7, name: 'קורס שמור', short: 'ק', category: '', current: true }, { id: 8, noName: true }, 'x']);
+  check('the saved list wins over the folders, and rows without a name are dropped', app.OfflineCourses().length === 1 && app.OfflineCourses()[0].name === 'קורס שמור' && !fs.existsSync(cacheFile + '.tmp'));
+  fs.writeFileSync(cacheFile, '{not json'); 
+  check('a broken cache file is ignored and the folders are used', app.OfflineCourses().length === 1 && app.OfflineCourses()[0].name === 'קורס אופליין');
+  app.WriteMoodleCache('courses', [{ id: 7, name: 'קורס שמור' }]);
+
+  await app.LoadCourses(true);
+  let out = messages();
+  check('cachedOnly shows the saved courses and never asks Moodle', out.length === 1 && out[0].type === 'courses' && out[0].cached === true && out[0].data[0].name === 'קורס שמור' && interactive.length === 0);
+  app.lastCourses = null;
+  await app.LoadCourses(false);
+  out = messages();
+  check('when Moodle is down the saved courses stay, with no error and no sign-in window', out.length === 1 && out[0].cached === true && !out.some(m => m.type === 'moodle' && m.state === 'error') && interactive.length === 1 && interactive[0] === false);
+
+  fs.unlinkSync(cacheFile); fs.rmSync(app.CourseDir('קורס אופליין'), { recursive: true, force: true });
+  interactive.length = 0; app.lastCourses = null;
+  await app.LoadCourses(false);
+  out = messages();
+  check('with nothing saved a failure is still shown to the student, and Moodle may ask to sign in', out.some(m => m.type === 'moodle' && m.state === 'error') && interactive[0] === true);
+
+  app.WriteMoodleCache('home', { name: 'סטודנט', events: [{ name: 'מבחן' }] });
+  interactive.length = 0; app.coursesFresh = false; app.lastCourses = [{ id: 1, name: 'x' }];
+  await app.LoadHome();
+  out = messages();
+  const home = out.find(m => m.type === 'home');
+  check('the home page falls back to the last known week when Moodle is down', home && home.events.length === 1 && home.name === 'סטודנט' && !out.some(m => m.type === 'moodle' && m.state === 'error') && interactive[0] === false);
+
+  app.SaveMeta('קורס מקומי', { courseId: 55 });
+  interactive.length = 0;
+  await app.OpenCourse(55, 'קורס מקומי');
+  out = messages();
+  check('a course already on this Mac opens without Moodle, with no error', out.some(m => m.type === 'course' && m.cached) && !out.some(m => m.type === 'courseError') && interactive[0] === false);
+  await app.OpenCourse(66, 'קורס שאין לו תיקייה');
+  out = messages();
+  check('a course that is not on this Mac still reports the failure', out.some(m => m.type === 'courseError'));
+
+  fs.rmSync(app.CourseDir('קורס מקומי'), { recursive: true, force: true });
+  try { fs.unlinkSync(cacheFile); } catch { }
+  app.settings.studyRoot = saved.studyRoot; app.Send = saved.send; app.EnsureMoodle = saved.ensure; app.lastCourses = saved.last; app.coursesFresh = saved.fresh; app.bringToFront = saved.toFront;
+}
+
 async function runStudyTrackTests(app, root, check) {
   const sumMin = (blocks) => blocks.reduce((n, b) => n + b.minutes, 0);
   const mins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));

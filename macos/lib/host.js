@@ -571,7 +571,7 @@ class Host {
 
       // Moodle
       case 'connectMoodle': this.ConnectMoodle(); break;
-      case 'loadCourses': this.LoadCourses(); break;
+      case 'loadCourses': this.LoadCourses(m.cachedOnly === true); break;
       case 'loadHome': this.LoadHome(); break;
       case 'openCourse': this.OpenCourse(Int(m, 'id'), course); break;
       case 'setLecturer': {

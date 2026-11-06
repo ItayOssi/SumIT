@@ -195,6 +195,7 @@ module.exports = {
     host.busySections = new Set();
     host.syncingCourses = new Set();
     host.lastCourses = null;
+    host.coursesFresh = false; // the list came from Moodle in this run (not from the copy saved on this Mac)
   },
   methods: {
     ExerciseNameRe() { return ExerciseName; },
@@ -303,10 +304,80 @@ module.exports = {
       }
     },
 
-    async LoadCourses() {
+    // Background reads never open the sign-in window: when Moodle is down or the session ran out, the caller keeps what is saved on this Mac.
+    async WithMoodleQuiet(work) {
+      await this.moodleLock.wait();
       try {
-        const v = await this.WithMoodle(() => this.EvalAsync(this.moodle, CoursesJs, 60000));
+        await this.EnsureMoodle(false);
+        return await work();
+      } finally {
+        this.moodleLock.release();
+      }
+    },
+
+    // The last course list and home page that Moodle gave, so the courses open even while Moodle is unreachable.
+    get MoodleCacheFile() { return path.join(this.AppRoot, 'moodle-cache.json'); },
+
+    ReadMoodleCache() {
+      try { if (fileExists(this.MoodleCacheFile)) { const o = JSON.parse(readText(this.MoodleCacheFile)); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } } catch { }
+      return {};
+    },
+
+    WriteMoodleCache(key, value) {
+      try {
+        const all = this.ReadMoodleCache();
+        all[key] = value;
+        mkdirp(path.dirname(this.MoodleCacheFile));
+        const tmp = this.MoodleCacheFile + '.tmp';
+        writeText(tmp, JSON.stringify(all));
+        fs.renameSync(tmp, this.MoodleCacheFile);
+      } catch { }
+    },
+
+    // Courses saved earlier; failing that, the course folders on disk that remember their Moodle id.
+    OfflineCourses() {
+      const saved = this.ReadMoodleCache().courses;
+      if (Array.isArray(saved)) {
+        const list = saved.filter(c => c && typeof c === 'object' && Str(c, 'name').length > 0);
+        if (list.length > 0) return list;
+      }
+      const res = [];
+      try {
+        if (this.StudyRoot && dirExists(this.StudyRoot)) {
+          for (const d of listDirs(this.StudyRoot)) {
+            const name = path.basename(d);
+            const meta = this.LoadMeta(name);
+            if (!('courseId' in meta)) continue;
+            res.push({ id: Int(meta, 'courseId'), name, short: name, category: '', current: true, progress: null, url: '' });
+          }
+        }
+      } catch { }
+      return res;
+    },
+
+    // cachedOnly: just show what is saved on this Mac (used while Moodle is unreachable); never touches Moodle.
+    async LoadCourses(cachedOnly = false) {
+      try {
+        // The saved list appears at once; the fresh one replaces it when Moodle answers.
+        const saved = this.OfflineCourses();
+        if (saved.length > 0) {
+          if (!this.lastCourses) this.lastCourses = saved;
+          for (const c of saved) c.local = this.CourseLocal(Str(c, 'name'));
+          this.Send({ type: 'courses', data: saved, cached: true });
+        }
+        if (cachedOnly) return;
+        let v = null;
+        try {
+          v = saved.length > 0
+            ? await this.WithMoodleQuiet(() => this.EvalAsync(this.moodle, CoursesJs, 60000))
+            : await this.WithMoodle(() => this.EvalAsync(this.moodle, CoursesJs, 60000));
+        } catch (ex) {
+          if (saved.length > 0) return; // Moodle is down or the session ran out: keep working from what is saved
+          throw ex;
+        }
         this.lastCourses = JSON.parse(v) || [];
+        this.coursesFresh = true;
+        this.WriteMoodleCache('courses', JSON.parse(v) || []);
         for (const c of this.lastCourses) c.local = this.CourseLocal(Str(c, 'name'));
         this.Send({ type: 'courses', data: this.lastCourses });
       } catch (ex) {
@@ -317,15 +388,27 @@ module.exports = {
 
     async LoadHome() {
       try {
-        const v = await this.WithMoodle(() => this.EvalAsync(this.moodle, HomeJs, 60000));
-        const home = JSON.parse(v) || {};
+        const savedHome = this.ReadMoodleCache().home;
+        const haveSaved = !!savedHome && typeof savedHome === 'object';
+        let v = null, failed = false;
+        try {
+          v = haveSaved
+            ? await this.WithMoodleQuiet(() => this.EvalAsync(this.moodle, HomeJs, 60000))
+            : await this.WithMoodle(() => this.EvalAsync(this.moodle, HomeJs, 60000));
+        } catch (ex) {
+          if (!haveSaved) throw ex;
+          failed = true;
+        }
+        let home;
+        if (failed) home = savedHome; // Moodle unreachable: the last known week
+        else { home = JSON.parse(v) || {}; this.WriteMoodleCache('home', home); }
         const name = Str(home, 'name');
         if (name.length > 0 && name !== Str(this.settings, 'userName')) {
           this.settings.userName = name;
           this.SaveSettings();
         }
         this.Send({ type: 'home', events: home.events || [], name });
-        if (!this.lastCourses) this.LoadCourses();
+        if (!this.coursesFresh) this.LoadCourses(failed);
       } catch (ex) {
         this.bringToFront('ui');
         this.SendMoodle('error', ex.message || String(ex));
@@ -343,14 +426,23 @@ module.exports = {
           local: this.CourseLocal(name), notability: this.NotabilityInfo(name),
         });
 
-        const v = await this.WithMoodle(() => this.EvalAsync(this.moodle, SectionsJs.replace(/COURSE_ID/g, String(id)), 120000));
+        // A course that is already on this Mac opens without Moodle: no sign-in window, no error when Moodle is down.
+        const haveLocal = cached.length > 0 || dirExists(this.CourseDir(name));
+        let v;
+        try {
+          const run = () => this.EvalAsync(this.moodle, SectionsJs.replace(/COURSE_ID/g, String(id)), 120000);
+          v = haveLocal ? await this.WithMoodleQuiet(run) : await this.WithMoodle(run);
+        } catch (ex) {
+          if (haveLocal) return;
+          throw ex;
+        }
         const sections = JSON.parse(v) || [];
         const meta = this.LoadMeta(name);
         meta.courseId = id;
         meta.sectionsCache = JSON.parse(v);
         if (Str(meta, 'lecturer').length === 0 && !('lecturerGuess' in meta)) {
           try {
-            const lv = await this.WithMoodle(() => this.EvalAsync(this.moodle, LecturerJs.replace(/COURSE_ID/g, String(id)), 40000));
+            const lv = await this.WithMoodleQuiet(() => this.EvalAsync(this.moodle, LecturerJs.replace(/COURSE_ID/g, String(id)), 40000));
             meta.lecturerGuess = JSON.parse(lv) || [];
           } catch { meta.lecturerGuess = []; }
         }
