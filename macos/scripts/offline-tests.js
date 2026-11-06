@@ -1172,6 +1172,15 @@ async function runStudyTrackTests(app, root, check) {
   check('an AI strategy needs a summary and at least three steps, and is cut down', app.TrackCleanStrategy({ summary: 'ס', steps: [{ title: 'א' }] }) === null && app.TrackCleanStrategy({ steps: [{ title: 'א' }, { title: 'ב' }, { title: 'ג' }] }) === null && app.TrackCleanStrategy('x') === null
     && app.TrackCleanStrategy({ summary: 'ס', steps: Array.from({ length: 9 }, (_, i) => ({ title: 'צעד ' + i, detail: 'ד'.repeat(500) })), routine: Array.from({ length: 9 }, () => 'ר'), avoid: 'לא מערך' }).steps.length === 6);
 
+  const wk = app.TrackFallback({ course: 'אלגברה', level: 2, cardsDue: 7, pastExams: 2, examDays: 10, lectureList: [{ num: 3, title: 'מרחבים', hasSummary: false }], progress: { openTopics: ['בסיסים'], daysSinceStudy: 6 } });
+  check('the strategy by rules gives up to three actions for this week, from cards, lectures, topics and days without study', wk.thisWeek.length === 3 && wk.thisWeek[0].includes('7') && app.TrackFallback({ course: 'x', level: 2 }).thisWeek.length === 0 && app.TrackCleanStrategy(wk).thisWeek.length === 3);
+  const sys = app.StrategySystem('code'), pmt = JSON.parse(app.StrategyPrompt({ course: 'ג', level: 3, examDays: 4, lectures: 5, progress: { weekMinutes: 90, daysSinceStudy: 2, openTopics: ['א'], topics: 3, topicsDone: 1 } }));
+  check('the AI instructions follow the kind of course, name the learning principles, and the question carries the progress', sys.includes('קורס תכנות') && app.StrategySystem('math').includes('קורס מתמטיקה') && sys.includes('thisWeek') && sys.includes('שליפה פעילה') && pmt.התקדמות.דקות_למידה_השבוע === 90 && pmt.התקדמות.נושאים_פתוחים[0] === 'א');
+  const prof = app.TrackNew('2099-01-07'); prof.courses.push({ name: 'ק', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: true });
+  prof.log.push({ date: '2099-01-03', course: 'ק', minutes: 40, note: '', block: '' }); prof.progress['ק'] = { topics: [{ id: 'a', title: 'פתוח', done: false }, { id: 'b', title: 'סגור', done: true }] };
+  const pg = app.TrackProgressOf('ק', prof, '2099-01-07');
+  check('the progress of one course counts the days since the last study and the open topics', pg.daysSinceStudy === 4 && pg.openTopics.length === 1 && pg.openTopics[0] === 'פתוח' && pg.topicsDone === 1 && app.TrackProgressOf('אחר', prof, '2099-01-07').daysSinceStudy === null);
+
   // The whole thing through the host, with the file on disk and the AI stubbed.
   const saved = app.settings.studyRoot;
   app.settings.studyRoot = path.join(root, 'track-app', 'קורסים');

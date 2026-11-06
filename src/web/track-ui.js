@@ -193,7 +193,7 @@ function openStrategy(course, cached) {
   const dialog = h(`<dialog class="summary-options coach-dialog" dir="rtl" aria-labelledby="trackStratTitle">
     <div class="row"><h2 id="trackStratTitle" class="grow"></h2><button class="ghost small" data-close aria-label="סגור">×</button></div>
     <div data-busy><div class="coach-busy"><span data-ic="spin"></span><b>בונה אסטרטגיה לקורס...</b></div><div class="skeleton" style="height:56px;border-radius:14px;margin:10px 0"></div><div class="skeleton" style="height:56px;border-radius:14px;margin:10px 0"></div></div>
-    <div data-result hidden><p data-summary></p><div data-steps></div><div data-routine></div><div data-avoid></div><p class="muted" data-source></p>
+    <div data-result hidden><p data-summary></p><div data-steps></div><div data-week></div><div data-routine></div><div data-avoid></div><p class="muted" data-source></p>
     <div class="row wrap coach-actions"><button class="soft" data-again><span data-ic="refresh"></span>בנה מחדש</button><div class="grow"></div><button class="ghost" data-close>סגור</button></div></div>
   </dialog>`);
   dialog.querySelector('#trackStratTitle').textContent = 'איך ללמוד: ' + course;
@@ -213,7 +213,7 @@ function openStrategy(course, cached) {
         const row = h(`<div class="coach-step" style="--i:${i}"><span class="chip accent">${i + 1}</span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div></div>`);
         row.querySelector('b').textContent = x.title; row.querySelector('small').textContent = x.detail; box.append(row);
       });
-      list('הרגלים קבועים לשבוע', s.routine, '[data-routine]'); list('כדאי להימנע', s.avoid, '[data-avoid]');
+      list('השבוע הזה', s.thisWeek, '[data-week]'); list('הרגלים קבועים לשבוע', s.routine, '[data-routine]'); list('כדאי להימנע', s.avoid, '[data-avoid]');
       $d('[data-source]').textContent = s.source === 'ai' ? 'נבנה לפי הקורס והנתונים שהאפליקציה מכירה.' : 'נבנה לפי כללים, כי אין AI מחובר או שהוא לא ענה.';
       view('result'); icons(dialog);
     },
