@@ -1802,6 +1802,17 @@ function renderWizardMoodle() {
 }
 
 // ---------- Messages from the app ----------
+// The macOS-only features (review, calendars, "I'm stuck", block plan, study track) show themselves only when the host answers.
+// The host can answer the first settings message before the later scripts have loaded, so this also runs once the page is loaded.
+function askOptionalFeatures() {
+  if (!S.ready || !S.ready.settings) return;
+  if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
+  if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
+  if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
+  if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); if (typeof askTrack === 'function') askTrack(); }
+}
+window.addEventListener('load', askOptionalFeatures);
+
 function onMessage(m) {
   rememberCourseEvent(m);
   if (window.stonesHook) window.stonesHook(m);
@@ -1821,10 +1832,7 @@ function onMessage(m) {
     }
     case 'settings':
       S.settings = m; S.ready.settings = true; S.tasks = m.tasks || [];
-      if (!S.reviewAsked && typeof refreshReview === 'function') { S.reviewAsked = true; refreshReview(); }
-      if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
-      if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
-      if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); askTrack(); }
+      askOptionalFeatures();
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
