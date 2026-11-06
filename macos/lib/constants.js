@@ -6,7 +6,7 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.34',
+  Version: '1.0.35',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
   MacRepo: 'ItayOssi/SumIT',   // the macOS releases (tags v<version>-mac)
@@ -20,6 +20,7 @@ module.exports = {
     onedrive: 'https://hitacil-my.sharepoint.com/_layouts/15/onedrive.aspx',
     notability: 'https://notability.com/',
     notebooklm: 'https://notebooklm.google.com/',
+    googleCalendarImport: 'https://calendar.google.com/calendar/u/0/r/settings/export',
     calendar: 'https://webrashim.hit.ac.il/Portals/student/schedule',
   },
 

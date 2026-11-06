@@ -37,6 +37,13 @@
     if (m.op === 'log' && c) p.log.push({ date: iso(new Date()), course: m.course, minutes: m.minutes, note: '', block: '' });
     if (m.op === 'topic' && c) { const row = p.progress[m.course] || (p.progress[m.course] = { topics: [] }); if (m.act === 'add') row.topics.push({ id: 't' + row.topics.length + Date.now(), title: m.title, done: false }); const t = row.topics.find(x => x.id === m.id); if (t && m.act === 'toggle') t.done = !t.done; if (t && m.act === 'remove') row.topics = row.topics.filter(x => x !== t); }
     if (m.op === 'done' || m.op === 'undo') { const b = p.plan.blocks.find(x => x.id === m.id); if (b) { p.log = p.log.filter(e => e.block !== b.id); b.done = m.op === 'done'; b.doneMinutes = b.done ? b.minutes : 0; if (b.done) p.log.push({ date: iso(new Date()), course: b.course, minutes: b.minutes, note: b.goal, block: b.id }); } }
+    if (m.op === 'blockSave') {
+      const ws = trackSnapshot().weekStart; if (!p.plan.weekStart) p.plan.weekStart = ws;
+      const b = p.plan.blocks.find(x => x.id === m.id);
+      if (b) Object.assign(b, { course: m.course, day: m.day, start: m.start, minutes: m.minutes, goal: m.goal || 'לימוד' });
+      else p.plan.blocks.push({ id: 'm' + Date.now(), day: m.day, start: m.start, minutes: m.minutes, course: m.course, goal: m.goal || 'לימוד', done: false, doneMinutes: 0 });
+      p.plan.blocks.sort((a, c) => a.day - c.day || a.start.localeCompare(c.start));
+    }
     if (m.op === 'removeBlock') p.plan.blocks = p.plan.blocks.filter(x => x.id !== m.id);
     if (m.op === 'build') {
       const ws = trackSnapshot().weekStart, goals = ['חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון'];

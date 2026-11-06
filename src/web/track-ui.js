@@ -118,12 +118,17 @@ function renderTrack() {
   if (planWeek && !current) info.textContent = 'התוכנית שנשמרה היא משבוע שעבר. בנה שבוע חדש.';
   else if (current && planWeek > t.weekStart) { wk.querySelector('h2').textContent = 'השבוע הבא שלי'; info.textContent = 'התוכנית בנויה לשבוע הבא, כי הימים שנבחרו כבר עברו.'; }
   const weekEl = wk.querySelector('.track-week');
+  const shownWeek = current ? planWeek : (planWeek && planWeek > t.weekStart ? planWeek : t.weekStart);
   TRACK_DAYS.forEach((dn, d) => {
-    const day = blocks.filter(b => b.day === d); if (!day.length) return;
-    const date = new Date(trackDate(planWeek).getTime()); date.setDate(date.getDate() + d);
+    const day = blocks.filter(b => b.day === d);
+    if (!day.length && d === 6) return; // an empty Saturday stays out of the way; the other days always offer "add"
+    const date = new Date(trackDate(shownWeek).getTime()); date.setDate(date.getDate() + d);
     const iso = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     const sec = h('<div class="track-day"><div class="track-day-head"><b></b><span class="muted"></span></div></div>');
     sec.querySelector('b').textContent = 'יום ' + dn; sec.querySelector('span').textContent = trackDM(iso) + (iso === t.today ? ' · היום' : '');
+    const addB = h('<button type="button" class="ghost small track-add-block" aria-label="הוסף בלוק ליום זה"><span data-ic="plus"></span>בלוק</button>');
+    addB.onclick = () => openBlockEditor(p, d, null);
+    sec.querySelector('.track-day-head').append(addB);
     for (const b of day) {
       const row = h(`<div class="today-row track-block${b.done ? ' done' : ''}"><span dir="ltr" class="chip"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div></div>`);
       row.querySelector('.chip').textContent = b.start + '–' + trackClock(b.start, b.minutes);
@@ -137,13 +142,15 @@ function renderTrack() {
           const s = new Date(trackDate(iso)); const [hh, mm] = b.start.split(':').map(Number); s.setHours(hh, mm, 0, 0);
           openBlock({ title: (b.course + ' · ' + b.goal.split(':')[0]).slice(0, 110), start: s.getTime(), end: s.getTime() + b.minutes * 60000, uid: 'track-' + b.id });
         });
+        btn('ל-Google', 'ghost', () => send({ type: 'exportTool', op: 'gcalBlock', id: b.id }), 'calendar');
+        btn('ערוך', 'ghost', () => openBlockEditor(p, d, b));
         btn('×', 'ghost', () => trackSend({ op: 'removeBlock', id: b.id }));
       }
       sec.append(row);
     }
     weekEl.append(sec);
   });
-  if (!blocks.length) weekEl.append(h('<p class="muted">עוד אין בלוקים לשבוע הזה.</p>'));
+  if (!blocks.length) weekEl.append(h('<p class="muted">עוד אין בלוקים לשבוע הזה. אפשר ללחוץ "בנה לי שבוע", או להוסיף בלוק ליום שבחרת.</p>'));
   box.append(wk);
 
   // ---- Progress per course
@@ -168,7 +175,7 @@ function renderTrack() {
   const tl = h(`<div class="card pad-lg track-card"><h2>כלים ללמידה במקומות אחרים</h2><p class="muted">הקבצים נשמרים אצלך, ושום דבר לא נשלח לשום שירות.</p>
     <label class="track-tool-course">קורס<select data-course><option value="">כל הקורסים (ל-Anki)</option></select></label>
     <div class="track-tools">
-      <div class="track-tool"><b>יומן</b><small class="muted">הבלוקים של השבוע כקובץ iCal ליומן של Google או Apple, עם תזכורת 10 דקות לפני.</small><button class="soft" data-ics><span data-ic="calendar"></span>ייצוא ליומן</button></div>
+      <div class="track-tool"><b>יומן</b><small class="muted">הבלוקים של השבוע ליומן של Google: פותח את Google Calendar עם הקובץ מוכן לייבוא, עם תזכורת 10 דקות לפני. לבלוק בודד יש כפתור "ל-Google" בתוך השבוע. אפשר גם לשמור קובץ iCal ל-Apple.</small><button class="soft" data-gcal><span data-ic="calendar"></span>הוסף ל-Google Calendar</button><button class="ghost small" data-ics>שמור כקובץ iCal</button></div>
       <div class="track-tool"><b>NotebookLM</b><small class="muted">תיקייה עם הסיכומים, המידע על הקורס והכרטיסים כשאלות ותשובות. מעלים ל-NotebookLM בלחיצה אחת, ומקבלים שם סיכום קולי ושאלות על החומר.</small><button class="soft" data-nb><span data-ic="book"></span>הכן חבילה</button></div>
       <div class="track-tool"><b>Anki</b><small class="muted">כרטיסי הזיכרון כקובץ שאפשר לייבא ל-Anki ולחזור עליו בטלפון.</small><button class="soft" data-anki><span data-ic="download"></span>ייצוא כרטיסים</button></div>
     </div></div>`);
@@ -180,6 +187,7 @@ function renderTrack() {
     if (needCourse && !sel.value) { toast('בחר קורס', { error: true }); return; }
     send({ type: 'exportTool', op, course: sel.value });
   };
+  tl.querySelector('[data-gcal]').onclick = tool('gcal', false);
   tl.querySelector('[data-ics]').onclick = tool('ics', false);
   tl.querySelector('[data-nb]').onclick = tool('notebook', true);
   tl.querySelector('[data-anki]').onclick = tool('anki', false);
@@ -254,4 +262,35 @@ function openTopics(course) {
   dialog.addEventListener('close', () => { window.removeEventListener('sumit-track', draw); dialog.remove(); });
   window.addEventListener('sumit-track', draw);
   draw(); icons(dialog); dialog.showModal();
+}
+
+// One block made or changed by hand. The day is the one the student clicked on, and can be changed here.
+function openBlockEditor(profile, day, block) {
+  if (!profile.courses.length) { toast('קודם הוסף קורסים', { error: true }); return; }
+  const dialog = h(`<dialog class="summary-options" dir="rtl" aria-labelledby="trackBlockTitle"><form method="dialog">
+    <h2 id="trackBlockTitle"></h2>
+    <div class="row wrap track-fields"><label>קורס<select data-course></select></label><label>יום<select data-day></select></label>
+    <label>שעת התחלה<input type="time" data-start class="ltr"></label><label>דקות<input type="number" data-min min="10" max="240" step="5"></label></div>
+    <label class="track-goal">מה עושים בבלוק<input data-goal maxlength="200" placeholder="למשל: תרגיל 3 מהשיעורי בית"></label>
+    <div class="row"><button type="submit" class="primary">שמור</button><button type="button" class="ghost" data-cancel>ביטול</button>${block ? '<div class="grow"></div><button type="button" class="ghost" data-del>מחק בלוק</button>' : ''}</div>
+  </form></dialog>`);
+  dialog.querySelector('#trackBlockTitle').textContent = block ? 'עריכת בלוק' : 'בלוק חדש ליום ' + TRACK_DAYS[day];
+  const $d = (x) => dialog.querySelector(x);
+  profile.courses.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; $d('[data-course]').append(o); });
+  TRACK_DAYS.forEach((n, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = 'יום ' + n; $d('[data-day]').append(o); });
+  $d('[data-course]').value = block ? block.course : profile.courses[0].name;
+  $d('[data-day]').value = String(day);
+  $d('[data-start]').value = block ? block.start : '17:00';
+  $d('[data-min]').value = block ? block.minutes : 60;
+  $d('[data-goal]').value = block ? block.goal : '';
+  document.body.append(dialog);
+  $d('[data-cancel]').onclick = () => dialog.close();
+  if (block) $d('[data-del]').onclick = () => { trackSend({ op: 'removeBlock', id: block.id }); dialog.close(); };
+  $d('form').onsubmit = (e) => {
+    e.preventDefault();
+    trackSend({ op: 'blockSave', id: block ? block.id : '', course: $d('[data-course]').value, day: Number($d('[data-day]').value), start: $d('[data-start]').value || '17:00', minutes: Number($d('[data-min]').value) || 60, goal: $d('[data-goal]').value });
+    dialog.close();
+  };
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.showModal();
 }

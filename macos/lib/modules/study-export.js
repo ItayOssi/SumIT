@@ -54,6 +54,16 @@ function buildIcs(blocks, weekStart, now) {
   return lines.map(icsFold).join('\r\n') + '\r\n';
 }
 
+// A link that opens Google Calendar with one block filled in; the student only presses Save. The times are local, so Google puts them in the calendar's own time zone.
+function googleUrl(b, weekStart) {
+  const p = String(weekStart).split('-').map(Number), h = /^(\d{1,2}):(\d{2})$/.exec(b && b.start || '');
+  if (!h || p.length !== 3 || p.some(n => !Number.isFinite(n))) return '';
+  const start = new Date(p[0], p[1] - 1, p[2] + Int(b, 'day'), Number(h[1]), Number(h[2]));
+  const end = new Date(start.getTime() + Math.max(10, Int(b, 'minutes')) * 60000);
+  const q = { action: 'TEMPLATE', text: 'לימוד: ' + b.course, details: String(b.goal || ''), dates: icsLocal(start) + '/' + icsLocal(end) };
+  return 'https://calendar.google.com/calendar/render?' + Object.keys(q).map(k => k + '=' + encodeURIComponent(q[k])).join('&');
+}
+
 // ---------- Anki ----------
 
 const html = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\t/g, ' ').replace(/\r?\n/g, '<br>');
@@ -96,6 +106,7 @@ function infoMarkdown(course, i) {
 module.exports = {
   methods: {
     ToolsIcs(blocks, weekStart, now) { return buildIcs(blocks, weekStart, now); },
+    ToolsGoogleUrl(block, weekStart) { return googleUrl(block, weekStart); },
     ToolsAnki(cards) { return ankiText(cards); },
     ToolsCardsMarkdown(course, sets) { return cardsMarkdown(course, sets); },
     ToolsInfoMarkdown(course, info) { return infoMarkdown(course, info); },
@@ -108,7 +119,7 @@ module.exports = {
       return names.find(n => n === name || n === SafeName(name)) || names.find(n => same(n, name)) || '';
     },
 
-    // One message from the page: { type: 'exportTool', op: 'ics' | 'anki' | 'notebook', course }.
+    // One message from the page: { type: 'exportTool', op: 'ics' | 'gcal' | 'gcalBlock' | 'anki' | 'notebook', course }.
     async ExportToolHandle(m) {
       const op = Str(m, 'op'), course = Trunc(norm(Str(m, 'course')), 120);
       const home = os.homedir();
@@ -120,6 +131,24 @@ module.exports = {
           if (!file) return;
           writeText(file, buildIcs(blocks, profile.plan.weekStart));
           this.Toast(blocks.length + ' בלוקים יוצאו. פתח את הקובץ ביומן של Google או של Apple.', false);
+          return;
+        }
+
+        // Google Calendar: no sign-in or key inside the app. One block opens a filled-in Google page; all the blocks go as a file that Google imports.
+        if (op === 'gcalBlock') {
+          const profile = this.TrackLoad(), b = profile.plan.blocks.find(x => x.id === Str(m, 'id')), url = b && googleUrl(b, profile.plan.weekStart);
+          if (!url) { this.Toast('הבלוק לא נמצא', true); return; }
+          platform.openExternal(url);
+          return;
+        }
+        if (op === 'gcal') {
+          const profile = this.TrackLoad(), blocks = profile.plan.blocks.filter(b => !b.done);
+          if (!profile.plan.weekStart || !blocks.length) { this.Toast('אין בלוקים לייצוא. בנה קודם שבוע במסלול הלמידה.', true); return; }
+          const file = path.join(this.AppRoot, 'SumIT-study-blocks.ics');
+          mkdirp(this.AppRoot); writeText(file, buildIcs(blocks, profile.plan.weekStart));
+          platform.revealInFinder(file);
+          platform.openExternal(C.Sites.googleCalendarImport);
+          this.Toast(blocks.length + ' בלוקים מוכנים. ב-Google Calendar: ייבוא, בחר את הקובץ שנפתח, ולחץ ייבוא.', false);
           return;
         }
 

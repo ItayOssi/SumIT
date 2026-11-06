@@ -534,6 +534,25 @@ module.exports = {
         save(); state(); return;
       }
 
+      // A block made or changed by hand: the course, the day of the shown week, the start and the length. It goes to the day the student chose.
+      if (op === 'blockSave') {
+        const cname = Trunc(name(Str(m, 'course')), 120), day = Int(m, 'day'), start = Str(m, 'start');
+        if (!profile.courses.some(c => c.name === cname) || day < 0 || day > 6 || !Number.isFinite(toMin(start))) { this.Toast('הבלוק לא נשמר: בדוק קורס, יום ושעה', true); return; }
+        const thisWeek = weekStartOf(today);
+        // A plan of an old week, or none: the new block starts the plan of this week. A plan of the next week stays.
+        if (!profile.plan.weekStart || profile.plan.weekStart < thisWeek) profile.plan = { weekStart: thisWeek, blocks: [] };
+        const minutes = clamp(Int(m, 'minutes') || 45, 10, 240), goal = Trunc(Str(m, 'goal').trim(), 200) || 'לימוד';
+        const old = profile.plan.blocks.find(x => x.id === Str(m, 'id'));
+        if (old) { old.course = cname; old.day = day; old.start = toHHMM(toMin(start)); old.minutes = minutes; old.goal = goal; if (old.done) { old.doneMinutes = Math.min(old.doneMinutes || minutes, 600); } }
+        else {
+          if (profile.plan.blocks.length >= Limits.blocks) return;
+          let n = profile.plan.blocks.length + 1, id; do { id = 'm' + n++; } while (profile.plan.blocks.some(x => x.id === id));
+          profile.plan.blocks.push({ id, day, start: toHHMM(toMin(start)), minutes, course: cname, goal, done: false, doneMinutes: 0 });
+        }
+        profile.plan.blocks.sort((a, b) => a.day - b.day || toMin(a.start) - toMin(b.start));
+        save(); state(); return;
+      }
+
       if (op === 'removeBlock') { profile.plan.blocks = profile.plan.blocks.filter(x => x.id !== Str(m, 'id') || x.done); save(); state(); return; }
 
       if (op === 'log') {

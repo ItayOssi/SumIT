@@ -1046,6 +1046,9 @@ async function runStudyExportTests(app, root, check) {
   check('the times are the local times of the block, and a block that crosses midnight ends on the next day', un.includes('DTSTART:20261103T100000') && un.includes('DTEND:20261103T110000') && un.includes('DTSTART:20261104T233000') && un.includes('DTEND:20261105T003000') && un.includes('DTSTAMP:20261101T080000Z'));
   check('commas, semicolons and new lines in the text are escaped', un.includes('DESCRIPTION:תרגול\\, חזרה\\; ושאלות\\nשורה שנייה') && un.includes('SUMMARY:לימוד: אלגברה'));
   check('no line is longer than 75 bytes, a cut never splits a letter, and the long text comes back whole', ics.split('\r\n').every(l => Buffer.byteLength(l, 'utf8') <= 75) && un.includes('ש'.repeat(300)) && !ics.includes('�'));
+  const gu = app.ToolsGoogleUrl(blocks[0], '2026-11-01'), gq = new URLSearchParams(gu.split('?')[1] || '');
+  check('a block becomes a Google Calendar link with the title, the goal and the local start and end', gu.startsWith('https://calendar.google.com/calendar/render?') && gq.get('action') === 'TEMPLATE' && gq.get('text') === 'לימוד: אלגברה' && gq.get('details').startsWith('תרגול, חזרה;') && gq.get('dates') === '20261103T100000/20261103T110000');
+  check('a block without a valid time or a plan without a date gives no link', app.ToolsGoogleUrl(blocks[2], '2026-11-01') === '' && app.ToolsGoogleUrl(blocks[0], '') === '' && app.ToolsGoogleUrl(null, '2026-11-01') === '');
 
   const anki = app.ToolsAnki([{ front: 'מהו <b>בסיס</b>?', back: 'שורה 1\nשורה\t2 & עוד', course: 'אלגברה לינארית 2', num: 2 }, { front: '', back: 'x' }, { front: 'y', back: ' ' }, null, { front: 'ללא קורס', back: 'ת' }]);
   const rows = anki.trim().split('\n');
@@ -1291,6 +1294,19 @@ async function runStudyTrackTests(app, root, check) {
   check('time can be logged by hand, only for a course in the profile and only when above zero', state.profile.log.length === 1 && state.stats.perCourse['מבני נתונים'].total === 25);
   state = await op({ op: 'removeBlock', id: 'b2' });
   check('a block can be removed', state.profile.plan.blocks.length === 1);
+  // A block by hand goes to the day that was chosen, can be changed and moved, and bad input saves nothing.
+  const nBefore = state.profile.plan.blocks.length;
+  state = await op({ op: 'blockSave', course: 'מבני נתונים', day: 2, start: '18:30', minutes: 50, goal: 'תרגיל בית 3' });
+  const hand = state.profile.plan.blocks.find(b => b.goal === 'תרגיל בית 3');
+  check('a block made by hand lands on the day that was chosen, with its time and length', state.profile.plan.blocks.length === nBefore + 1 && hand.day === 2 && hand.start === '18:30' && hand.minutes === 50 && hand.course === 'מבני נתונים' && !hand.done);
+  state = await op({ op: 'blockSave', id: hand.id, course: 'מבני נתונים', day: 4, start: '09:15', minutes: 5000, goal: '' });
+  const moved = state.profile.plan.blocks.find(b => b.id === hand.id);
+  check('a block can be moved to another day, the length is kept in range and an empty goal gets a default', state.profile.plan.blocks.length === nBefore + 1 && moved.day === 4 && moved.start === '09:15' && moved.minutes === 240 && moved.goal.length > 0);
+  const badN = state.profile.plan.blocks.length;
+  await op({ op: 'blockSave', course: 'קורס שאין', day: 1, start: '10:00', minutes: 30 }); await op({ op: 'blockSave', course: 'מבני נתונים', day: 9, start: '10:00', minutes: 30 }); await op({ op: 'blockSave', course: 'מבני נתונים', day: 1, start: '25:99', minutes: 30 });
+  check('a block for an unknown course, a bad day or a bad time is not saved', app.TrackSnapshot().profile.plan.blocks.length === badN);
+  const days = app.TrackSnapshot().profile.plan.blocks.map(b => b.day); 
+  check('the blocks stay in the order of the week', days.every((d, i) => i === 0 || days[i - 1] <= d));
   state = await op({ op: 'build', hours: 8, days: [0, 1, 2, 3, 4, 5], from: '09:00', to: '20:00' });
   check('building the week answers with the new plan, for this week or the next', !!state.built && state.profile.plan.weekStart >= state.weekStart && state.profile.plan.blocks.length === state.built.blocks);
 
