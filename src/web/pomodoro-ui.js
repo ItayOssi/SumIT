@@ -64,8 +64,9 @@ function pomoToggleLabel(s, left) {
 function pomoBig() {
   if ($('pomoBig') || pomo.state.phase === 'idle') return;
   const dialog = h(`<dialog class="pomo-big" id="pomoBig" dir="rtl" aria-label="טיימר פומודורו"><div class="pomo-big-body" data-phase="">
-    <b class="pomo-big-phase"></b><small class="pomo-big-label" dir="auto"></small>
+    <b class="pomo-big-phase"></b><small class="pomo-big-label" dir="auto"></small><div class="pomo-dots" aria-hidden="true"></div>
     <div class="pomo-big-ring"><svg viewBox="0 0 44 44" aria-hidden="true"><circle class="trk" cx="22" cy="22" r="19"/><circle class="bar" cx="22" cy="22" r="19" pathLength="100"/></svg><b class="pomo-big-time" dir="ltr" aria-live="off"></b></div>
+    <small class="pomo-big-next"></small>
     <div class="pomo-big-btns"><button type="button" data-act="toggle" class="primary pomo-big-toggle"></button><button type="button" data-act="skip" class="ghost">דלג לשלב הבא</button><button type="button" data-act="reset" class="ghost">אפס</button><button type="button" data-close class="ghost">סגור</button></div>
   </div></dialog>`);
   document.body.append(dialog);
@@ -90,6 +91,11 @@ function pomoBigRender() {
   d.querySelector('.pomo-big-phase').textContent = POMO_PHASE[s.phase] + (s.phase === 'focus' ? ` ${s.round}/${cfg.rounds}` : '');
   d.querySelector('.pomo-big-label').textContent = s.label || '';
   d.querySelector('.pomo-big-toggle').textContent = pomoToggleLabel(s, left);
+  // The rounds of this cycle as dots, and what comes after this phase.
+  const dots = d.querySelector('.pomo-dots'); dots.textContent = '';
+  for (let i = 1; i <= cfg.rounds; i++) { const x = document.createElement('i'); x.className = i < s.round || (i === s.round && s.phase !== 'focus') ? 'done' : i === s.round ? 'now' : ''; dots.append(x); }
+  const longNext = s.round % cfg.rounds === 0;
+  d.querySelector('.pomo-big-next').textContent = s.phase === 'focus' ? `אחרי זה: הפסקה של ${longNext ? cfg.long : cfg.short} דקות` : `אחרי זה: סבב ריכוז של ${cfg.focus} דקות`;
 }
 
 // The alert of the system for the moment the phase ends (macOS; the host ignores it elsewhere).
@@ -102,15 +108,34 @@ function pomoAlert() {
     body: s.phase === 'focus' ? `זמן להפסקה של ${longNext ? cfg.long : cfg.short} דקות.` : 'מוכן לסבב הבא?' });
 }
 
-function pomoChime() {
+// The sounds. Each style has two melodies, so the ear knows without looking: the end of a focus round (a falling, calming phrase:
+// rest now) and the end of a break (a rising, brighter one: back to work). `volume` is 10 to 100.
+const POMO_NOTES = {
+  bell: { type: 'sine', len: .9, focus: [[784, 0], [659, .22], [523, .44]], back: [[523, 0], [659, .16], [784, .32], [1047, .48]] },
+  soft: { type: 'triangle', len: .7, focus: [[587, 0], [440, .3]], back: [[440, 0], [587, .3]] },
+  beep: { type: 'square', len: .16, focus: [[880, 0], [880, .24], [660, .48]], back: [[660, 0], [880, .2], [880, .4], [1175, .6]] },
+};
+function pomoAudioReady() {
   try {
     pomoAudio = pomoAudio || new (window.AudioContext || window.webkitAudioContext)();
-    const t = pomoAudio.currentTime;
-    [[660, 0], [880, .18], [1100, .36]].forEach(([f, d]) => {
-      const o = pomoAudio.createOscillator(), g = pomoAudio.createGain();
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(.18, t + d + .02); g.gain.exponentialRampToValueAtTime(.0001, t + d + .55);
-      o.connect(g); g.connect(pomoAudio.destination); o.start(t + d); o.stop(t + d + .6);
+    if (pomoAudio.state === 'suspended') pomoAudio.resume();
+    return pomoAudio;
+  } catch { return null; }
+}
+// A browser starts audio only after the student has touched the page once, so the first touch prepares it for the end of a round.
+['pointerdown', 'keydown'].forEach(t => window.addEventListener(t, () => pomoAudioReady(), { once: true, capture: true }));
+
+function pomoChime(phase, kind, volume) {
+  const ac = pomoAudioReady(); if (!ac) return;
+  try {
+    const n = POMO_NOTES[kind] || POMO_NOTES.bell, notes = phase === 'focus' ? n.focus : n.back;
+    const peak = (n.type === 'square' ? .09 : .22) * (Math.min(100, Math.max(10, volume || 60)) / 100) * 1.6;
+    const t = ac.currentTime + .03;
+    notes.forEach(([f, d]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = n.type; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(peak, t + d + .02); g.gain.exponentialRampToValueAtTime(.0001, t + d + n.len);
+      o.connect(g); g.connect(ac.destination); o.start(t + d); o.stop(t + d + n.len + .05);
     });
   } catch { }
 }
@@ -118,7 +143,7 @@ function pomoChime() {
 function pomoEnded(ev) {
   if (ev.late > 600000) return;   // it ended long ago (the app was closed): nothing to announce
   const { state: s, cfg } = pomo;
-  if (ev.late < 60000 && cfg.sound) pomoChime();
+  if (ev.late < 60000 && cfg.sound) pomoChime(ev.phase, cfg.soundKind, cfg.volume);
   const el = $('pomo');
   if (el) { el.classList.add('ended'); clearTimeout(pomoEndedTimer); pomoEndedTimer = setTimeout(() => el.classList.remove('ended'), 2400); }
   const text = ev.phase === 'focus'
@@ -174,6 +199,9 @@ function pomoSettings() {
     <h2 id="pomoTitle">הגדרות הטיימר</h2>
     <label>תבנית<select data-preset>${opt('classic', 'קלאסי: 25 דקות ריכוז, 5 הפסקה')}${opt('deep', 'עמוק: 50 דקות ריכוז, 10 הפסקה')}${opt('quick', 'קצר: 15 דקות ריכוז, 3 הפסקה')}${opt('custom', 'מותאם אישית')}</select></label>
     <div class="row wrap pomo-custom" data-custom>${num('focus', 'ריכוז (דקות)', 1, 120)}${num('short', 'הפסקה קצרה', 1, 60)}${num('long', 'הפסקה ארוכה', 1, 90)}${num('rounds', 'סבבים עד הארוכה', 2, 8)}</div>
+    <div class="pomo-sound row wrap"><label>צליל<select data-kind>${[['bell', 'פעמון'], ['soft', 'עדין'], ['beep', 'צפצוף']].map(([v, l]) => `<option value="${v}"${v === c.soundKind ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>עוצמה<input type="range" data-volume min="10" max="100" step="5" value="${c.volume}"></label>
+      <div class="row"><button type="button" class="ghost small" data-try="focus">נסה: סוף ריכוז</button><button type="button" class="ghost small" data-try="short">נסה: סוף הפסקה</button></div></div>
     <div class="pomo-checks">${check('auto', 'להתחיל הפסקה אוטומטית אחרי ריכוז')}${check('sound', 'צליל בסיום')}${check('notify', 'התראת מערכת כשהחלון ברקע')}</div>
     <div class="row"><div class="grow"></div><button type="submit" class="primary">שמור</button><button type="button" class="ghost" data-cancel>ביטול</button></div>
   </form></dialog>`);
@@ -181,12 +209,14 @@ function pomoSettings() {
   const sel = dialog.querySelector('[data-preset]'), custom = dialog.querySelector('[data-custom]');
   const sync = () => { custom.hidden = sel.value !== 'custom'; };
   sel.onchange = sync; sync();
+  dialog.querySelectorAll('[data-try]').forEach(b => { b.onclick = () => pomoChime(b.dataset.try === 'focus' ? 'focus' : 'short', dialog.querySelector('[data-kind]').value, Number(dialog.querySelector('[data-volume]').value)); });
   dialog.querySelector('[data-cancel]').onclick = () => dialog.close();
   dialog.querySelector('form').onsubmit = (e) => {
     e.preventDefault();
     const next = { preset: sel.value };
     dialog.querySelectorAll('[data-n]').forEach(i => { next[i.dataset.n] = i.value; });
     dialog.querySelectorAll('[data-c]').forEach(i => { next[i.dataset.c] = i.checked; });
+    next.soundKind = dialog.querySelector('[data-kind]').value; next.volume = dialog.querySelector('[data-volume]').value;
     pomo.cfg = Pomodoro.config(next); pomoSave(); pomoAlert(); pomoRender(); dialog.close();
   };
   dialog.addEventListener('close', () => dialog.remove());

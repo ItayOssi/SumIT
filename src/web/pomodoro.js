@@ -9,6 +9,7 @@
   const LIMITS = { focus: [1, 120], short: [1, 60], long: [1, 90], rounds: [2, 8] };
   const STALE_MS = 10 * 60 * 1000;   // a phase that ended this long ago is not followed by an automatic break
 
+  const SOUNDS = ['bell', 'soft', 'beep'];
   const clamp = (v, [lo, hi], d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
 
   // The student's settings, with every missing or invalid value replaced by the classic one.
@@ -23,6 +24,7 @@
       long: custom ? clamp(c.long, LIMITS.long, PRESETS.classic.long) : base.long,
       rounds: custom ? clamp(c.rounds, LIMITS.rounds, PRESETS.classic.rounds) : base.rounds,
       auto: c.auto !== false, sound: c.sound !== false, notify: c.notify !== false,
+      soundKind: SOUNDS.includes(c.soundKind) ? c.soundKind : 'bell', volume: clamp(c.volume, [10, 100], 60),
     };
   }
 
@@ -83,6 +85,6 @@
 
   const fmt = (ms) => { const t = Math.ceil(Math.max(0, ms) / 1000); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
 
-  const api = { PRESETS, config, durationMs, initial, sanitize, remaining, progress, start, pause, resume, skip, reset, tick, fmt };
+  const api = { PRESETS, SOUNDS, config, durationMs, initial, sanitize, remaining, progress, start, pause, resume, skip, reset, tick, fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Pomodoro = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -826,6 +826,7 @@ async function runPomodoroTests(app, check) {
   check('the classic timer is 25/5, a long break of 15 every 4 rounds', cfg.focus === 25 && cfg.short === 5 && cfg.long === 15 && cfg.rounds === 4 && cfg.auto && cfg.sound && cfg.notify);
   const custom = P.config({ preset: 'custom', focus: 500, short: 'x', long: 0, rounds: 99, auto: false });
   check('custom values are kept within limits, a bad value falls back to the classic one', custom.focus === 120 && custom.short === 5 && custom.long === 1 && custom.rounds === 8 && custom.auto === false && P.config({ preset: 'nope' }).focus === 25);
+  check('the sound style and volume are kept within what exists, and a bad value falls back', cfg.soundKind === 'bell' && cfg.volume === 60 && P.config({ soundKind: 'soft', volume: 5 }).soundKind === 'soft' && P.config({ soundKind: 'soft', volume: 5 }).volume === 10 && P.config({ soundKind: 'x', volume: 'loud' }).soundKind === 'bell' && P.config({ volume: 900 }).volume === 100);
   check('a ready preset ignores stray numbers', P.config({ preset: 'deep', focus: 3 }).focus === 50);
 
   let s = P.start(P.initial(), cfg, T0, 'תרגיל 3');
@@ -1455,6 +1456,13 @@ async function runCoachTests(app, root, check) {
   check('homework that is due soon gets a practice step on its lecture, even before it has a summary', (() => { const st = app.CoachFallback(Object.assign({}, ctx, { reason: 'homework', minutes: 90 })); return st.some(x => x.kind === 'practice' && x.lecture === 3); })());
   check('cards that are due get a cards step', kindsOf('start', 90).includes('cards'));
   check('being lost in the material gets a step with the chat', kindsOf('confused', 90).includes('chat'));
+  const withNote = (note, reason) => app.CoachFallback(Object.assign({}, ctx, { reason: reason || 'homework', minutes: 90, note }));
+  const n2 = withNote('נתקעתי בתרגיל של הרצאה 2');
+  check('a lecture named in the note is the one the steps are about, even when another has homework due', n2.some(x => x.lecture === 2) && !n2.some(x => x.kind === 'practice' && x.lecture === 3));
+  check('the note is in the first step, in the student\'s words', withNote('לא מצליח למצוא בסיס למרחב')[0].title.includes('לא מצליח למצוא בסיס למרחב') && withNote('', 'homework')[0].title.includes('נתון'));
+  check('without a note, or a note that matches nothing, the lectures chosen do not change', JSON.stringify(withNote('נתקעתי').map(x => x.lecture)) === JSON.stringify(withNote('').map(x => x.lecture)) && JSON.stringify(withNote('xyz qqq').map(x => x.lecture)) === JSON.stringify(withNote('').map(x => x.lecture)));
+  check('the AI is told that the note is the main thing and not to pick a lecture because it is first', app.CoachSystem().includes('הערת הסטודנט היא הדבר החשוב') && app.CoachSystem().includes('ראשונה או אחרונה'));
+  check('the AI prompts carry the study-coach principles: hints and not full solutions, burnout, rest, a weekly review', app.CoachSystem().includes('לעולם לא פתרון מלא') && app.CoachSystem().includes('שחיקה') && app.StrategySystem('math').includes('20 אחוז') && app.StrategySystem('code').includes('חמש דקות בסוף כל שבוע') && app.BlockSystem().includes('לא פתרון מלא'));
   const nothing = { course: 'קורס ריק', reason: 'start', note: '', minutes: 20, today: T, info: null, lectures: [], cardsDue: 0, exam: null, pastExams: 0, deadlines: [], tasks: [] };
   check('a course with nothing in it still gets steps', sound(app.CoachFallback(nothing), nothing) && app.CoachFallback(nothing).every(x => x.lecture === null));
 

@@ -1080,6 +1080,16 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .pomo-big-ring .bar { stroke: var(--pomo-c); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--p)); transition: stroke-dashoffset 1s linear, stroke .4s var(--ease); }
 .pomo-big-time { font-size: clamp(64px, 17vw, 124px); font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 .pomo-big-body[data-last="1"] .pomo-big-time { animation: pulse 1s ease-in-out infinite; }
+.pomo-dots { display: flex; gap: 8px; margin-top: 2px; }
+.pomo-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--surface-3); transition: background .3s var(--ease), transform .3s var(--ease); }
+.pomo-dots i.done { background: var(--pomo-c); opacity: .55; }
+.pomo-dots i.now { background: var(--pomo-c); transform: scale(1.3); }
+.pomo-big-next { color: var(--muted); font-size: 15px; }
+.pomo-ring .bar, .pomo-big-ring .bar { opacity: 1; }
+.pomo-sound { gap: 12px; margin: 12px 0; align-items: end; }
+.pomo-sound > .row { flex: 1 1 100%; gap: 8px; }
+.pomo-sound label { flex: 1 1 130px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.pomo-sound input[type=range] { width: 100%; accent-color: var(--accent); }
 .pomo-big-btns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .pomo-big-btns button { font-size: 17px; padding: 12px 22px; border-radius: 14px; }
 .pomo-big-toggle { min-width: 150px; }
