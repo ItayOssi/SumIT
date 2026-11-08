@@ -1138,6 +1138,10 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .track-tool { display: grid; gap: 8px; align-content: start; padding: 14px; border-radius: 14px; background: var(--surface-2); }
 .track-tool small { line-height: 1.55; }
 .track-tool button { justify-self: start; }
+.track-icloud-status { font-size: 12.5px; color: var(--muted); }
+.track-icloud-status:empty { display: none; }
+.track-icloud-status.ok { color: var(--ok); }
+.track-icloud-status.err { color: var(--bad); }
 .track-add-block { margin-inline-start: auto; align-self: center; }
 .track-goal { display: block; margin: 10px 0 14px; }
 .track-goal input { width: 100%; margin-top: 4px; }

@@ -121,7 +121,10 @@
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
         case 'trackPing': emit({ type: 'trackReady' }, 300); break;
         case 'track': trackDemo(m); break;
-        case 'exportTool': emit({ type: 'toast', text: 'בדמו לא נכתבים קבצים. באפליקציה האמיתית נפתח חלון שמירה.', error: false }, 300); break;
+        case 'exportTool':
+          if (m.op === 'icloud') { [1, 2, 3].forEach(i => emit({ type: 'icloudExport', state: 'busy', course: m.course, done: i - 1, total: 3 }, 250 * i)); emit({ type: 'icloudExport', state: 'done', course: m.course, total: 3, added: 3, updated: 0, unchanged: 0, kept: 0, text: '3 סיכומים סונכרנו ל-iCloud (בדמו לא נכתבים קבצים)' }, 1100); break; }
+          if (m.op === 'icloudReveal') break;
+          emit({ type: 'toast', text: 'בדמו לא נכתבים קבצים. באפליקציה האמיתית נפתח חלון שמירה.', error: false }, 300); break;
         case 'blockPing': emit({ type: 'blockReady' }, 300); break;
         case 'blockPlan': emit({ type: 'blockResult', requestId: m.requestId, source: 'ai', minutes: m.minutes, steps: [
           { title: 'כתוב על דף מה אתה כבר יודע על "' + m.title + '", בלי להסתכל בשום דבר', minutes: 5, kind: 'recall', why: 'מתחילים משליפה מהזיכרון.' },

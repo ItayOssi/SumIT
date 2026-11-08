@@ -21,6 +21,26 @@ function trackEvent(m) {
     renderTrack(); window.dispatchEvent(new Event('sumit-track')); return;
   }
   if (m.type === 'trackStrategy' && trackStrategyRun && m.course === trackStrategyRun.course) trackStrategyRun.show(m);
+  if (m.type === 'icloudExport') {
+    S.icloud = m;
+    if (m.state === 'done') toast(m.text);
+    else if (m.state === 'error') toast(m.error, { error: true });
+    renderICloud();
+  }
+}
+
+// The iCloud card's button and status line, from the last { type: 'icloudExport' } the host sent.
+function renderICloud() {
+  const card = document.querySelector('[data-icloud-card]'); if (!card) return;
+  const btn = card.querySelector('[data-icloud]'), st = card.querySelector('[data-icloud-status]'), rv = card.querySelector('[data-icloud-reveal]');
+  const m = S.icloud, busy = !!m && m.state === 'busy';
+  btn.disabled = busy;
+  btn.innerHTML = busy ? '<span data-ic="spin"></span>מסנכרן...' : '<span data-ic="cloud"></span>ייצא ל-iCloud / iPad';
+  st.className = 'track-icloud-status' + (m && m.state === 'error' ? ' err' : m && m.state === 'done' ? ' ok' : '');
+  st.textContent = !m ? '' : busy ? 'מעתיק ' + m.done + '/' + m.total + (m.course ? ' · ' + m.course : '') : m.state === 'error' ? m.error : '✓ ' + m.text;
+  rv.hidden = !(m && m.state === 'done');
+  rv.onclick = () => send({ type: 'exportTool', op: 'icloudReveal', course: m.course });
+  icons(card);
 }
 
 const trackDate = (iso) => { const p = String(iso).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); };
@@ -177,6 +197,7 @@ function renderTrack() {
     <div class="track-tools">
       <div class="track-tool"><b>יומן</b><small class="muted">הבלוקים של השבוע ליומן של Google: פותח את Google Calendar עם הקובץ מוכן לייבוא, עם תזכורת 10 דקות לפני. לבלוק בודד יש כפתור "ל-Google" בתוך השבוע. אפשר גם לשמור קובץ iCal ל-Apple.</small><button class="soft" data-gcal><span data-ic="calendar"></span>הוסף ל-Google Calendar</button><button class="ghost small" data-ics>שמור כקובץ iCal</button></div>
       <div class="track-tool"><b>NotebookLM</b><small class="muted">תיקייה עם הסיכומים, המידע על הקורס והכרטיסים כשאלות ותשובות. מעלים ל-NotebookLM בלחיצה אחת, ומקבלים שם סיכום קולי ושאלות על החומר.</small><button class="soft" data-nb><span data-ic="book"></span>הכן חבילה</button></div>
+      <div class="track-tool" data-icloud-card><b>iPad (iCloud Drive)</b><small class="muted">הסיכומים (PDF ו-Markdown) וכרטיסי הזיכרון של הקורס לתיקייה iCloud Drive/SumIT. אפליקציית SumIT לאייפד קוראת אותם משם, ואפשר גם לפתוח את ה-PDF מ-Files ב-Notability או ב-Goodnotes. קובץ שסימנת עליו באייפד לא נדרס: הגרסה שלך נשמרת בשם עם תאריך.</small><button class="soft" data-icloud></button><small class="track-icloud-status" data-icloud-status aria-live="polite" dir="auto"></small><button class="ghost small" data-icloud-reveal hidden>הצג ב-Finder</button></div>
       <div class="track-tool"><b>Anki</b><small class="muted">כרטיסי הזיכרון כקובץ שאפשר לייבא ל-Anki ולחזור עליו בטלפון.</small><button class="soft" data-anki><span data-ic="download"></span>ייצוא כרטיסים</button></div>
     </div></div>`);
   const sel = tl.querySelector('[data-course]');
@@ -191,7 +212,9 @@ function renderTrack() {
   tl.querySelector('[data-ics]').onclick = tool('ics', false);
   tl.querySelector('[data-nb]').onclick = tool('notebook', true);
   tl.querySelector('[data-anki]').onclick = tool('anki', false);
+  tl.querySelector('[data-icloud]').onclick = tool('icloud', true);
   box.append(tl);
+  renderICloud();
   icons(box);
 }
 

@@ -1093,6 +1093,86 @@ async function runStudyExportTests(app, root, check) {
   await app.ExportToolHandle({ op: 'notebook', course: '' });
   check('an unknown course or no course is refused with a message', last().error && opened.length === 0);
 
+  // iCloud Drive: the summary PDFs of a course as Lecture_NN_<topic>.pdf with a metadata.json, and a file the student wrote on is never overwritten.
+  check('the iCloud file name has the lecture number with two digits and the topic with _ for spaces, and a missing or long title is handled',
+    app.ToolsICloudName(3, 'מרחבים  וקטוריים') === 'Lecture_03_מרחבים_וקטוריים.pdf' && app.ToolsICloudName(12, '') === 'Lecture_12.pdf' && app.ToolsICloudName(1, 'a/b:c?.') === 'Lecture_01_a_b_c.pdf'
+    && app.ToolsICloudName(2, 'ש'.repeat(90)).length === 'Lecture_02_'.length + 60 + 4);
+  const plan = app.ToolsICloudPlan([{ num: 1, file: 'a.pdf', sha: 'x' }, { num: 2, file: 'b.pdf', sha: 'y' }, { num: 3, file: 'c.pdf', sha: 'z' }, { num: 4, file: 'd2.pdf', sha: 'w' }, { num: 5, file: 'e.pdf', sha: 'v' }],
+    [{ num: 2, file: 'b.pdf', sha256: 'old' }, { num: 3, file: 'c.pdf', sha256: 'old' }, { num: 4, file: 'd.pdf', sha256: 'q' }],
+    f => ({ 'a.pdf': 'x', 'b.pdf': 'old', 'c.pdf': 'edited', 'd.pdf': 'q', 'e.pdf': 'other' })[f] || null);
+  check('the iCloud plan skips a file that is the same, overwrites what SumIT wrote, keeps a file that was edited, and removes the file of an old title',
+    plan.map(p => p.action).join() === 'skip,overwrite,keepOld,write,keepOld' && plan[3].remove === 'd.pdf' && !plan[0].remove && !plan[2].remove);
+
+  const icloud = path.join(root, 'icloud-drive'), savedEnv = process.env.SUMIT_ICLOUD_DIR, realSend = app.Send, sent = [];
+  process.env.SUMIT_ICLOUD_DIR = icloud;
+  app.Send = (m) => sent.push(m);
+  const lastIc = () => sent.filter(m => m.type === 'icloudExport').pop() || {};
+  try {
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    check('with no iCloud Drive on the Mac, the export says so and writes nothing', lastIc().state === 'error' && lastIc().error.includes('iCloud Drive') && !fs.existsSync(icloud));
+    mkdirp(icloud);
+    const m0 = app.LoadMeta(course); m0.courseId = 4242; app.SaveMeta(course, m0);
+    sent.length = 0;
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    const dir = path.join(icloud, 'SumIT', course), f1 = path.join(dir, 'Lecture_01_נושא_1.pdf');
+    const ls = () => (fs.existsSync(dir) ? fs.readdirSync(dir).sort() : []);
+    const md1 = fs.existsSync(path.join(dir, 'metadata.json')) ? JSON.parse(readText(path.join(dir, 'metadata.json'))) : {};
+    const sha = (t) => require('crypto').createHash('sha256').update(t).digest('hex');
+    check('the export writes the PDF of a lecture that has one, the Markdown summary of a lecture that has only that, the cards and metadata.json, and no temporary files',
+      ls().join('|') === 'Lecture_01_נושא_1.pdf|Lecture_02_נושא_2.md|cards.json|metadata.json' && readText(f1) === '%PDF-1.4 test' && readText(path.join(dir, 'Lecture_02_נושא_2.md')).includes('בסיס וממד'));
+    check('metadata.json has schema 1, the Moodle course id, the course, and per lecture its files with their sha256 and the number of cards',
+      md1.schema === 1 && md1.moodleCourseId === 4242 && md1.course === course && md1.app === 'SumIT' && md1.cardsFile === 'cards.json' && md1.lectures.length === 2
+      && md1.lectures[0].num === 1 && md1.lectures[0].file === 'Lecture_01_נושא_1.pdf' && md1.lectures[0].sha256 === sha('%PDF-1.4 test') && md1.lectures[0].summaryFile === null && md1.lectures[0].cards === 0
+      && md1.lectures[1].num === 2 && md1.lectures[1].file === null && md1.lectures[1].summaryFile === 'Lecture_02_נושא_2.md' && md1.lectures[1].summarySha256 === sha('# תקציר\nבסיס וממד') && md1.lectures[1].cards === 2 && 'date' in md1.lectures[1]);
+    const cj = JSON.parse(readText(path.join(dir, 'cards.json')));
+    check('cards.json has the cards of this course only, each with its lecture and a key made from its question',
+      cj.schema === 1 && cj.cards.length === 2 && cj.cards.every(c => c.num === 2 && /^2-[0-9a-f]{12}$/.test(c.key)) && cj.cards[0].front === 'מהו בסיס?' && cj.cards[0].back === 'ב' && cj.cards[0].key !== cj.cards[1].key && !readText(path.join(dir, 'cards.json')).includes('כוח'));
+    const ix = JSON.parse(readText(path.join(icloud, 'SumIT', 'index.json')));
+    check('SumIT/index.json lists the course with its folder, Moodle id and counts', ix.schema === 1 && ix.courses.length === 1 && ix.courses[0].folder === course && ix.courses[0].moodleCourseId === 4242 && ix.courses[0].lectures === 2 && ix.courses[0].cards === 2);
+    const states = sent.filter(m => m.type === 'icloudExport').map(m => m.state);
+    check('the page hears busy and then done, with how many were added', states[0] === 'busy' && states[states.length - 1] === 'done' && lastIc().added === 2 && lastIc().course === 'אלגברה לינארית 2');
+
+    const t1 = fs.statSync(f1).mtimeMs;
+    await new Promise(r => setTimeout(r, 20));
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    check('a second export with nothing new writes nothing again', fs.statSync(f1).mtimeMs === t1 && lastIc().unchanged === 2 && lastIc().added === 0 && JSON.parse(readText(path.join(dir, 'cards.json'))).cards[0].key === cj.cards[0].key && lastIc().text.includes('כבר מעודכנות'));
+
+    fs.writeFileSync(app.LecturePdfPath(course, 1), '%PDF-1.4 new summary');
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    check('a summary that changed replaces the file SumIT wrote before', readText(f1) === '%PDF-1.4 new summary' && ls().length === 4 && lastIc().updated === 1 && lastIc().unchanged === 1);
+
+    fs.writeFileSync(f1, '%PDF-1.4 with my notes from the iPad');
+    fs.writeFileSync(app.LecturePdfPath(course, 1), '%PDF-1.4 third summary');
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    const keptFile = ls().find(n => /^Lecture_01_נושא_1_\d{4}-\d{2}-\d{2}-\d{4}\.pdf$/.test(n));
+    check('a file the student wrote on is kept under a dated name, and the new summary is written', !!keptFile && readText(path.join(dir, keptFile)) === '%PDF-1.4 with my notes from the iPad' && readText(f1) === '%PDF-1.4 third summary' && lastIc().kept === 1);
+
+    fs.rmSync(path.join(dir, keptFile));
+    app.SaveLecture(course, { num: 1, title: 'בסיס וממד' });
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    check('when the title changes, the file under the old title is removed and the new name is written', ls().join('|') === 'Lecture_01_בסיס_וממד.pdf|Lecture_02_נושא_2.md|cards.json|metadata.json');
+
+    await app.ExportToolHandle({ op: 'icloud', course: 'פיזיקה 1' });
+    const ix2 = JSON.parse(readText(path.join(icloud, 'SumIT', 'index.json')));
+    check('a course with no summary is refused and index.json stays as it was', lastIc().state === 'error' && ix2.courses.length === 1);
+    mkdirp(path.dirname(app.LecturePdfPath(other, 1))); fs.writeFileSync(app.LecturePdfPath(other, 1), '%PDF-1.4 physics');
+    await app.ExportToolHandle({ op: 'icloud', course: 'פיזיקה 1' });
+    const ix3 = JSON.parse(readText(path.join(icloud, 'SumIT', 'index.json')));
+    fs.rmSync(path.join(icloud, 'SumIT', other), { recursive: true, force: true });
+    await app.ExportToolHandle({ op: 'icloud', course: 'אלגברה לינארית 2' });
+    const ix4 = JSON.parse(readText(path.join(icloud, 'SumIT', 'index.json')));
+    check('index.json keeps every exported course, and drops a course whose folder was deleted', ix3.courses.length === 2 && ix3.courses.some(c => c.course === other && c.cards === 1 && c.moodleCourseId === null) && ix4.courses.length === 1 && ix4.courses[0].course === course);
+
+    const before = sent.length;
+    await app.ExportToolHandle({ op: 'icloud', course: 'היסטוריה' });
+    await app.ExportToolHandle({ op: 'icloud', course: 'קורס שאין' });
+    const errs = sent.slice(before).filter(m => m.type === 'icloudExport');
+    check('a course with no PDF summary or no folder gets an error and no folder in iCloud', errs.length === 2 && errs.every(m => m.state === 'error') && errs[0].error.includes('אין עדיין סיכומים') && !fs.existsSync(path.join(icloud, 'SumIT', empty)));
+  } finally {
+    app.Send = realSend;
+    if (savedEnv === undefined) delete process.env.SUMIT_ICLOUD_DIR; else process.env.SUMIT_ICLOUD_DIR = savedEnv;
+  }
+
   const out = path.join(root, 'export-out.txt');
   app.savePath = async () => out;
   await app.ExportToolHandle({ op: 'anki', course: 'פיזיקה 1' });

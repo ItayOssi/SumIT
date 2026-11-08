@@ -12,6 +12,8 @@
 
 </div>
 
+> **SumIT 1.0.37 ל-macOS** - **ייצוא ל-iCloud / iPad**: הסיכומים וכרטיסי הזיכרון של קורס לתיקייה ב-iCloud Drive, לפתיחה באייפד. [הערות הגרסה](docs/release-1.0.37.md)
+>
 > **SumIT 1.0.36 ל-macOS** - "אני תקוע" מתייחס להערה שכתבת, צלילים וממשק חדשים לפומודורו, וסרטון תדמית. [הערות הגרסה](docs/release-1.0.36.md) · [הסרטון](https://github.com/ItayOssi/SumIT/releases/download/v1.0.36-mac/sumit-promo.mp4)
 >
 > **SumIT 1.0.35 ל-macOS** - בלוקים ידניים במסלול הלמידה (הוספה לכל יום ועריכה), וייצוא ליומן Google. [הערות הגרסה](docs/release-1.0.35.md)

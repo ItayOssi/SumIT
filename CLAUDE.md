@@ -6,12 +6,12 @@ Study app for HIT students. The UI is Hebrew and RTL.
 - `src/*.cs`: the Windows app (C#, WebView2). These files use CRLF line endings; keep them.
 - `macos/`: the macOS Electron port. `macos/lib/modules/*.js` mirror `src/*.cs` one-to-one (each file says which C# file it ports).
   A logic change goes into both, with a test in both `macos/scripts/offline-tests.js` and `tests/RegressionTests.cs`.
-  macOS-only features have no C# counterpart: flashcards, spaced repetition (`reviews.js`), the pomodoro system alert (`pomodoro.js`), calendars (`calendars.js`), "I'm stuck" (`coach.js`) and "what to do in this block" (`block-plan.js`) and the study track, beta (`study-track.js`: courses, a strategy per course, a week of blocks, progress kept in a local profile file with export and import), and the study tools (`study-export.js`: the week's blocks as an iCal file, a folder of sources for NotebookLM, the cards as an Anki text file; they are buttons in the study track page). Their UI is in `src/web/` and stays hidden on Windows until the host answers.
+  macOS-only features have no C# counterpart: flashcards, spaced repetition (`reviews.js`), the pomodoro system alert (`pomodoro.js`), calendars (`calendars.js`), "I'm stuck" (`coach.js`) and "what to do in this block" (`block-plan.js`) and the study track, beta (`study-track.js`: courses, a strategy per course, a week of blocks, progress kept in a local profile file with export and import), and the study tools (`study-export.js`: the week's blocks as an iCal file, a folder of sources for NotebookLM, the cards as an Anki text file, the summary PDFs of a course to iCloud Drive `SumIT/<course>/Lecture_NN_<topic>.pdf` with a `metadata.json` for the iPad; they are buttons in the study track page). Their UI is in `src/web/` and stays hidden on Windows until the host answers.
 - `src/web/`: the web UI shared by both apps.
 - `docs/`: screenshots and release notes (`release-<version>.md`, in Hebrew).
 
 ## Checks (from `macos/`)
-- `npm install` once, then `npm test`. Expected: `29 Host mixin modules loaded cleanly` and `ALL 322 OFFLINE REGRESSION CHECKS PASSED` (update the count when tests are added).
+- `npm install` once, then `npm test`. Expected: `29 Host mixin modules loaded cleanly` and `ALL 333 OFFLINE REGRESSION CHECKS PASSED` (update the count when tests are added).
 - Needs Node 23 or newer: `macos/lib/modules/summary-share.js` uses a regex with duplicate named groups. On Node 22, run the scripts with `node --js-regexp-duplicate-named-groups`.
 - The C# code can only be built on Windows.
 
