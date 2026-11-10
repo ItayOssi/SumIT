@@ -1423,6 +1423,129 @@ async function runStudyTrackTests(app, root, check) {
   writeText(app.TrackFile, '{ broken');
   check('a profile file that is broken gives an empty profile, not a crash', app.TrackLoad().courses.length === 0);
 
+  // ---- The wizard: the routine, the calendar, difficulty and energy, and a plan that follows them.
+  const rtBad = app.TrackCleanRoutine({ wake: '25:00', sleep: 'x', peak: 'night', days: [9, 1, 1, 'a', 3], hours: 500, block: 77, done: 'yes',
+    commitments: [{ day: 1, start: '15:00', end: '20:00', title: '  עבודה   במשמרת ', source: 'calendar' }, { day: 2, start: '10:00', end: '09:00' }, { day: 8, start: '10:00', end: '11:00' }, { day: 0, start: '08:00', end: '09:00', id: 'x' }, { day: 0, start: '07:00', end: '07:30', id: 'x' }] });
+  check('a routine is cleaned: times, peak and block size fall back to defaults, days and hours are kept in range, done must be true',
+    rtBad.wake === '07:30' && rtBad.sleep === '23:30' && rtBad.peak === 'morning' && rtBad.days.join() === '1,3' && rtBad.hours === 60 && rtBad.block === 45 && rtBad.done === false);
+  check('commitments need a real day and an end after the start, get unique ids and a clean title, and are sorted by the week',
+    rtBad.commitments.length === 3 && rtBad.commitments[0].start === '07:00' && rtBad.commitments[2].title === 'עבודה במשמרת' && rtBad.commitments[2].source === 'calendar' && new Set(rtBad.commitments.map(c => c.id)).size === 3);
+  check('a profile without a routine gets the default one, and every course has an energy in range',
+    app.TrackClean({ courses: [{ name: 'א', energy: 9 }, { name: 'ב' }] }).routine.done === false && app.TrackClean({ courses: [{ name: 'א', energy: 9 }] }).courses[0].energy === 3 && app.TrackClean({ courses: [{ name: 'ב' }] }).courses[0].energy === 2);
+  check('the study window is an hour after getting up until an hour before sleep, and a sleep after midnight ends the day at 23:45',
+    JSON.stringify(app.TrackRoutineWindow({ wake: '07:30', sleep: '23:30' })) === '{"from":"08:30","to":"22:30"}' && app.TrackRoutineWindow({ wake: '09:10', sleep: '01:00' }).to === '23:45' && app.TrackRoutineWindow({ wake: '09:10', sleep: '01:00' }).from === '10:15');
+
+  // The calendar: work every Monday 15:00-20:00 for four weeks is a commitment; a one-off meeting, an all-day event and a "free" event are not.
+  const at = (y, mo, d, hh, mi) => new Date(y, mo - 1, d, hh, mi).getTime();
+  const nowCal = new Date(2026, 10, 11, 12, 0);   // a Wednesday
+  const evs = [];
+  for (const d of [12, 19, 26]) evs.push({ start: at(2026, 10, d, 15, 0), end: at(2026, 10, d, 20, 0), title: 'עבודה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 2, 15, 0), end: at(2026, 11, 2, 20, 0), title: 'עבודה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 9, 15, 0), end: at(2026, 11, 9, 20, 0), title: 'עבודה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 4, 9, 0), end: at(2026, 11, 4, 10, 0), title: 'פגישה עם המנחה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 5, 0, 0), end: at(2026, 11, 6, 0, 0), title: 'יום הולדת', busy: false, allDay: true });
+  for (const d of [3, 10]) evs.push({ start: at(2026, 11, d, 18, 0), end: at(2026, 11, d, 19, 0), title: 'אולי', busy: false, allDay: false });
+  const rf = app.TrackRoutineFromEvents(evs, nowCal);
+  check('an event that comes back every week at the same hours is a commitment, with the number of weeks; one-off, all-day and free events are not',
+    rf.commitments.length === 1 && rf.commitments[0].title === 'עבודה' && rf.commitments[0].day === 1 && rf.commitments[0].start === '15:00' && rf.commitments[0].end === '20:00' && rf.commitments[0].weeks === 5 && rf.commitments[0].source === 'calendar');
+  check('the busy minutes of an average weekday count the last four weeks only', rf.busyByDay[1] === 300 && rf.busyByDay[3] === 15 && rf.busyByDay[0] === 0 && rf.firstStart !== '' && rf.events === 5);
+  check('no events give no commitments and no crash', app.TrackRoutineFromEvents([], nowCal).commitments.length === 0 && app.TrackRoutineFromEvents(null, nowCal).firstStart === '');
+
+  // The same through the calendars the app keeps, read with the page's iCal reader (a weekly rule, local time).
+  const savedCalDir = app.calendarsDir, savedCalList = app.settings.calendars;
+  app.calendarsDir = path.join(root, 'track-calendars'); app.settings.calendars = [{ id: 'a'.repeat(32), name: 'Google', source: 'url', url: 'https://calendar.google.com/x.ics' }];
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', 'UID:gym', 'SUMMARY:אימון', 'DTSTART:20261001T180000', 'DTEND:20261001T193000', 'RRULE:FREQ=WEEKLY', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  mkdirp(app.calendarsDir); writeText(app.CalendarFile('a'.repeat(32)), ics);
+  const scan = app.TrackCalendarScan(nowCal);
+  check('the connected calendar is read, and a weekly event becomes a commitment on its weekday', scan.calendars === 1 && scan.commitments.length === 1 && scan.commitments[0].title === 'אימון' && scan.commitments[0].day === 4 && scan.commitments[0].start === '18:00' && scan.commitments[0].end === '19:30');
+  app.settings.calendars = [];
+  check('with no calendar the scan says so and finds nothing', app.TrackCalendarScan(nowCal).calendars === 0 && app.TrackCalendarScan(nowCal).commitments.length === 0);
+  app.calendarsDir = savedCalDir; app.settings.calendars = savedCalList;
+
+  // Difficulty and energy, suggested.
+  const sMath = app.TrackSuggestRating('אלגברה לינארית', { examDays: null }), sGen = app.TrackSuggestRating('פסיכולוגיה', { examDays: null });
+  const sNear = app.TrackSuggestRating('פסיכולוגיה', { examDays: 9, lectures: 6, summarized: 1, info: { grading: [{ component: 'מבחן סופי', weight: 90 }] } });
+  check('a math course is suggested as hard and needing much energy, a course of concepts as medium and low energy, each with a reason',
+    sMath.level === 3 && sMath.energy === 3 && sGen.level === 2 && sGen.energy === 1 && sMath.reasons.length >= 1 && sGen.reasons.length >= 1);
+  check('a close exam and lectures without summaries make a course harder, and the reasons say so', sNear.level === 3 && sNear.reasons.some(r => r.includes('9 ימים')) && sNear.reasons.length === 3 && sNear.reasons.some(r => r.includes('מסוכמות')));
+
+  // The week with a routine: heavy courses in the hours of most energy, light ones out of them, nothing over a commitment, blocks of the chosen length.
+  const rp = app.TrackClean({ courses: [{ name: 'כבד', level: 3, energy: 3, hoursPerWeek: 2 }, { name: 'קל', level: 1, energy: 1, hoursPerWeek: 2 }] });
+  const blockedC = [{ day: 0, start: '12:00', end: '13:00' }, { day: 1, start: '09:00', end: '11:00' }];
+  const wkM = app.TrackBuildWeek(rp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2], from: '08:00', to: '22:00', peak: 'morning', block: 60, blocked: blockedC });
+  const heavyB = wkM.blocks.filter(b => b.course === 'כבד'), lightB = wkM.blocks.filter(b => b.course === 'קל');
+  check('with a morning peak, the heavy course is in the morning and the light one after it', heavyB.length > 0 && lightB.length > 0 && heavyB.every(b => mins(b.start) + b.minutes <= 720) && lightB.every(b => mins(b.start) >= 720));
+  check('no block is over a commitment or the quarter hour around it', wkM.blocks.every(b => blockedC.every(c => b.day !== c.day || mins(b.start) + b.minutes <= mins(c.start) - 15 || mins(b.start) >= mins(c.end) + 15)));
+  const wkE = app.TrackBuildWeek(rp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2], from: '08:00', to: '22:00', peak: 'evening', block: 30 });
+  check('with an evening peak the heavy course moves to the evening, and short blocks give short sessions', wkE.blocks.filter(b => b.course === 'כבד').every(b => mins(b.start) >= 960) && wkE.blocks.every(b => b.minutes <= 45) && sumMin(wkE.blocks) === 240);
+  const wkN = app.TrackBuildWeek(rp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2], from: '08:00', to: '22:00' });
+  check('without a peak the week is built as before, from the earliest free time', wkN.blocks.every(b => mins(b.start) < 720));
+
+  // Through the host: scan, ratings and finishing the wizard, which saves the routine and the courses and builds the week.
+  app.calendarsDir = path.join(root, 'track-calendars'); app.settings.calendars = [{ id: 'a'.repeat(32), name: 'Google', source: 'url', url: 'https://calendar.google.com/x.ics' }];
+  sent.length = 0; await app.TrackHandle({ type: 'track', op: 'routineScan' });
+  check('the wizard asks for the calendar and gets its commitments', sent[0] && sent[0].type === 'trackRoutineScan' && sent[0].calendars === 1 && Array.isArray(sent[0].commitments));
+  app.calendarsDir = savedCalDir; app.settings.calendars = savedCalList;
+  sent.length = 0; await app.TrackHandle({ type: 'track', op: 'ratings', courses: ['חדו"א 1', 'פסיכולוגיה', '', 'פסיכולוגיה'], exams: { 'פסיכולוגיה': '2000-01-01' } });
+  const rts = sent[0] && sent[0].ratings;
+  check('ratings are suggested for each course that was asked about, and an old exam date is ignored', sent[0].type === 'trackRatings' && Object.keys(rts).length === 2 && rts['חדו"א 1'].level === 3 && rts['פסיכולוגיה'].energy === 1 && !rts['פסיכולוגיה'].reasons.some(r => r.includes('המבחן בעוד')));
+  app.ask = async () => false;
+  const beforeWiz = app.TrackLoad().courses.map(c => c.name);
+  state = await op({ op: 'wizardFinish', routine: { wake: '08:00', sleep: '23:00', peak: 'evening', days: [0, 1, 2, 3, 4], hours: 6, block: 45, commitments: [{ id: 'w', title: 'עבודה', day: 1, start: '16:00', end: '20:00', source: 'calendar' }] },
+    courses: [{ name: 'חדו"א 1', level: 3, energy: 3, manual: true }, { name: 'פסיכולוגיה', level: 1, energy: 1 }] });
+  const wizP = state.profile;
+  check('finishing the wizard saves the routine as done, with its commitments', state.wizardDone === true && wizP.routine.done && wizP.routine.peak === 'evening' && wizP.routine.commitments.length === 1 && wizP.routine.updated !== '' && app.TrackLoad().routine.done);
+  check('the chosen courses are added with their difficulty and energy, and a course that was not chosen stays when the student says no',
+    wizP.courses.find(c => c.name === 'חדו"א 1').energy === 3 && wizP.courses.find(c => c.name === 'פסיכולוגיה').level === 1 && beforeWiz.every(n => wizP.courses.some(c => c.name === n)));
+  const wizB = wizP.plan.blocks.filter(b => !b.done);
+  check('the week is built from the routine: inside its window, not over the commitment, and the heavy course in the evening',
+    !!state.built && wizB.length > 0 && wizB.every(b => mins(b.start) >= 540 && mins(b.start) + b.minutes <= 1320) && wizB.every(b => b.day !== 1 || mins(b.start) + b.minutes <= 945 || mins(b.start) >= 1215) && wizB.filter(b => b.course === 'חדו"א 1').every(b => mins(b.start) >= 960));
+  app.ask = async () => true;
+  state = await op({ op: 'wizardFinish', routine: { days: [0, 1] }, courses: [{ name: 'פסיכולוגיה', level: 2, energy: 2 }] });
+  check('a course that was not chosen is removed when the student agrees', state.profile.courses.length === 1 && state.profile.courses[0].name === 'פסיכולוגיה' && state.profile.courses[0].level === 2);
+  sent.length = 0; await app.TrackHandle({ type: 'track', op: 'wizardFinish', routine: {}, courses: [] });
+  check('finishing with no course is refused and saves nothing', sent.some(m => m.type === 'trackWizard' && m.error) && app.TrackLoad().courses.length === 1);
+  state = await op({ op: 'editCourse', course: 'פסיכולוגיה', values: { energy: 3 } });
+  check('the energy of a course can be changed from the course list', state.profile.courses[0].energy === 3);
+  state = await op({ op: 'build', hours: 4, days: [0, 1, 2, 3, 4, 5, 6] });
+  check('building again with a routine keeps working, and the snapshot has the window of the routine', !!state.built && state.window && state.window.from === '08:30');
+
+  // ---- Study tasks from the course folders.
+  const recs = app.TrackRecommend([
+    { course: 'מבני נתונים', folder: 'מבני נתונים - תשפז', level: 3, examDays: 6, pastExams: 2, cardsDue: 12, lectures: [
+      { num: 1, title: 'מבוא', hasSummary: true, cards: 5, files: 2, exercises: 3 },
+      { num: 2, title: 'ערימות', hasSummary: true, cards: 0, files: 1 },
+      { num: 3, title: 'עצי AVL', hasSummary: false, files: 3, transcripts: 1, videos: 2, due: '2026-11-12' },
+      { num: 4, title: '', hasSummary: false, files: 0, transcripts: 0, videos: 0 }] },
+    { course: 'היסטוריה', level: 1, examDays: null, pastExams: 3, cardsDue: 0, lectures: [{ num: 1, title: 'א', hasSummary: true, cards: 2, due: '2026-12-30' }] },
+  ], '2026-11-10');
+  const kinds = recs.filter(r => r.course === 'מבני נתונים').map(r => r.kind);
+  check('the tasks come from the folder: homework due soon, a past exam before a close exam, cards due, a summary, cards and exercises, and a recording to transcribe',
+    ['homework', 'exam', 'review', 'summary', 'cards', 'practice', 'transcribe'].every(k => kinds.includes(k)) && kinds.filter(k => k === 'summary').length === 1);
+  const hw = recs.find(r => r.kind === 'homework'), sm = recs.find(r => r.kind === 'summary');
+  check('each task names the lecture and says why, from the material', hw.title.includes('הרצאה 3 (עצי AVL)') && hw.why.includes('בעוד 2 ימים') && sm.why.includes('4 קבצים') && recs.find(r => r.kind === 'cards').lecture === 2 && recs.find(r => r.kind === 'practice').lecture === 1);
+  check('the most urgent comes first, a lecture with no material gives no task, and a far deadline or no exam gives nothing',
+    recs[0].kind === 'homework' && !recs.some(r => r.lecture === 4) && recs.filter(r => r.course === 'היסטוריה').length === 0 && app.TrackRecommend([], '2026-11-10').length === 0 && app.TrackRecommend(null, '2026-11-10').length === 0);
+  const goals = app.TrackGoals(recs);
+  check('the tasks become goals of the blocks, by course and in order, without the transcription', goals['מבני נתונים'][0] === hw.title && !goals['מבני נתונים'].some(g => g.startsWith('תמלל')));
+  const gp = app.TrackClean({ courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 3 }] });
+  const gw = app.TrackBuildWeek(gp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2, 3, 4], goals });
+  check('a week built with tasks uses them as the goals of its blocks, and the general goals after them', gw.blocks.length >= 3 && gw.blocks.some(b => b.goal === hw.title) && gw.blocks.every(b => b.goal.length > 0));
+
+  // Through the host, from a real folder: lecture 1 with material and no summary, lecture 2 with a summary and no cards, a past exam.
+  const tCourse = 'אלגוריתמים - תשפז';
+  app.SaveLecture(tCourse, { num: 1, title: 'מיון' }); app.SaveLecture(tCourse, { num: 2, title: 'גרפים' });
+  writeText(path.join(app.LectureDir(tCourse, 1), 'slides.pdf'), '%PDF-1.4 x');
+  const tPage = app.StudyPagePath(tCourse, 2); mkdirp(path.dirname(tPage)); writeText(tPage, '<html></html>');
+  writeText(path.join(app.CourseDir(tCourse), C.Exams, 'מבחן 2025.pdf'), '%PDF-1.4 y');
+  const tProf = app.TrackClean({ courses: [{ name: 'אלגוריתמים', level: 2, examDate: '2099-01-10' }, { name: 'קורס בלי תיקייה' }] });
+  const hostTasks = app.TrackTasks(tProf, '2099-01-01');
+  check('the host finds the folder of a course by its name, and reads the tasks from it', hostTasks.some(t => t.kind === 'summary' && t.lecture === 1 && t.folder === tCourse && t.course === 'אלגוריתמים') && hostTasks.some(t => t.kind === 'cards' && t.lecture === 2) && hostTasks.some(t => t.kind === 'exam' && t.why.includes('9 ימים')) && !hostTasks.some(t => t.course === 'קורס בלי תיקייה'));
+  app.TrackSave(tProf);
+  sent.length = 0; await app.TrackHandle({ type: 'track', op: 'tasks' });
+  const nowTasks = app.TrackTasks(app.TrackLoad(), localToday);
+  check('the page gets the tasks with how many there are', sent[0] && sent[0].type === 'trackTasks' && nowTasks.length > 0 && sent[0].tasks.length === Math.min(10, nowTasks.length) && sent[0].total === nowTasks.length);
+
   app.Send = realSend; app.ask = realAsk; app.savePath = realSave; app.pickFiles = realPick; app.Toast = realToast;
   app.settings.studyRoot = saved;
 }

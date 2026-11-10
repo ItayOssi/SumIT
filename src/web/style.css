@@ -1139,6 +1139,51 @@ html[data-theme=dark] .card { border-color: #274a82; }
 .track-tool small { line-height: 1.55; }
 .track-tool button { justify-self: start; }
 .track-icloud-status { font-size: 12.5px; color: var(--muted); }
+
+/* The study-track wizard (track-wizard.js). */
+.track-wizard { width: min(680px, 94vw); max-height: 90vh; overflow: auto; }
+.track-wizard h2 { margin: 2px 0 0; }
+.tw-dots { margin: 14px 0 6px; }
+.tw-lead { margin: 10px 0 14px; }
+.tw-q { margin: 18px 0 2px; font-size: 14px; font-weight: 650; }
+.tw-times { gap: 14px; }
+.track-wizard .tw-field { display: grid; font-weight: 400; gap: 6px; font-size: 13px; color: var(--muted); min-width: 0; }
+.tw-field input, .tw-add input, .tw-add select { height: 40px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; min-width: 0; }
+.tw-field input:focus, .tw-add input:focus, .tw-add select:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tw-hours { margin-top: 18px; max-width: 320px; }
+.tw-hours input { width: 110px; }
+.coach-chip .tw-sub { margin-inline-start: 6px; font-size: 11px; opacity: .7; font-weight: 400; }
+.tw-callout { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); margin-bottom: 12px; line-height: 1.6; }
+.tw-callout > span[data-ic] svg { width: 22px; height: 22px; color: var(--accent); }
+.tw-callout.ok > span[data-ic] svg { color: var(--ok); }
+.tw-callout small { display: block; }
+.tw-list { display: grid; gap: 2px; margin: 4px 0 10px; }
+.track-wizard .tw-item { display: flex; font-weight: 400; gap: 12px; align-items: center; padding: 10px 6px; border-radius: 12px; cursor: pointer; }
+.tw-item:hover { background: var(--surface-2); }
+.tw-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.tw-item small { display: block; }
+.tw-add { gap: 8px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+.track-wizard .tw-add input, .track-wizard .tw-add select { width: auto; flex: 0 0 auto; }
+.track-wizard .tw-add input[type=text] { flex: 1 1 180px; }
+.track-wizard .tw-add input[type=time] { width: 112px; }
+.tw-rate-list { display: grid; gap: 10px; }
+.tw-rate { padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.tw-rate .tw-why { display: block; margin-top: 2px; }
+.tw-rate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 16px; margin-top: 6px; }
+.tw-rate-grid .coach-chips { margin: 4px 0 0; }
+.tw-rate-grid .coach-chip { height: 32px; padding: 0 12px; }
+.tw-order { margin-top: 14px; padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--border); }
+.tw-order ol { margin: 6px 0 0; padding-inline-start: 22px; line-height: 1.8; }
+.tw-summary { display: grid; gap: 10px; }
+.tw-sum-row { display: flex; gap: 12px; align-items: flex-start; line-height: 1.6; }
+.tw-sum-row > span[data-ic] svg { width: 20px; height: 20px; color: var(--accent); margin-top: 2px; }
+.tw-nav { margin-top: 20px; gap: 10px; align-items: center; }
+.track-routine { margin-top: 8px; }
+.track-task { gap: 12px; }
+.track-task > .ic { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.track-task > .ic svg { width: 18px; height: 18px; }
+.track-task small { display: block; margin-top: 2px; }
+@media (max-width: 520px) { .tw-add input[type=time] { width: 96px; } .track-wizard { padding: 18px; } }
 .track-icloud-status:empty { display: none; }
 .track-icloud-status.ok { color: var(--ok); }
 .track-icloud-status.err { color: var(--bad); }

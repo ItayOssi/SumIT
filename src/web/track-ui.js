@@ -11,15 +11,23 @@ let trackStrategyRun = null;   // { course, show } while the strategy dialog is 
 
 function askTrack() { send({ type: 'trackPing' }); }
 function trackSend(m) { send(Object.assign({ type: 'track' }, m)); }
-function trackLoad() { trackSend({ op: 'load', courses: (typeof thisSemester === 'function' ? thisSemester(S.courses || []) : (S.courses || [])).map(c => c.name) }); }
+function trackLoad() { trackSend({ op: 'load', courses: (typeof thisSemester === 'function' ? thisSemester(S.courses || []) : (S.courses || [])).map(c => c.name) }); trackSend({ op: 'tasks' }); }
+S.trackTasks = null;      // { tasks, total }: what to do next, from the course folders (study-track.js, TrackTasks)
+const TRACK_TASK_IC = { homework: 'clipboard', exam: 'exam', review: 'refresh', summary: 'sparkles', cards: 'brain', practice: 'edit', transcribe: 'video' };
 
 function trackEvent(m) {
   if (m.type === 'trackReady') { S.trackOk = true; const n = $('navTrack'); if (n) n.hidden = false; return; }
   if (m.type === 'trackState') {
     S.track = m;
-    if (m.built) toast(m.built.unplaced ? 'השבוע נבנה. ' + minLabel(m.built.unplaced) + ' לא נכנסו, אפשר להרחיב ימים או שעות.' : 'השבוע נבנה סביב מערכת השעות');
-    renderTrack(); window.dispatchEvent(new Event('sumit-track')); return;
+    if (m.built && !m.wizardDone) toast(m.built.unplaced ? 'השבוע נבנה. ' + minLabel(m.built.unplaced) + ' לא נכנסו, אפשר להרחיב ימים או שעות.' : 'השבוע נבנה סביב מערכת השעות');
+    renderTrack(); window.dispatchEvent(new Event('sumit-track'));
+    if (typeof twEvent === 'function') twEvent(m);
+    // The first time in the study track, the wizard opens by itself (once per session if the student closes it).
+    if (!m.wizardDone && m.profile && !(m.profile.routine && m.profile.routine.done) && !S.twDismissed && typeof openTrackWizard === 'function' && document.getElementById('view-track').classList.contains('active')) openTrackWizard();
+    return;
   }
+  if (m.type === 'trackTasks') { S.trackTasks = m; renderTrackTasks(); return; }
+  if ((m.type === 'trackRoutineScan' || m.type === 'trackRatings' || m.type === 'trackWizard') && typeof twEvent === 'function') { twEvent(m); return; }
   if (m.type === 'trackStrategy' && trackStrategyRun && m.course === trackStrategyRun.course) trackStrategyRun.show(m);
   if (m.type === 'icloudExport') {
     S.icloud = m;
@@ -54,12 +62,19 @@ function renderTrack() {
 
   // ---- Profile and progress at a glance
   const top = h(`<div class="card pad-lg track-top"><div class="row wrap"><label class="grow">איך לקרוא לך?<input type="text" data-name maxlength="60" placeholder="השם שלך (לא חובה)"></label>
-    <button class="soft" data-export><span data-ic="download"></span>ייצוא ההתקדמות</button><button class="soft" data-import><span data-ic="file"></span>ייבוא</button></div>
+    <button class="primary" data-routine><span data-ic="sparkles"></span>השגרה שלי</button><button class="soft" data-export><span data-ic="download"></span>ייצוא ההתקדמות</button><button class="soft" data-import><span data-ic="file"></span>ייבוא</button></div>
     <div class="track-stats"></div>
     <p class="muted track-note">הפרופיל נשמר רק במחשב הזה, בלי שרת ובלי סיסמה. כדי להעביר למחשב אחר: ייצוא, ואז ייבוא שם.</p></div>`);
   top.querySelector('[data-name]').value = p.name || '';
   top.querySelector('[data-name]').onchange = (e) => trackSend({ op: 'name', value: e.target.value });
   top.querySelector('[data-export]').onclick = () => trackSend({ op: 'export' });
+  top.querySelector('[data-routine]').onclick = () => { S.twAnswers = null; openTrackWizard(); };
+  if (p.routine && p.routine.done) {
+    const rt = p.routine, peak = { morning: 'בבוקר', noon: 'בצהריים', evening: 'בערב' }[rt.peak];
+    const line = h('<p class="muted track-note track-routine"></p>');
+    line.textContent = 'השגרה שלך: ' + rt.hours + ' שעות בשבוע, בלוקים של ' + rt.block + ' דקות, הכי הרבה אנרגיה ' + peak + (rt.commitments.length ? ', ' + rt.commitments.length + ' התחייבויות קבועות' : '') + '.';
+    top.append(line);
+  }
   top.querySelector('[data-import]').onclick = () => trackSend({ op: 'import' });
   const stats = top.querySelector('.track-stats');
   const tile = (label, value, sub) => { const d = h(`<div class="track-stat"><b></b><small class="muted"></small><span class="muted"></span></div>`); d.querySelector('b').textContent = value; d.querySelector('small').textContent = label; d.querySelector('span').textContent = sub || ''; stats.append(d); };
@@ -71,6 +86,10 @@ function renderTrack() {
     const bar = h('<div class="bar big"><i></i></div>'); bar.firstElementChild.style.width = Math.min(100, Math.round(st.weekMinutes * 100 / st.plannedMinutes)) + '%'; top.insertBefore(bar, top.querySelector('.track-note'));
   }
   box.append(top);
+
+  // ---- What to do next, from the material in the course folders
+  box.append(h('<div class="card pad-lg track-card" data-tasks><h2>מה כדאי לעשות עכשיו</h2><p class="muted">משימות שנגזרות מהחומר שבתיקיות הקורסים: הגשות קרובות, הרצאות בלי סיכום, כרטיסים לחזרה, תרגילים ומבחנים קודמים. הן גם המטרות של הבלוקים כשבונים שבוע.</p><div class="track-tasks"></div></div>'));
+  renderTrackTasks(box);
 
   // ---- Courses
   const cc = h('<div class="card pad-lg track-card"><h2>הקורסים שלי</h2><p class="muted">הקורסים נלקחים ממערכת השעות ומלוח המבחנים אם שמרת אותם, ומהקורסים שהאפליקציה כבר מכירה. אפשר גם להוסיף ידנית.</p><div class="track-suggest" hidden></div><div class="track-courses"></div><div class="row track-add"><input type="text" data-new maxlength="120" placeholder="קורס חדש, למשל: מבני נתונים" class="grow"><button class="soft" data-addbtn><span data-ic="plus"></span>הוסף</button></div></div>');
@@ -88,10 +107,13 @@ function renderTrack() {
   for (const c of p.courses) {
     const row = h(`<div class="track-course"><div class="row wrap"><b class="grow" dir="auto"></b><button class="soft small" data-how><span data-ic="sparkles"></span>איך ללמוד את זה?</button><button class="ghost small" data-topics>נושאים</button><button class="ghost small" data-del aria-label="הסר קורס">×</button></div>
       <div class="row wrap track-fields"><label>קושי<select data-level>${TRACK_LEVELS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+      <label>אנרגיה<select data-energy title="כמה ריכוז הקורס דורש: קורס שדורש הרבה נכנס לשעות שבהן יש לך הכי הרבה אנרגיה"><option value="1">נמוכה</option><option value="2">בינונית</option><option value="3">גבוהה</option></select></label>
       <label>שעות בשבוע<input type="number" data-hours min="0" max="30" step="0.5" placeholder="אוטומטי"></label>
       <label>מבחן<input type="date" data-exam></label><span class="chip" data-examchip hidden></span></div></div>`);
     row.querySelector('b').textContent = c.name;
     row.querySelector('[data-level]').value = String(c.level);
+    row.querySelector('[data-energy]').value = String(c.energy || 2);
+    row.querySelector('[data-energy]').onchange = (e) => trackSend({ op: 'editCourse', course: c.name, values: { energy: Number(e.target.value) } });
     row.querySelector('[data-hours]').value = c.hoursPerWeek || '';
     row.querySelector('[data-exam]').value = c.examDate || '';
     const fromTt = !c.examDate && c.examFromTimetable;
@@ -113,16 +135,19 @@ function renderTrack() {
   box.append(cc);
 
   // ---- The week
-  const wk = h(`<div class="card pad-lg track-card"><h2>השבוע שלי</h2><p class="muted">בלוקי הלמידה נבנים סביב ההרצאות במערכת השעות, ולפי הקושי של כל קורס והמבחן הקרוב.</p>
+  const wk = h(`<div class="card pad-lg track-card"><h2>השבוע שלי</h2><p class="muted">בלוקי הלמידה נבנים סביב ההרצאות במערכת השעות וההתחייבויות מהשגרה שלך, לפי הקושי של כל קורס והמבחן הקרוב. קורס שדורש הרבה אנרגיה נכנס לשעות שבהן יש לך הכי הרבה.</p>
     <div class="row wrap track-fields"><label>שעות למידה בשבוע<input type="number" data-hours min="1" max="60" step="1" value="10"></label>
     <label>מ-<input type="time" data-from value="09:00"></label><label>עד<input type="time" data-to value="20:00"></label></div>
     <div class="coach-chips track-days" role="group" aria-label="ימי למידה"></div>
     <div class="row"><button class="primary" data-build><span data-ic="sparkles"></span>בנה לי שבוע</button><span class="muted track-note" data-planinfo></span></div><div class="track-week"></div></div>`);
   // The form of the week keeps its values when the page is drawn again after a click on "done".
+  // With a routine, the form starts from it (and again after the routine changes): its hours, days and the window of its day.
+  const rtKey = p.routine && p.routine.done ? JSON.stringify([p.routine.updated, p.routine.hours, p.routine.days, t.window]) : '';
+  if (rtKey && S.trackFormFor !== rtKey) { S.trackFormFor = rtKey; S.trackForm = { hours: p.routine.hours, from: t.window.from, to: t.window.to }; S.trackDays = p.routine.days.slice(); }
   const form = S.trackForm || (S.trackForm = { hours: 10, from: '09:00', to: '20:00' });
   for (const k of ['hours', 'from', 'to']) { const el = wk.querySelector('[data-' + k + ']'); el.value = form[k]; el.onchange = () => { form[k] = el.value; }; }
   const days = wk.querySelector('.track-days');
-  TRACK_DAYS.slice(0, 6).forEach((n, i) => {
+  TRACK_DAYS.forEach((n, i) => {
     const b = h(`<button type="button" class="coach-chip" role="checkbox" aria-checked="${S.trackDays.includes(i)}"></button>`); b.textContent = n;
     b.onclick = () => { const on = b.getAttribute('aria-checked') !== 'true'; b.setAttribute('aria-checked', String(on)); S.trackDays = on ? S.trackDays.concat(i) : S.trackDays.filter(x => x !== i); };
     days.append(b);
@@ -288,7 +313,30 @@ function openTopics(course) {
 }
 
 // One block made or changed by hand. The day is the one the student clicked on, and can be changed here.
-function openBlockEditor(profile, day, block) {
+// The tasks card: drawn when the page is drawn and again when the host answers (it reads the folders, so it may take a moment).
+function renderTrackTasks(root) {
+  const card = (root || document).querySelector('[data-tasks]'); if (!card || !S.track) return;
+  const list = card.querySelector('.track-tasks'); list.innerHTML = '';
+  const m = S.trackTasks, p = S.track.profile;
+  if (!m) { list.append(h('<div class="coach-busy"><span data-ic="spin"></span><b>קורא את תיקיות הקורסים...</b></div>')); icons(card); return; }
+  if (!m.tasks.length) { list.append(h('<p class="muted">' + (p.courses.length ? 'אין כרגע משימה שעולה מהתיקיות: כל ההרצאות מסוכמות, אין כרטיסים לחזרה ואין הגשה קרובה. כל הכבוד.' : 'הוסף קורסים למסלול, ואם יש להם תיקייה באפליקציה, המשימות יופיעו כאן.') + '</p>')); return; }
+  const todayDay = trackDate(S.track.today).getDay();
+  for (const t of m.tasks.slice(0, 8)) {
+    const row = h(`<div class="today-row track-task"><span class="ic" data-ic="${TRACK_TASK_IC[t.kind] || 'check'}"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div><span class="chip"></span></div>`);
+    row.querySelector('b').textContent = t.title;
+    row.querySelector('small').textContent = t.course + ' · ' + t.why;
+    row.querySelector('.chip').textContent = minLabel(t.minutes);
+    const btn = (label, fn, ic) => { const x = h(`<button class="ghost small"><span data-ic="${ic}"></span>${label}</button>`); x.onclick = fn; row.append(x); };
+    if (p.courses.some(c => c.name === t.course)) btn('לבלוק', () => openBlockEditor(p, todayDay, null, { course: t.course, goal: t.title, minutes: Math.max(15, Math.min(240, t.minutes)) }), 'plus');
+    const c = (S.courses || []).find(x => x.name === t.folder || x.name === t.course);
+    if (c && typeof openCourse === 'function') btn('לקורס', () => openCourse(c), 'book');
+    list.append(row);
+  }
+  if (m.total > 8) { const more = h('<p class="muted track-note"></p>'); more.textContent = 'ועוד ' + (m.total - 8) + ' משימות. הן נכנסות כמטרות לבלוקים כשבונים שבוע.'; list.append(more); }
+  icons(card);
+}
+
+function openBlockEditor(profile, day, block, preset) {
   if (!profile.courses.length) { toast('קודם הוסף קורסים', { error: true }); return; }
   const dialog = h(`<dialog class="summary-options" dir="rtl" aria-labelledby="trackBlockTitle"><form method="dialog">
     <h2 id="trackBlockTitle"></h2>
@@ -301,11 +349,11 @@ function openBlockEditor(profile, day, block) {
   const $d = (x) => dialog.querySelector(x);
   profile.courses.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; $d('[data-course]').append(o); });
   TRACK_DAYS.forEach((n, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = 'יום ' + n; $d('[data-day]').append(o); });
-  $d('[data-course]').value = block ? block.course : profile.courses[0].name;
+  $d('[data-course]').value = block ? block.course : preset && profile.courses.some(c => c.name === preset.course) ? preset.course : profile.courses[0].name;
   $d('[data-day]').value = String(day);
   $d('[data-start]').value = block ? block.start : '17:00';
-  $d('[data-min]').value = block ? block.minutes : 60;
-  $d('[data-goal]').value = block ? block.goal : '';
+  $d('[data-min]').value = block ? block.minutes : preset && preset.minutes ? preset.minutes : 60;
+  $d('[data-goal]').value = block ? block.goal : preset && preset.goal ? preset.goal : '';
   document.body.append(dialog);
   $d('[data-cancel]').onclick = () => dialog.close();
   if (block) $d('[data-del]').onclick = () => { trackSend({ op: 'removeBlock', id: block.id }); dialog.close(); };

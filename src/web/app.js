@@ -2025,7 +2025,7 @@ function onMessage(m) {
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
-    case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': trackEvent(m); break;
+    case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;

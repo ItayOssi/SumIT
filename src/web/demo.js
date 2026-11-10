@@ -17,13 +17,14 @@
   // The study track (track-ui.js): a small profile kept in memory, so that every button of the page does something in the demo.
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const trackProfile = { version: 1, name: '', created: iso(new Date()), strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [],
+    routine: { done: false, wake: '07:30', sleep: '23:30', peak: 'morning', days: [0, 1, 2, 3, 4], hours: 10, block: 45, commitments: [], updated: '' },
     courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 0, examDate: iso(new Date(Date.now() + 12 * 86400000)), notes: '', manual: false }, { name: 'אלגברה לינארית 2', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: false }] };
   const trackSnapshot = (extra) => {
     const today = new Date(), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
     const p = trackProfile, wsIso = iso(ws), wl = p.log.filter(e => e.date >= wsIso), per = {};
     p.courses.forEach(c => { per[c.name] = { week: wl.filter(e => e.course === c.name).reduce((n, e) => n + e.minutes, 0), total: p.log.filter(e => e.course === c.name).reduce((n, e) => n + e.minutes, 0), topicsDone: ((p.progress[c.name] || {}).topics || []).filter(t => t.done).length, topics: ((p.progress[c.name] || {}).topics || []).length }; });
     const bl = p.plan.blocks;
-    return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0,
+    return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0, calendars: 1, window: { from: '08:30', to: '22:30' },
       suggested: ['פיזיקה 1', 'חשבון אינפיניטסימלי 2'].filter(n => !p.courses.some(c => c.name === n)).map(name => ({ name, where: 'מערכת השעות' })),
       stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: p.log.length ? 1 : 0, perCourse: per } }, extra || {});
   };
@@ -45,6 +46,27 @@
       p.plan.blocks.sort((a, c) => a.day - c.day || a.start.localeCompare(c.start));
     }
     if (m.op === 'removeBlock') p.plan.blocks = p.plan.blocks.filter(x => x.id !== m.id);
+    // The wizard: two weekly commitments "from the calendar", ratings by the course name, and a plan built like the demo build.
+    if (m.op === 'tasks') return emit({ type: 'trackTasks', total: 5, tasks: [
+      { id: 'h', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'homework', lecture: 4, title: 'פתור את תרגיל הבית של הרצאה 4 (עצי AVL)', why: 'ההגשה בעוד 2 ימים, והתרגיל בתיקייה', minutes: 60 },
+      { id: 'e', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'exam', lecture: null, title: 'פתור מבחן קודם בתנאי מבחן, ורשום מה לקח הכי הרבה זמן', why: 'המבחן בעוד 12 ימים, ויש 3 מבחנים קודמים בתיקייה', minutes: 90 },
+      { id: 's', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'summary', lecture: 5, title: 'צור סיכום להרצאה 5 (ערכים עצמיים) ולמד ממנו', why: 'יש 3 קבצים בתיקייה של ההרצאה, ועדיין אין סיכום', minutes: 30 },
+      { id: 'r', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'review', lecture: null, title: 'חזור על 14 כרטיסי זיכרון', why: 'הגיע הזמן לחזור עליהם, לפי החזרה המרווחת', minutes: 15 },
+      { id: 'c', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'cards', lecture: 3, title: 'צור כרטיסי זיכרון מהסיכום של הרצאה 3 (ערימות)', why: 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה', minutes: 15 }] }, 700);
+    if (m.op === 'routineScan') return emit({ type: 'trackRoutineScan', calendars: 1, events: 23, firstStart: '08:30', lastEnd: '19:00', busyByDay: [180, 420, 120, 390, 60, 0, 0],
+      commitments: [{ title: 'עבודה', day: 1, start: '15:00', end: '20:00', weeks: 4, source: 'calendar' }, { title: 'אימון כושר', day: 3, start: '18:00', end: '19:30', weeks: 3, source: 'calendar' }] }, 900);
+    if (m.op === 'ratings') {
+      const ratings = {};
+      (m.courses || []).forEach(n => { ratings[n] = /אלגברה|אינפי|פיזיקה|חשבון/.test(n) ? { level: 3, energy: 3, reasons: ['קורס מתמטי: לומדים דרך פתרון, וזה דורש ריכוז מלא'] } : /מבני נתונים/.test(n) ? { level: 3, energy: 2, reasons: ['קורס תיאוריה: הוכחות והבנה של למה', 'המבחן בעוד 12 ימים'] } : { level: 2, energy: 1, reasons: ['קורס של מושגים וזיכרון: אפשר ללמוד גם בשעות של פחות אנרגיה'] }; });
+      return emit({ type: 'trackRatings', ratings }, 700);
+    }
+    if (m.op === 'wizardFinish') {
+      p.routine = Object.assign({}, m.routine, { done: true, updated: iso(new Date()) });
+      p.courses = (m.courses || []).map(c => Object.assign({ hoursPerWeek: 0, notes: '' }, p.courses.find(x => x.name === c.name) || {}, c));
+      const ws = trackSnapshot().weekStart;
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: x.level * x.energy >= 6 ? '09:00' : '16:30', minutes: m.routine.block || 45, course: x.name, goal: k ? 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון' : 'חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day || a.start.localeCompare(b.start)) };
+      return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length }, wizardDone: true }), 1100);
+    }
     if (m.op === 'build') {
       const ws = trackSnapshot().weekStart, goals = ['חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון'];
       p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: goals[k], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
