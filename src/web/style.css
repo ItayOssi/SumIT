@@ -1231,3 +1231,121 @@ label.tw-row.check-row:hover { border-color: var(--accent); }
 .track-add-block { margin-inline-start: auto; align-self: center; }
 .track-goal { display: block; margin: 10px 0 14px; }
 .track-goal input { width: 100%; margin-top: 4px; }
+
+/* ---- Study track: a header, five tabs, and charts (track-ui.js) ---- */
+.track-hero { display: flex; align-items: center; gap: 22px; background: linear-gradient(135deg, var(--accent-soft), var(--surface) 70%); }
+.track-hero-text { flex: 1; min-width: 0; }
+.track-hero h2 { margin: 0 0 4px; font-size: 21px; }
+.track-hero p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.track-hero-actions { margin-top: 14px; gap: 10px; }
+.track-ring { position: relative; width: 112px; height: 112px; flex: none; }
+.track-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.track-ring circle { fill: none; stroke-width: 9; }
+.track-ring-bg { stroke: var(--surface-3); }
+.track-ring-fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray .8s var(--ease); }
+.track-ring > div { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.track-ring b { font-size: 22px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.track-ring small { font-size: 11.5px; color: var(--muted); }
+.track-tabs { margin: 18px 0 16px; overflow-x: auto; scrollbar-width: none; }
+.track-tabs button { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.track-tabs button [data-ic] svg, .track-tabs button svg { width: 17px; height: 17px; }
+.track-pane { display: grid; gap: 16px; animation: viewIn .3s var(--ease) both; }
+.track-pane > .card, .track-grid > .card { margin: 0; }
+.track-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.track-card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.track-card-head h3 { margin: 0; font-size: 16px; flex: 1; min-width: 0; }
+.track-card-head small { font-size: 12.5px; }
+.track-pane .track-stats { margin: 0; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.track-pane .track-stat { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 14px 16px; }
+.track-pane .track-stat small { font-size: 12.5px; }
+.track-pane .track-stat b { font-size: 24px; }
+.track-pane .track-stat span { font-size: 12px; }
+
+/* Columns: one bar per day, the done part strong and the rest of the plan light, on a shared baseline. */
+.track-cols { display: flex; align-items: stretch; gap: 8px; height: 170px; padding-top: 6px; }
+.track-cols.dense { gap: 4px; height: 150px; }
+.track-col { flex: 1; min-width: 0; display: grid; grid-template-rows: 1fr auto auto; justify-items: center; gap: 3px; }
+.track-col-plot { width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; outline: none; cursor: default; }
+.track-col-plot:hover, .track-col-plot:focus-visible { background: var(--surface-2); }
+.track-col-bar { width: min(34px, 70%); display: flex; flex-direction: column-reverse; border-radius: 4px 4px 0 0; overflow: hidden; transition: height .6s var(--ease); }
+.track-col-bar i { display: block; }
+.track-col-bar .part { background: var(--accent); }
+.track-col-bar .rest { flex: 1; background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.track-col-bar .part + .rest, .track-col-bar .rest + .part { margin-bottom: 2px; }
+.track-col b { font-size: 12.5px; font-weight: 650; color: var(--muted); }
+.track-col small { font-size: 11px; min-height: 14px; font-variant-numeric: tabular-nums; }
+.track-col.today b { color: var(--accent-text); }
+.track-col.today .track-col-plot { background: var(--accent-soft); }
+.track-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.track-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.track-legend i { width: 12px; height: 12px; border-radius: 3px; }
+.track-legend .part { background: var(--accent); }
+.track-legend .rest { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.track-tip { position: fixed; z-index: 1000; pointer-events: none; padding: 6px 10px; border-radius: 9px; background: var(--text); color: var(--surface); font-size: 12.5px; box-shadow: var(--shadow); opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; max-width: 260px; }
+.track-tip.on { opacity: 1; transform: none; }
+
+/* Blocks: the hours, the course and the goal; "done" as a button and the rest as small icons. */
+.track-block { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 12px; background: var(--surface-2); }
+.track-block + .track-block { margin-top: 6px; }
+.track-block .grow { min-width: 0; }
+.track-block .grow b { display: block; font-size: 13.5px; }
+.track-block .grow small { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-time { flex: none; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--accent-text); background: var(--accent-soft); padding: 3px 8px; border-radius: 999px; }
+.track-block-acts { display: flex; gap: 2px; flex: none; }
+.track-block.done { opacity: .62; }
+.track-block.done .grow b { text-decoration: line-through; }
+button.icon-only { width: 30px; padding: 0; justify-content: center; }
+button.icon-only svg { width: 16px; height: 16px; }
+.track-today { display: grid; grid-template-columns: minmax(0, 1fr); }
+.track-block { min-width: 0; }
+.track-today .track-block { flex-wrap: wrap; }
+.track-today .track-block .grow { flex: 1 1 140px; }
+
+/* The week: a card per day. */
+.track-build { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); }
+.track-build summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.track-build[open] summary { margin-bottom: 4px; }
+.track-days-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.track-pane .track-day { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column; gap: 8px; }
+.track-pane .track-day.today { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.track-pane .track-day-head { border: none; padding: 0; }
+.track-pane .track-day-head span { font-size: 12px; }
+.track-free { margin: 0; font-size: 12.5px; }
+.track-day .track-block { flex-wrap: wrap; align-items: flex-start; row-gap: 8px; }
+.track-day .track-block .grow { flex: 1 1 120px; }
+.track-day .track-block-acts { flex-basis: 100%; }
+.track-day .track-block.done .track-block-acts { flex-basis: auto; }
+.track-add-block { align-self: flex-start; margin-top: auto; }
+
+/* Courses: a card each. */
+.track-courses { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.track-pane .track-course { padding: 14px; border: 1px solid var(--border); border-radius: 14px; display: grid; gap: 10px; }
+.track-pane .track-course + .track-course { border-top: 1px solid var(--border); }
+.track-course-head { display: flex; align-items: center; gap: 8px; }
+.track-course-head b { font-size: 15px; }
+.track-course-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin: 0; }
+.track-course-fields input, .track-course-fields select, .track-course-fields input[type=number] { width: 100%; }
+.track-course-acts { gap: 6px; }
+
+/* Progress per course: one bar on the same scale, this week's part strong. */
+.track-pane .track-prow { padding: 10px 0; }
+.track-prow-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 13px; }
+.track-hbar { height: 12px; border-radius: 0 6px 6px 0; outline: none; }
+.track-hbar .total { display: flex; height: 100%; border-radius: 4px; background: color-mix(in srgb, var(--accent) 22%, var(--surface)); overflow: hidden; transition: width .6s var(--ease); }
+.track-hbar .week { display: block; height: 100%; background: var(--accent); border-inline-end: 2px solid var(--surface); }
+.track-hbar:hover .total, .track-hbar:focus-visible .total { filter: brightness(.95); }
+
+.track-tool-head { display: flex; align-items: center; gap: 8px; }
+.track-tool-head .ic { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); }
+.track-tool-head .ic svg { width: 17px; height: 17px; }
+.track-more { margin-top: 6px; }
+
+@media (max-width: 640px) {
+  .track-hero { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .track-ring { width: 92px; height: 92px; }
+  .track-courses, .track-days-grid, .track-grid { grid-template-columns: 1fr; }
+  .track-course-fields { grid-template-columns: 1fr; }
+  .track-pane .track-stats { grid-template-columns: 1fr 1fr; }
+  .track-pane .track-stat b { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .track-ring-fg, .track-col-bar, .track-hbar .total, .track-pane { transition: none; animation: none; } }
