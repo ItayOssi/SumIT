@@ -3,9 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { dialog } = require('electron');
-const { Str, IsInside, SafeName, fileExists, guidN } = require('../util');
+const { Str, IsInside, SafeName, fileExists, guidN, ExecOut } = require('../util');
 const platform = require('../platform');
 
 const ShareExtensions = new Set([
@@ -58,7 +57,7 @@ function shareReferencePath(source, reference, root) {
   return targetPath;
 }
 
-function buildSummaryShare(root, page, pdf, output) {
+async function buildSummaryShare(root, page, pdf, output) {
   const fullRoot = path.resolve(root);
   const fullPage = path.resolve(page);
   shareReferencePath(fullPage, fullPage, fullRoot);
@@ -139,8 +138,8 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
 `;
 
   const py = platform.PythonExe || 'python3';
-  const res = spawnSync(py, ['-c', pyScript, fullRoot, fullPage, output, JSON.stringify(manifest)], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-  if (res.status !== 0) {
+  const res = await ExecOut(py, ['-c', pyScript, fullRoot, fullPage, output, JSON.stringify(manifest)], { maxBytes: 16 * 1024 * 1024 });
+  if (res.code !== 0) {
     throw new Error('שגיאה באריזת קובץ ה-ZIP: ' + (res.stderr || res.stdout || 'unknown'));
   }
 }
@@ -178,12 +177,7 @@ module.exports = {
         this.Send({ type: 'summaryShareProgress', requestId, text: 'מכין קובץ ZIP עם הסיכום והקבצים הנדרשים…' });
         temp = path.join(path.dirname(destination), '.sumit-share-' + guidN() + '.tmp');
 
-        await new Promise((resolve, reject) => {
-          try {
-            buildSummaryShare(root, page, pdf, temp);
-            resolve();
-          } catch (err) { reject(err); }
-        });
+        await buildSummaryShare(root, page, pdf, temp);
 
         if (fileExists(destination)) fs.unlinkSync(destination);
         fs.renameSync(temp, destination);

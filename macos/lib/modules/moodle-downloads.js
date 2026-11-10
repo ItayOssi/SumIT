@@ -3,8 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const { Str, Bool, Int, SafeName, Trunc, guidN, fileExists, mkdirp, listFiles } = require('../util');
+const { Str, Bool, Int, SafeName, Trunc, guidN, fileExists, mkdirp, listFiles, ExecOut } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
 
@@ -80,7 +79,7 @@ module.exports = {
     },
 
     // Uses Python's built-in zipfile module (or /usr/bin/unzip) to inspect and safely extract archives with budget limits.
-    UnpackZip(zipPath, dest, filter = null, depth = 0, context = '', budget = null) {
+    async UnpackZip(zipPath, dest, filter = null, depth = 0, context = '', budget = null) {
       if (path.extname(zipPath).toLowerCase() !== '.zip' || depth > 3) return 0;
       budget = budget || { Entries: 0, Bytes: 0 };
       const tmpExtract = path.join(platform.TempDir, 'sumit-unzip-' + guidN());
@@ -101,8 +100,8 @@ with zipfile.ZipFile(zp, 'r') as z:
 print(json.dumps(entries))
 `;
         const pyExe = this.FindPython() || '/usr/bin/python3';
-        const r = spawnSync(pyExe, ['-c', py, zipPath, tmpExtract], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-        if (r.status !== 0) return 0;
+        const r = await ExecOut(pyExe, ['-c', py, zipPath, tmpExtract]);
+        if (r.code !== 0) return 0;
         const list = JSON.parse((r.stdout || '[]').trim());
         for (const en of list) {
           if (++budget.Entries > 1000 || en.size > 100 * 1024 * 1024 || (budget.Bytes += en.size) > 300 * 1024 * 1024) {
@@ -116,7 +115,7 @@ print(json.dumps(entries))
             const nested = path.join(platform.TempDir, 'sumit-archive-' + guidN() + '.zip');
             try {
               fs.copyFileSync(extractedFile, nested);
-              n += this.UnpackZip(nested, dest, filter, depth + 1, label, budget);
+              n += await this.UnpackZip(nested, dest, filter, depth + 1, label, budget);
             } finally {
               try { if (fileExists(nested)) fs.unlinkSync(nested); } catch { }
             }
@@ -233,7 +232,7 @@ print(json.dumps(entries))
               const dlPath = await this.DownloadFile(http, f, downloadDir, true, discover ? 64 * 1024 * 1024 : 0);
               if (!dlPath) continue;
               if (path.extname(dlPath).toLowerCase() === '.zip') {
-                saved += this.UnpackZip(dlPath, dest, discover || what === 'syllabus' ? what : null, 0, name + ' ' + path.basename(dlPath));
+                saved += await this.UnpackZip(dlPath, dest, discover || what === 'syllabus' ? what : null, 0, name + ' ' + path.basename(dlPath));
               } else if (what === 'syllabus') {
                 if (await this.KeepForSyllabus(dlPath, mod, discover)) {
                   fs.copyFileSync(dlPath, path.join(dest, path.basename(dlPath)));

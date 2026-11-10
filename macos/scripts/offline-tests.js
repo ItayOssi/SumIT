@@ -181,14 +181,24 @@ async function run() {
     const sOut = path.join(sdir, 'out');
     check(
       'a syllabus zip gives only the syllabus, not the lectures in it',
-      app.UnpackZip(spath, sOut, 'syllabus', 0, 'סילבוס syllabus.zip') === 1 && listFiles(sOut).length === 1
+      (await app.UnpackZip(spath, sOut, 'syllabus', 0, 'סילבוס syllabus.zip')) === 1 && listFiles(sOut).length === 1
     );
+
+    // Python runs without blocking the app (ExecOut, in place of spawnSync).
+    const { ExecOut } = require('../lib/util');
+    const outErr = await ExecOut('/bin/sh', ['-c', 'printf out; printf err >&2; exit 3']);
+    check('a helper process gives its exit code with stdout and stderr apart', outErr.code === 3 && outErr.stdout === 'out' && outErr.stderr === 'err');
+    let ticked = false; const tick = setTimeout(() => { ticked = true; }, 20);
+    const slow = await ExecOut('/bin/sh', ['-c', 'sleep 0.3']);
+    check('the app keeps running while a helper process works', slow.code === 0 && ticked); clearTimeout(tick);
+    check('a helper process that prints too much is stopped', (await ExecOut('/bin/sh', ['-c', 'yes'], { maxBytes: 1024 })).code === -3);
+    check('a helper program that does not exist gives an error, not a crash', (await ExecOut(path.join(root, 'no-such-python'), [])).code === -1);
 
     const zdir = path.join(root, 'zip-exams');
     mkdirp(zdir);
     const zpath = path.join(zdir, 'exams.zip');
     createZip(zpath, { '2023/exam a.pdf': 'x', '2023/solution a.pdf': 'x', '../evil.exe': 'x', 'run.bat': 'x' });
-    const unpacked = app.UnpackZip(zpath, zdir);
+    const unpacked = await app.UnpackZip(zpath, zdir);
     check(
       'zip opened safely and original archive is preserved',
       unpacked === 2
@@ -244,7 +254,7 @@ async function run() {
     writeText(path.join(shareRoot, 'exercises', 'תרגיל.pdf'), 'pdf');
     writeText(path.join(shareRoot, 'private-notebook.pdf'), 'private');
     writeText(page, "<link href='.math/style.css'><a href='../exercises/%D7%AA%D7%A8%D7%92%D7%99%D7%9C.pdf#page=2'>PDF</a><a href='#x'>anchor</a><a href='https://example.org/'>web</a>");
-    buildSummaryShare(shareRoot, page, '', zip);
+    await buildSummaryShare(shareRoot, page, '', zip);
     check('SummaryShare exports valid zip file', fileExists(zip) && fs.statSync(zip).size > 100);
 
     // Study policy tests
@@ -1420,8 +1430,14 @@ async function runStudyTrackTests(app, root, check) {
   app.ask = async () => false;
   await op({ op: 'removeCourse', course: 'ייבוא' });
   check('removing a course asks first, and "no" keeps it', app.TrackLoad().courses.length === 1);
+  const keptProfile = app.TrackLoad(); app.TrackSave(keptProfile); app.TrackSave(keptProfile);
   writeText(app.TrackFile, '{ broken');
-  check('a profile file that is broken gives an empty profile, not a crash', app.TrackLoad().courses.length === 0);
+  check('a profile file that is broken is read from the copy kept by the last save, and the broken file is kept aside',
+    app.TrackLoad().courses.length === keptProfile.courses.length && keptProfile.courses.length > 0 && readText(app.TrackFile + '.broken') === '{ broken');
+  app.TrackSave(app.TrackLoad());
+  check('saving after a broken file does not copy the broken file over the good copy', JSON.parse(readText(app.TrackFile + '.bak')).courses.length === keptProfile.courses.length);
+  writeText(app.TrackFile, '{ broken'); fs.unlinkSync(app.TrackFile + '.bak');
+  check('a profile file that is broken with no copy gives an empty profile, not a crash', app.TrackLoad().courses.length === 0);
 
   // ---- The wizard: the routine, the calendar, difficulty and energy, and a plan that follows them.
   const rtBad = app.TrackCleanRoutine({ wake: '25:00', sleep: 'x', peak: 'night', days: [9, 1, 1, 'a', 3], hours: 500, block: 77, done: 'yes',
@@ -1458,6 +1474,11 @@ async function runStudyTrackTests(app, root, check) {
   mkdirp(app.calendarsDir); writeText(app.CalendarFile('a'.repeat(32)), ics);
   const scan = app.TrackCalendarScan(nowCal);
   check('the connected calendar is read, and a weekly event becomes a commitment on its weekday', scan.calendars === 1 && scan.commitments.length === 1 && scan.commitments[0].title === 'אימון' && scan.commitments[0].day === 4 && scan.commitments[0].start === '18:00' && scan.commitments[0].end === '19:30');
+  const scan2 = app.TrackCalendarScan(nowCal); scan2.commitments.length = 0;
+  check('a calendar that did not change is not expanded again, and the answer kept is a copy', app.TrackCalendarScan(nowCal).commitments.length === 1 && app.trackCalCache && app.trackCalCache.stamp.includes('a'.repeat(32) + ':'));
+  writeText(app.CalendarFile('a'.repeat(32)), ics.replace('180000', '170000').replace('193000', '183000'));
+  fs.utimesSync(app.CalendarFile('a'.repeat(32)), new Date(), new Date(Date.now() + 5000));
+  check('a calendar that changed is read again', app.TrackCalendarScan(nowCal).commitments[0].start === '17:00');
   app.settings.calendars = [];
   check('with no calendar the scan says so and finds nothing', app.TrackCalendarScan(nowCal).calendars === 0 && app.TrackCalendarScan(nowCal).commitments.length === 0);
   app.calendarsDir = savedCalDir; app.settings.calendars = savedCalList;
@@ -1541,6 +1562,18 @@ async function runStudyTrackTests(app, root, check) {
   const tProf = app.TrackClean({ courses: [{ name: 'אלגוריתמים', level: 2, examDate: '2099-01-10' }, { name: 'קורס בלי תיקייה' }] });
   const hostTasks = app.TrackTasks(tProf, '2099-01-01');
   check('the host finds the folder of a course by its name, and reads the tasks from it', hostTasks.some(t => t.kind === 'summary' && t.lecture === 1 && t.folder === tCourse && t.course === 'אלגוריתמים') && hostTasks.some(t => t.kind === 'cards' && t.lecture === 2) && hostTasks.some(t => t.kind === 'exam' && t.why.includes('9 ימים')) && !hostTasks.some(t => t.course === 'קורס בלי תיקייה'));
+  // The tasks are kept for a minute: asking again reads no folder, until a lecture changes.
+  let ctxReads = 0; const realCtx = app.CoachContext; app.CoachContext = function (...a) { ctxReads++; return realCtx.apply(this, a); };
+  const tasksAgain = app.TrackTasks(tProf, '2099-01-01');
+  check('the tasks are kept for a short while: asking again for the same day and courses reads no folder', ctxReads === 0 && tasksAgain.length === hostTasks.length);
+  tasksAgain[0].title = 'שונה';
+  check('changing the tasks the host returned does not change the kept ones', app.TrackTasks(tProf, '2099-01-01')[0].title === hostTasks[0].title);
+  app.TrackTasks(tProf, '2099-01-02');
+  check('another day reads the folders again', ctxReads === 1);
+  app.SaveLecture(tCourse, { num: 3, title: 'עצים' });
+  app.TrackTasks(tProf, '2099-01-02');
+  check('a lecture that changed reads the folders again', ctxReads === 2);
+  app.CoachContext = realCtx;
   app.TrackSave(tProf);
   sent.length = 0; await app.TrackHandle({ type: 'track', op: 'tasks' });
   const nowTasks = app.TrackTasks(app.TrackLoad(), localToday);

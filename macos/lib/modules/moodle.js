@@ -552,11 +552,14 @@ module.exports = {
       };
     },
 
+    // A lecture or course changed on disk: the study tasks that the study track read from the folders are read again (macOS only, study-track.js).
     SendSectionLocal(course, num) {
+      this.trackTasksCache = null;
       this.Send({ type: 'sectionLocal', course, num, local: this.LocalInfo(course, num) });
     },
 
     SendCourseLocal(course) {
+      this.trackTasksCache = null;
       this.Send({ type: 'courseLocal', course, local: this.CourseLocal(course), notability: this.NotabilityInfo(course) });
     },
 
@@ -574,6 +577,7 @@ module.exports = {
       const dir = this.CourseDir(course);
       mkdirp(dir);
       const file = path.join(dir, '.hit-student.json');
+      this.trackTasksCache = null;
       try { writeText(file, JSON.stringify(meta)); } catch { }
     },
 

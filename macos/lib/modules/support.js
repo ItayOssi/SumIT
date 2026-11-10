@@ -10,7 +10,6 @@ const util = require('../util');
 const { Str, Bool, Int, Dict, Arr, Trunc, IsInside, SafeName, mkdirp, fileExists, dirExists, readText, writeText } = util;
 const platform = require('../platform');
 const C = require('../constants');
-const { spawnSync } = require('child_process');
 
 const SummaryFormatVersion = 2;
 
@@ -105,8 +104,8 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
         if os.path.isfile(p):
             z.write(p, name)
 `;
-        const pyRes = spawnSync('python3', ['-c', script, workDir, outZip], { encoding: 'utf8' });
-        if (pyRes.status !== 0) throw new Error(pyRes.stderr || 'ZIP packaging failed');
+        const pyRes = await util.ExecOut('python3', ['-c', script, workDir, outZip]);
+        if (pyRes.code !== 0) throw new Error(pyRes.stderr || 'ZIP packaging failed');
 
         this.Toast('דוח האבחון נשמר. אפשר לשלוח אותו לתמיכה; הוא לא נשלח אוטומטית.', false);
       } catch (ex) {
@@ -176,8 +175,8 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
       const dest = path.join(this.CourseDir(course), C.SumitDir, 'shared', guid);
       try {
         const pyScript = path.join(__dirname, '..', '..', '..', 'engine', 'scripts', 'import_shared.py');
-        const res = spawnSync('python3', [pyScript, archive, dest], { encoding: 'utf8' });
-        if (res.status !== 0) throw new Error((res.stderr || res.stdout || 'Import script failed').trim());
+        const res = await util.ExecOut('python3', [pyScript, archive, dest]);
+        if (res.code !== 0) throw new Error((res.stderr || res.stdout || 'Import script failed').trim());
         const page = (res.stdout || '').trim();
         if (!page || !fileExists(page)) throw new Error('Unpacked page not found');
 

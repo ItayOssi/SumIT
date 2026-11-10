@@ -11,7 +11,7 @@ Study app for HIT students. The UI is Hebrew and RTL.
 - `docs/`: screenshots and release notes (`release-<version>.md`, in Hebrew).
 
 ## Checks (from `macos/`)
-- `npm install` once, then `npm test`. Expected: `29 Host mixin modules loaded cleanly` and `ALL 368 OFFLINE REGRESSION CHECKS PASSED` (update the count when tests are added).
+- `npm install` once, then `npm test`. Expected: `29 Host mixin modules loaded cleanly` and `ALL 380 OFFLINE REGRESSION CHECKS PASSED` (update the count when tests are added).
 - Needs Node 23 or newer: `macos/lib/modules/summary-share.js` uses a regex with duplicate named groups. On Node 22, run the scripts with `node --js-regexp-duplicate-named-groups`.
 - The C# code can only be built on Windows.
 

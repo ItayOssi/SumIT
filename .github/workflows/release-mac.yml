@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          # The npm download cache, so each release does not download Electron and the build tools again.
+          cache: 'npm'
+          cache-dependency-path: macos/package-lock.json
 
       - name: Check the tag matches the version
         run: |
@@ -29,6 +32,14 @@ jobs:
           test -f "docs/release-$VERSION.md" || { echo "docs/release-$VERSION.md is missing"; exit 1; }
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      # Electron and electron-builder download their binaries outside the npm cache.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('macos/package-lock.json') }}
 
       - name: Install
         working-directory: macos

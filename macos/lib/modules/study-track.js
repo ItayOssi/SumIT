@@ -14,6 +14,7 @@ const path = require('path');
 const { Str, Int, Trunc, readText, writeText, fileExists } = require('../util');
 
 const ProfileFolder = 'פרופיל', ProfileFile = 'profile.json';
+const TasksCacheMs = 60 * 1000;   // how long the study tasks read from the course folders are kept
 const Days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 const Limits = { courses: 40, topics: 60, blocks: 200, log: 1500, commitments: 40 };
 const Peaks = { morning: [0, 720], noon: [720, 960], evening: [960, 1440] };   // the hours of most energy, in minutes of the day
@@ -509,7 +510,18 @@ module.exports = {
     TrackGoals(tasks) { return goalsFromTasks(tasks); },
 
     // The study tasks of every course in the profile that has a folder in the app (a course typed by hand has none).
+    // Reading every lecture folder is slow on an external or iCloud disk, and the page asks for the tasks, then the week, within seconds:
+    // the answer is kept for a minute for the same day and the same courses.
     TrackTasks(profile, today) {
+      const key = today + '|' + JSON.stringify(profile.courses.map(c => [c.name, c.level, c.examDate]));
+      const hit = this.trackTasksCache;
+      if (hit && hit.key === key && Date.now() - hit.at < TasksCacheMs) return hit.tasks.map(t => Object.assign({}, t));
+      const tasks = this.TrackTasksRead(profile, today);
+      this.trackTasksCache = { key, at: Date.now(), tasks };
+      return tasks.map(t => Object.assign({}, t));
+    },
+
+    TrackTasksRead(profile, today) {
       const list = [];
       for (const c of profile.courses) {
         const folder = typeof this.ToolsFolder === 'function' ? this.ToolsFolder(c.name) : '';
@@ -531,6 +543,9 @@ module.exports = {
     TrackCalendarScan(now) {
       const list = typeof this.CalendarList === 'function' ? this.CalendarList() : [];
       const t = now instanceof Date ? now.getTime() : Date.now();
+      // Expanding the calendar files again is needed only when one of them changed, or a new hour shifts the four weeks.
+      const stamp = list.map(c => { try { const st = fs.statSync(this.CalendarFile(c.id)); return c.id + ':' + st.mtimeMs + ':' + st.size; } catch { return c.id; } }).join('|') + '|' + Math.floor(t / 3600000);
+      if (this.trackCalCache && this.trackCalCache.stamp === stamp) return JSON.parse(this.trackCalCache.json);
       let events = [];
       if (list.length) {
         let ICal;
@@ -539,7 +554,9 @@ module.exports = {
           try { const f = this.CalendarFile(c.id); if (ICal && fileExists(f)) events = events.concat(ICal.expand(readText(f), t - 28 * 86400000, t + 14 * 86400000)); } catch { }
         }
       }
-      return Object.assign(routineFromEvents(events, t), { calendars: list.length });
+      const res = Object.assign(routineFromEvents(events, t), { calendars: list.length });
+      this.trackCalCache = { stamp, json: JSON.stringify(res) };
+      return res;
     },
 
     // The plan of the week from the routine: its window, its days and hours, its commitments as busy time, its block length and its peak.
@@ -554,15 +571,27 @@ module.exports = {
 
     get TrackFile() { return path.join(this.AppRoot, ProfileFolder, ProfileFile); },
 
+    // The profile, or the copy kept by the save before it when the file cannot be read (it was cut, or edited by hand).
+    // The file that could not be read is kept as ".broken", so nothing the student did is thrown away without a copy.
     TrackLoad() {
-      try { if (fileExists(this.TrackFile)) return cleanProfile(JSON.parse(readText(this.TrackFile))); } catch { }
+      const file = this.TrackFile, bak = file + '.bak';
+      for (const f of [file, bak]) {
+        try {
+          if (!fileExists(f)) continue;
+          const profile = cleanProfile(JSON.parse(readText(f)));
+          if (f === bak && fileExists(file)) { try { fs.copyFileSync(file, file + '.broken'); } catch { } }
+          return profile;
+        } catch { }
+      }
       return newProfile();
     },
 
     // The file is written whole and then moved into place, so a crash in the middle cannot leave half a profile.
+    // The last profile that could be read is kept as ".bak" first.
     TrackSave(profile) {
       const file = this.TrackFile, tmp = file + '.tmp';
       writeText(tmp, JSON.stringify(profile, null, 2));
+      try { if (fileExists(file)) { JSON.parse(readText(file)); fs.copyFileSync(file, file + '.bak'); } } catch { }
       fs.renameSync(tmp, file);
     },
 

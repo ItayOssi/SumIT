@@ -231,6 +231,25 @@ function Exec(exe, args = [], cwd = null, timeoutMs = 600000, env = null, stdin 
   });
 }
 
+// Like Exec, but keeps stdout and stderr apart and gives up past `maxBytes` of output: { code, stdout, stderr }.
+// It does not block the app the way spawnSync did, so the window keeps answering while Python packs or unpacks a ZIP.
+function ExecOut(exe, args = [], { cwd = null, timeoutMs = 600000, maxBytes = 32 * 1024 * 1024 } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '', stderr = '', settled = false, timer = null;
+    const finish = (code) => { if (!settled) { settled = true; clearTimeout(timer); resolve({ code, stdout, stderr }); } };
+    let p;
+    try { p = spawnTracked(exe, args, { cwd }); }
+    catch (e) { resolve({ code: -1, stdout: '', stderr: e.message }); return; }
+    timer = setTimeout(() => { killTree(p); finish(-2); }, timeoutMs);
+    const over = () => { if (stdout.length + stderr.length > maxBytes) { stderr += '\noutput too large'; killTree(p); finish(-3); } };
+    p.on('error', (e) => { stderr += e.message; finish(-1); });
+    p.stdout.on('data', d => { stdout += d; over(); });
+    p.stderr.on('data', d => { stderr += d; over(); });
+    p.on('close', (code) => finish(code === null ? -2 : code));
+    try { p.stdin.end(); } catch { }
+  });
+}
+
 // Finds the first of `names` on PATH (platform.js extends PATH with Homebrew/npm/etc. at startup).
 function FindOnPath(...names) {
   for (const dir of (process.env.PATH || '').split(path.delimiter)) {
@@ -295,6 +314,6 @@ function stampSeconds(stamp) {
 
 module.exports = {
   Str, Bool, Int, Dict, Arr, SafeName, Trunc, Q, Loose, IsInside, listFiles, listDirs, fileExists, dirExists, mkdirp,
-  readText, writeText, nativeRel, Protect, Unprotect, delay, deferred, withTimeout, Mutex, spawnTracked, killTree,
+  readText, writeText, nativeRel, Protect, Unprotect, delay, deferred, withTimeout, Mutex, spawnTracked, killTree, ExecOut,
   Exec, FindOnPath, sha256Hex, sha256B64, guidN, formatDate, VttToText,
 };

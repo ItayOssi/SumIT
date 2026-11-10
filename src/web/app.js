@@ -1669,7 +1669,7 @@ function renderProfile(st) {
   const name = shownName(st);
   $('brandName').textContent = name || 'SumIT';
   $('brandSub').textContent = st.bio || (name ? 'SumIT' : 'כל הלימודים במקום אחד');
-  $('navLogo').innerHTML = img ? `<img src="${img}" alt="" class="brand-photo">` : ART.mascot();
+  $('navLogo').innerHTML = img ? `<img src="${esc(img)}" alt="" class="brand-photo">` : ART.mascot();
   if (document.activeElement !== $('profName')) $('profName').value = st.displayName || '';
   if (document.activeElement !== $('profBio')) $('profBio').value = st.bio || '';
 }
