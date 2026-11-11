@@ -622,6 +622,28 @@ button.link:hover { text-decoration: underline; }
   background: color-mix(in srgb, var(--c) 18%, var(--surface)); border-inline-start: 4px solid var(--c); }
 .wk-class b { display: block; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wk-class small { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-day span { display: block; }
+.wk-day small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wk-day.today small { color: var(--accent-text); }
+.wk-col.today { background-color: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+/* Events from the student's calendars (Google and others): no course colour, a dashed frame, so they do not look like a class. */
+.wk-class.wk-event { justify-self: start; width: 100%; background: var(--surface-2); border: 1px dashed color-mix(in srgb, var(--muted) 55%, transparent); border-inline-start: 4px solid var(--muted); }
+.wk-class.wk-event.free { opacity: .7; }
+.wk-class[style*="width"] { justify-self: start; }
+.wk-allday { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 4px; min-width: 0; }
+.wk-chip { font-size: 11.5px; padding: 1px 7px; border-radius: 6px; background: var(--surface-2); border-inline-start: 3px solid var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-chip.more { border: none; color: var(--muted); background: none; padding: 0 4px; }
+.week-bar { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin: 4px 0 10px; }
+.week-nav { display: flex; align-items: center; gap: 6px; }
+.week-nav b { font-size: 14px; min-width: 150px; text-align: center; font-variant-numeric: tabular-nums; }
+.week-nav button[data-prev], .week-nav button[data-next] { width: 30px; padding: 0; justify-content: center; font-size: 18px; line-height: 1; }
+.week-cals { display: flex; gap: 6px; flex-wrap: wrap; margin-inline-start: auto; }
+.week-cal { display: inline-flex; align-items: center; gap: 6px; }
+.week-cal svg { width: 14px; height: 14px; }
+.week-cal[aria-checked="false"] { opacity: .55; text-decoration: line-through; }
+.week-invite { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; margin-bottom: 14px; }
+.week-invite svg { width: 17px; height: 17px; }
+.cal-today .chip { flex: none; }
 .week-list { margin-bottom: 14px; }
 .week-list > summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
 

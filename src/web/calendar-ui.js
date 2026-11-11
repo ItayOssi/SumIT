@@ -39,7 +39,7 @@ function calendarsEvent(m) {
   $('calendarsCard').hidden = false;
   renderCalendars();
   if (typeof renderToday === 'function') renderToday();
-  if (typeof renderNextUp === 'function') renderNextUp();
+  if (typeof renderTimetable === 'function') renderTimetable(); else if (typeof renderNextUp === 'function') renderNextUp();
 }
 
 function agoLabel(ms) {
@@ -107,7 +107,7 @@ function renderCalendars() {
 
 // The plan and "next up" use today's date: when the page wakes up on another day, read the calendars again.
 function calendarsNewDay() {
-  if (S.calendars && calDay && calDay !== dayKey(new Date())) { readCalendars(); if (typeof renderToday === 'function') renderToday(); if (typeof renderNextUp === 'function') renderNextUp(); }
+  if (S.calendars && calDay && calDay !== dayKey(new Date())) { readCalendars(); if (typeof renderToday === 'function') renderToday(); if (typeof renderTimetable === 'function') renderTimetable(); else if (typeof renderNextUp === 'function') renderNextUp(); }
 }
 window.addEventListener('focus', calendarsNewDay);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) calendarsNewDay(); });

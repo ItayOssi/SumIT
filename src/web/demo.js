@@ -10,7 +10,10 @@
       ics: ['BEGIN:VCALENDAR', 'VERSION:2.0',
         ev('1', 'פגישה עם המנחה', stamp(later, later.getHours(), 0), stamp(later, later.getHours() + 1, 0), ['LOCATION:חדר 304']),
         ev('2', 'אימון כושר', stamp(tomorrow, 9, 30), stamp(tomorrow, 10, 30)),
-        ev('3', 'קבוצת לימוד', stamp(d, 19, 0), stamp(d, 20, 0), ['RRULE:FREQ=WEEKLY']), 'END:VCALENDAR'].join('\r\n') };
+        ev('3', 'קבוצת לימוד', stamp(d, 19, 0), stamp(d, 20, 0), ['RRULE:FREQ=WEEKLY']),
+        ev('4', 'עבודה', stamp(d, 15, 0), stamp(d, 18, 30), ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE']),
+        ev('5', 'רופא שיניים', stamp(d, 10, 15), stamp(d, 11, 0), ['RRULE:FREQ=WEEKLY;COUNT=1;BYDAY=TU']),
+        ['BEGIN:VEVENT', 'UID:6', 'SUMMARY:יום הולדת לאמא', 'DTSTART;VALUE=DATE:' + stamp(tomorrow, 0, 0).slice(0, 8), 'END:VEVENT'].join('\r\n'), 'END:VCALENDAR'].join('\r\n') };
   };
   const emit = (data, delay = 250) => setTimeout(() => listeners.forEach(fn => fn({ data })), delay);
   const now = Math.floor(Date.now() / 1000);

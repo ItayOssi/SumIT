@@ -958,6 +958,24 @@ async function runCalendarTests(app, root, check) {
   check('1,000 repeating events since 2015 are read for two months in under 3 seconds', Date.now() - t0 < 3000 && bigOcc.length > 20000);
   check('a daily series from 2015 gives the right days in the window', ICal.expand(ics(['UID:d', 'SUMMARY:x', 'DTSTART:20150101T080000Z', 'DTEND:20150101T090000Z', 'RRULE:FREQ=DAILY']), Date.UTC(2026, 10, 1), Date.UTC(2026, 10, 4)).length === 3);
 
+  // The week on the screen (the timetable grid): every occurrence is cut into the days it touches, and overlapping items stand side by side.
+  const wk = new Date(2026, 10, 8).getTime(), lt = (d, hh, mi) => new Date(2026, 10, d, hh, mi || 0).getTime();
+  const wp = ICal.dayParts([{ start: lt(9, 23), end: lt(10, 1, 30), title: 'לילה' }, { start: lt(11, 0), end: lt(13, 0), allDay: true, title: 'חופשה' },
+    { start: lt(12, 9, 30), end: lt(12, 10, 30), title: 'אימון' }, { start: lt(15, 9), end: lt(15, 10), title: 'שבוע הבא' }, { start: lt(8, 7), end: lt(8, 7), title: 'רגע' }], wk, 7);
+  const wpOf = (title) => wp.filter(x => x.occ.title === title).map(x => [x.day, x.from, x.to, x.allDay].join());
+  check('an event that crosses midnight is drawn in both days, each part until midnight',
+    wpOf('לילה').join('|') === '1,1380,1440,false|2,0,90,false');
+  check('an event of two whole days is in both, an event of one hour in its day by the clock, and an event of another week is out',
+    wpOf('חופשה').join('|') === '3,0,1440,true|4,0,1440,true' && wpOf('אימון').join('|') === '4,570,630,false' && wpOf('שבוע הבא').length === 0);
+  check('an event with no length still shows in its day, and no events give no parts', wpOf('רגע').join('|') === '0,420,420,false' && ICal.dayParts(null, wk, 7).length === 0);
+  const ln = ICal.lanes([{ id: 'a', from: 600, to: 720 }, { id: 'b', from: 600, to: 660 }, { id: 'c', from: 660, to: 700 }, { id: 'd', from: 900, to: 960 }, { id: 'e', from: 960, to: 1020 }, { id: 'f', from: 600, to: 605 }], 30);
+  const lane = (id) => { const x = ln.find(y => y.id === id); return x.lane + '/' + x.lanes; };
+  check('items that overlap stand side by side, and one that starts when another ended takes its lane',
+    lane('a') === '0/3' && lane('b') === '1/3' && lane('f') === '2/3' && lane('c') === '1/3');
+  check('items that do not overlap keep the full width, and back-to-back items do not count as overlapping', lane('d') === '0/1' && lane('e') === '0/1');
+  check('a very short item counts as long as it is drawn, so the next one does not sit on it',
+    ICal.lanes([{ from: 600, to: 605 }, { from: 610, to: 640 }], 30).map(x => x.lane + '/' + x.lanes).join() === '0/2,1/2' && ICal.lanes([], 30).length === 0);
+
   // The planner: an event of the calendar takes its hours out of today.
   const P = require('../../src/web/planner.js');
   const now = new Date(2026, 10, 10, 8, 0);

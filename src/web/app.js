@@ -497,6 +497,9 @@ function renderTimetable() {
     e.querySelector('[data-p]').onclick = () => { setSaveTarget('', ''); openSite('portal'); };
     e.querySelector('[data-i]').onclick = () => send({ type: 'importTimetable', fromFolder: true });
     box.append(e);
+    const cw = calendarWeek();
+    if (cw) { box.append(weekBar(cw)); box.append(weekGrid([], cw)); }
+    const inv = calendarInvite(); if (inv) box.append(inv);
     return;
   }
   const today = DAYS[new Date().getDay()];
@@ -504,7 +507,7 @@ function renderTimetable() {
   const exams = (tt.exams || []).filter(x => x.date && new Date(x.date) >= new Date(new Date().toDateString())).sort((a, b) => a.date.localeCompare(b.date));
   const day = h(`<div><h3 style="margin-bottom:8px">היום · יום ${today}</h3></div>`);
   if (!todays.length) day.append(h('<div class="muted">אין שיעורים היום.</div>'));
-  todays.forEach(c => { const r = h(`<div class="deadline"><div class="cal"><b style="font-size:13px;margin-top:10px">${esc(c.start)}</b><small>${esc(c.end)}</small></div><div class="info"><div class="name" dir="auto"></div><div class="course" dir="auto"></div></div></div>`); r.querySelector('.name').textContent = c.course; r.querySelector('.course').textContent = [c.kind, c.room, c.lecturer].filter(Boolean).join(' · '); day.append(r); });
+  todays.forEach(c => { const r = h(`<div class="deadline"><div class="cal"><b style="font-size:13px;margin-top:10px">${esc(c.start)}</b><small>${esc(c.end)}</small></div><div class="info"><div class="name" dir="auto"></div><div class="course" dir="auto"></div></div></div>`); r.querySelector('.name').textContent = c.course; r.querySelector('.course').textContent = [c.kind, c.room, c.lecturer].filter(Boolean).join(' · '); r.dataset.at = c.start || ''; day.append(r); });
   const ex = h('<div></div>'); const eb = $('examBoard'); eb.innerHTML = ''; eb.append(ex);
   if (!exams.length) ex.append(h('<div class="muted">אין מבחנים קרובים במערכת.</div>'));
   exams.forEach(x => { const d = new Date(x.date); const r = h(`<div class="deadline${(d - new Date()) < 14 * 86400000 ? ' soon' : ''}"><div class="cal"><b>${d.getDate()}</b><small>${esc(monFmt.format(d))}</small></div><div class="info"><div class="name" dir="auto"></div><div class="course"></div></div><span class="chip">מועד ${esc(x.moed || '')}</span></div>`); r.querySelector('.name').textContent = x.course; r.querySelector('.course').textContent = [x.time, x.room].filter(Boolean).join(' · '); ex.append(r); });
@@ -514,43 +517,139 @@ function renderTimetable() {
     [d, [c.start,c.end].filter(Boolean).join('–'),c.course,c.kind,c.room,c.lecturer].forEach((v,i) => { const cell = document.createElement('td'); cell.textContent = v || ''; cell.dir = i === 1 ? 'ltr' : 'auto'; row.append(cell); });
     weekly.querySelector('tbody').append(row);
   }));
+  // Today's events from the calendars, after the classes (the grid below shows them by the hour).
+  const cal = calendarWeek(), todayIdx = new Date().getDay();
+  if (cal && S.ttWeek === 0) {
+    const clock = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    cal.parts.filter(p => p.day === todayIdx).sort((a, b) => a.from - b.from).forEach(p => {
+      const r = h('<div class="deadline cal-today"><div class="cal"><b style="font-size:13px;margin-top:10px"></b><small></small></div><div class="info"><div class="name" dir="auto"></div><div class="course" dir="auto"></div></div><span class="chip"></span></div>');
+      r.querySelector('.cal b').textContent = p.allDay ? 'כל' : clock(p.from); r.querySelector('.cal small').textContent = p.allDay ? 'היום' : clock(p.to);
+      r.querySelector('.name').textContent = p.occ.title || 'אירוע'; r.querySelector('.course').textContent = p.occ.location || '';
+      r.querySelector('.chip').textContent = p.occ.calendar;
+      r.dataset.at = p.allDay ? '' : clock(p.from);
+      day.append(r);
+    });
+    // Classes and events in one list, by the hour (an event of the whole day first).
+    const rowsToday = [...day.querySelectorAll('.deadline')];
+    if (rowsToday.length) { const none = day.querySelector('.muted'); if (none) none.remove(); }
+    rowsToday.sort((a, b) => a.dataset.at.padStart(5, '0').localeCompare(b.dataset.at.padStart(5, '0'))).forEach(r => day.append(r));
+  }
   box.append(day);
-  const wg = weekGrid(tt.classes || []);
+  if (cal) box.append(weekBar(cal));
+  const wg = weekGrid(tt.classes || [], cal);
   if (wg) box.append(wg);
+  const invite = calendarInvite(); if (invite) box.append(invite);
   const list = h('<details class="week-list"><summary>הצג כרשימה</summary></details>'); list.append(weekly); box.append(list);
   renderNextUp(); renderStats();
 }
 // The week as a table: days across, hours down, every class in its own colour.
 const COURSE_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
 function courseColor(name) { let x = 0; for (const ch of name || '') x = (x * 31 + ch.charCodeAt(0)) | 0; return COURSE_COLORS[Math.abs(x) % COURSE_COLORS.length]; }
-function weekGrid(classes) {
+// With connected calendars (calendar-ui.js) the grid is a real week: dates, "previous" and "next", and the events of the
+// calendars next to the classes. `cal` is { weekStart (Date), parts, list, hidden } from calendarWeek(), or null (no calendars: Windows).
+function weekGrid(classes, cal) {
   const toMin = (t) => { const m = /(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
   const dayName = (c) => (c.day || '').replace(/^יום\s*/, '').trim();
   const rows = classes.filter(c => toMin(c.start) != null && toMin(c.end) != null && DAYS.includes(dayName(c)));
-  if (!rows.length) return null;
-  const days = DAYS.slice(0, 5).concat(rows.some(c => dayName(c) === 'שישי') ? ['שישי'] : []).concat(rows.some(c => dayName(c) === 'שבת') ? ['שבת'] : []);
-  const from = Math.floor(Math.min(8 * 60, ...rows.map(c => toMin(c.start))) / 60) * 60;
-  const to = Math.ceil(Math.max(13 * 60, ...rows.map(c => toMin(c.end))) / 60) * 60;
-  const slots = (to - from) / 30;
+  const parts = cal ? cal.parts : [], timed = parts.filter(p => !p.allDay), whole = parts.filter(p => p.allDay);
+  if (!rows.length && !cal) return null;
+  const has = (i) => rows.some(c => dayName(c) === DAYS[i]) || parts.some(p => p.day === i);
+  const days = [0, 1, 2, 3, 4].concat(has(5) ? [5] : []).concat(has(6) ? [6] : []);
+  const Q = 15, RowPx = 11;   // a row of the grid is a quarter of an hour
+  const from = Math.floor(Math.min(8 * 60, ...rows.map(c => toMin(c.start)), ...timed.map(p => p.from)) / 60) * 60;
+  const to = Math.ceil(Math.max(13 * 60, ...rows.map(c => toMin(c.end)), ...timed.map(p => p.to)) / 60) * 60;
+  const slots = (to - from) / Q, top = whole.length ? 3 : 2;   // the first row of the hours: after the day names, and the whole-day events if any
   const wrap = h('<div class="week-grid-wrap"><div class="week-grid"></div></div>');
   const g = wrap.firstElementChild;
   g.style.gridTemplateColumns = `46px repeat(${days.length}, minmax(0, 1fr))`;
-  g.style.gridTemplateRows = `28px repeat(${slots}, 22px)`;
-  const todayName = DAYS[new Date().getDay()];
-  days.forEach((d, i) => { const el = h(`<div class="wk-day${d === todayName ? ' today' : ''}">${d}</div>`); el.style.gridColumn = i + 2; el.style.gridRow = 1; g.append(el); });
-  for (let t = from; t < to; t += 60) { const el = h(`<div class="wk-hour">${String(t / 60).padStart(2, '0')}:00</div>`); el.style.gridColumn = 1; el.style.gridRow = `${(t - from) / 30 + 2} / span 2`; g.append(el); }
-  days.forEach((d, i) => { const col = h('<div class="wk-col"></div>'); col.style.gridColumn = i + 2; col.style.gridRow = `2 / span ${slots}`; g.append(col); });
-  rows.forEach(c => {
-    const di = days.indexOf(dayName(c)); if (di < 0) return;
-    const a = Math.round((toMin(c.start) - from) / 30), b = Math.max(a + 1, Math.round((toMin(c.end) - from) / 30));
-    const el = h('<div class="wk-class"><b dir="auto"></b><small dir="auto"></small></div>');
-    el.style.gridColumn = di + 2; el.style.gridRow = `${a + 2} / ${b + 2}`; el.style.setProperty('--c', courseColor(c.course));
-    el.querySelector('b').textContent = c.course;
-    el.querySelector('small').textContent = [c.start + '-' + c.end, c.kind, c.room].filter(Boolean).join(' · ');
-    el.title = [c.course, c.kind, c.lecturer, c.room, c.start + '-' + c.end].filter(Boolean).join('\n');
-    g.append(el);
+  g.style.gridTemplateRows = `${cal ? 40 : 28}px ${whole.length ? 'auto ' : ''}repeat(${slots}, ${RowPx}px)`;
+  const now = new Date(), dateOf = (i) => { const d = new Date(cal.weekStart.getTime()); d.setDate(d.getDate() + i); return d; };
+  const isToday = (i) => cal ? dateOf(i).toDateString() === now.toDateString() : i === now.getDay();
+  days.forEach((d, i) => {
+    const el = h(`<div class="wk-day${isToday(d) ? ' today' : ''}"><span></span></div>`); el.firstChild.textContent = DAYS[d];
+    if (cal) { const sm = document.createElement('small'); sm.textContent = dateOf(d).getDate() + '/' + (dateOf(d).getMonth() + 1); el.append(sm); }
+    el.style.gridColumn = i + 2; el.style.gridRow = 1; g.append(el);
+  });
+  for (let t = from; t < to; t += 60) { const el = h(`<div class="wk-hour">${String(t / 60).padStart(2, '0')}:00</div>`); el.style.gridColumn = 1; el.style.gridRow = `${(t - from) / Q + top} / span 4`; g.append(el); }
+  days.forEach((d, i) => { const col = h(`<div class="wk-col${isToday(d) ? ' today' : ''}"></div>`); col.style.gridColumn = i + 2; col.style.gridRow = `${top} / span ${slots}`; g.append(col); });
+  // Events of a whole day: up to two under the name of the day, and "+N" for the rest.
+  days.forEach((d, i) => {
+    const list = whole.filter(p => p.day === d); if (!list.length) return;
+    const cell = h('<div class="wk-allday"></div>'); cell.style.gridColumn = i + 2; cell.style.gridRow = 2;
+    list.slice(0, 2).forEach(p => { const x = h('<span class="wk-chip" dir="auto"></span>'); x.textContent = p.occ.title || 'אירוע'; x.title = [p.occ.title, 'כל היום', p.occ.calendar].filter(Boolean).join('\n'); cell.append(x); });
+    if (list.length > 2) { const x = h('<span class="wk-chip more"></span>'); x.textContent = '+' + (list.length - 2); x.title = list.slice(2).map(p => p.occ.title).join('\n'); cell.append(x); }
+    g.append(cell);
+  });
+  // Classes and events of one day share its column: the ones that overlap stand side by side.
+  const clock = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  days.forEach((d, i) => {
+    const items = rows.filter(c => dayName(c) === DAYS[d]).map(c => ({ from: toMin(c.start), to: toMin(c.end), cls: c }))
+      .concat(timed.filter(p => p.day === d).map(p => ({ from: p.from, to: p.to, ev: p.occ })));
+    for (const it of (typeof ICal !== 'undefined' ? ICal.lanes(items, 30) : items.map(x => Object.assign(x, { lane: 0, lanes: 1 })))) {
+      const a = Math.round((it.from - from) / Q), b = Math.max(a + 2, Math.round((it.to - from) / Q));
+      const el = h(`<div class="wk-class${it.ev ? ' wk-event' : ''}"><b dir="auto"></b><small dir="auto"></small></div>`);
+      el.style.gridColumn = i + 2; el.style.gridRow = `${a + top} / ${Math.min(b, slots) + top}`;
+      if (it.lanes > 1) { el.style.width = `calc(${100 / it.lanes}% - 2px)`; el.style.marginInlineStart = `${100 * it.lane / it.lanes}%`; }
+      if (it.cls) {
+        const c = it.cls; el.style.setProperty('--c', courseColor(c.course));
+        el.querySelector('b').textContent = c.course;
+        el.querySelector('small').textContent = [c.start + '-' + c.end, c.kind, c.room].filter(Boolean).join(' · ');
+        el.title = [c.course, c.kind, c.lecturer, c.room, c.start + '-' + c.end].filter(Boolean).join('\n');
+      } else {
+        const o = it.ev, time = clock(it.from) + '-' + clock(it.to);
+        el.classList.toggle('free', !o.busy);
+        el.querySelector('b').textContent = o.title || 'אירוע';
+        el.querySelector('small').textContent = [time, o.location].filter(Boolean).join(' · ');
+        el.title = [o.title, time, o.location, 'מהיומן: ' + o.calendar].filter(Boolean).join('\n');
+      }
+      g.append(el);
+    }
   });
   return wrap;
+}
+
+// The week the grid shows, with the events of the connected calendars that are not hidden. null when the host has no calendars (Windows).
+S.ttWeek = 0;            // 0: this week, 1: the next one, -1: the last one
+let calWeekCache = { key: '', parts: [] };
+function calHidden() { try { return new Set(JSON.parse(localStorage.getItem('sumit-cal-hidden') || '[]')); } catch { return new Set(); } }
+function calendarWeek() {
+  if (!S.calendars || !S.calendars.length || typeof ICal === 'undefined') return null;
+  const now = new Date(), ws = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + 7 * S.ttWeek), we = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7);
+  const hidden = calHidden(), shown = S.calendars.filter(c => !hidden.has(c.id));
+  const key = ws.getTime() + '|' + shown.map(c => c.id + ':' + c.updated).join(',');
+  if (calWeekCache.key !== key) {
+    const occ = [];
+    for (const c of shown) { try { for (const o of ICal.expand(c.ics, ws.getTime(), we.getTime())) { o.calendar = c.name; occ.push(o); } } catch { } }
+    calWeekCache = { key, parts: ICal.dayParts(occ.sort((a, b) => a.start - b.start), ws.getTime(), 7) };
+  }
+  return { weekStart: ws, weekEnd: we, parts: calWeekCache.parts, list: S.calendars, hidden };
+}
+// Above the grid: the dates of the week with "previous", "next" and "today", and a chip for each calendar that shows or hides it.
+function weekBar(cal) {
+  const last = new Date(cal.weekEnd.getTime()); last.setDate(last.getDate() - 1);
+  const range = cal.weekStart.getMonth() === last.getMonth() ? cal.weekStart.getDate() + '–' + last.getDate() + ' ב' + monLong.format(last) : cal.weekStart.getDate() + ' ב' + monLong.format(cal.weekStart) + ' – ' + last.getDate() + ' ב' + monLong.format(last);
+  const bar = h(`<div class="week-bar"><div class="week-nav"><button type="button" class="ghost small" data-prev aria-label="השבוע הקודם" title="השבוע הקודם">›</button><b></b><button type="button" class="ghost small" data-next aria-label="השבוע הבא" title="השבוע הבא">‹</button><button type="button" class="soft small" data-now>השבוע</button></div><div class="week-cals" role="group" aria-label="יומנים להצגה"></div></div>`);
+  bar.querySelector('b').textContent = (S.ttWeek === 0 ? 'השבוע · ' : S.ttWeek === 1 ? 'השבוע הבא · ' : '') + range;
+  const go = (n) => { S.ttWeek = n; renderTimetable(); };
+  bar.querySelector('[data-prev]').onclick = () => go(S.ttWeek - 1);
+  bar.querySelector('[data-next]').onclick = () => go(S.ttWeek + 1);
+  bar.querySelector('[data-now]').onclick = () => go(0); bar.querySelector('[data-now]').hidden = S.ttWeek === 0;
+  const cals = bar.querySelector('.week-cals');
+  for (const c of cal.list) {
+    const on = !cal.hidden.has(c.id), b = h(`<button type="button" class="coach-chip week-cal" role="checkbox" aria-checked="${on}"><span data-ic="calendar"></span></button>`);
+    b.append(document.createTextNode(c.name)); b.title = on ? 'הסתר את היומן הזה מהמערכת' : 'הצג את היומן הזה במערכת';
+    b.onclick = () => { const hset = calHidden(); if (on) hset.add(c.id); else hset.delete(c.id); try { localStorage.setItem('sumit-cal-hidden', JSON.stringify([...hset])); } catch { } renderTimetable(); };
+    cals.append(b);
+  }
+  return bar;
+}
+const monLong = new Intl.DateTimeFormat('he-IL', { month: 'long' });
+// When the host has calendars but none is connected yet: one line that leads to the card in the settings.
+function calendarInvite() {
+  if (!S.calendars || S.calendars.length) return null;
+  const el = h('<div class="week-invite muted"><span data-ic="calendar"></span><span class="grow">אפשר לראות כאן גם את יומן Google שלך, ליד השיעורים.</span><button type="button" class="soft small">חבר יומן</button></div>');
+  el.querySelector('button').onclick = () => { show('settings'); const card = $('calendarsCard'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  return el;
 }
 $('ttImport').onclick = () => send({ type: 'importTimetable', fromFolder: true });
 $('ttDelete').onclick = () => { if (confirm('למחוק את המערכת, לוח המבחנים והקבצים ששמרת מהפורטל?')) send({ type: 'deleteTimetable' }); };

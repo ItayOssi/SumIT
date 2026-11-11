@@ -6,7 +6,7 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.39',
+  Version: '1.0.40',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
   MacRepo: 'ItayOssi/SumIT',   // the macOS releases (tags v<version>-mac)

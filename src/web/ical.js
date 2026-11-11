@@ -234,6 +234,43 @@
     return out.sort((a, b) => a.start - b.start || a.end - b.end);
   }
 
-  const api = { parse, expand, parseLine, parseTime, parseDuration, toUtc };
+  // ---------- a week on the screen ----------
+  // The part of each occurrence that falls in each of the `days` days from `weekStart` (a local midnight, ms), cut at midnight:
+  // { day, from, to, allDay, occ }, with from/to in minutes of that day by the clock on the wall (so a day of 23 or 25 hours stays right).
+  function dayParts(occ, weekStart, days) {
+    const out = [], clock = (ms) => { const x = new Date(ms); return x.getHours() * 60 + x.getMinutes(); };
+    for (let d = 0; d < days; d++) {
+      const a = new Date(weekStart); a.setDate(a.getDate() + d);
+      const b = new Date(a.getTime()); b.setDate(b.getDate() + 1);
+      const ds = a.getTime(), de = b.getTime();
+      for (const o of occ || []) {
+        const end = Math.max(o.end, o.start + 1);
+        if (!(o.start < de && end > ds)) continue;
+        if (o.allDay) { out.push({ day: d, from: 0, to: 1440, allDay: true, occ: o }); continue; }
+        const from = o.start <= ds ? 0 : clock(o.start), to = o.end >= de ? 1440 : clock(o.end);
+        out.push({ day: d, from, to: Math.max(to, from), allDay: false, occ: o });
+      }
+    }
+    return out;
+  }
+
+  // Items that overlap in time ({ from, to }) get a lane each, side by side: every item gets `lane` (0..) and `lanes`
+  // (how many lanes its group of overlapping items needs). An item shorter than `min` counts as `min` long, as it is drawn.
+  function lanes(items, min) {
+    const m = min || 0, endOf = (x) => Math.max(x.to, x.from + m);
+    const list = (items || []).slice().sort((a, b) => a.from - b.from || endOf(b) - endOf(a));
+    let group = [], ends = [], groupEnd = -Infinity;
+    const close = () => { for (const x of group) x.lanes = ends.length; group = []; ends = []; };
+    for (const x of list) {
+      if (group.length && x.from >= groupEnd) close();
+      let i = ends.findIndex(e => e <= x.from);
+      if (i < 0) { i = ends.length; ends.push(0); }
+      ends[i] = endOf(x); x.lane = i; group.push(x); groupEnd = Math.max(groupEnd, endOf(x));
+    }
+    close();
+    return list;
+  }
+
+  const api = { parse, expand, parseLine, parseTime, parseDuration, toUtc, dayParts, lanes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ICal = api;
 })(typeof window !== 'undefined' ? window : globalThis);
