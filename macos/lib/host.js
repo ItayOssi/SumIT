@@ -677,6 +677,7 @@ class Host {
       case 'trackPing': this.Send({ type: 'trackReady' }); break;
       case 'track': this.TrackHandle(m); break;
       case 'exportTool': this.ExportToolHandle(m); break;
+      case 'calSync': this.CalSyncHandle(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1105,7 +1106,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

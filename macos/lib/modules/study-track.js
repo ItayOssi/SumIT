@@ -593,6 +593,8 @@ module.exports = {
       writeText(tmp, JSON.stringify(profile, null, 2));
       try { if (fileExists(file)) { JSON.parse(readText(file)); fs.copyFileSync(file, file + '.bak'); } } catch { }
       fs.renameSync(tmp, file);
+      // The Calendar app follows the plan when the student turned that on (calendar-sync.js).
+      if (typeof this.CalSyncSchedule === 'function') { try { this.CalSyncSchedule(); } catch { } }
     },
 
     // The courses that could be added: from the timetable and the exams table, and from the courses the app already knows.

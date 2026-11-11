@@ -1360,6 +1360,9 @@ button.icon-only svg { width: 16px; height: 16px; }
 .track-tool-head { display: flex; align-items: center; gap: 8px; }
 .track-tool-head .ic { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); }
 .track-tool-head .ic svg { width: 17px; height: 17px; }
+.track-calsync { display: grid; gap: 8px; justify-items: start; }
+.track-calsync select { height: 38px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; max-width: 100%; }
+.track-calsync .row { gap: 6px; }
 .track-more { margin-top: 6px; }
 
 @media (max-width: 640px) {

@@ -163,6 +163,16 @@
           { title: 'קבע מתי אתה חוזר לזה מחר, ורשום את זה', minutes: 3, kind: 'plan', lecture: null, why: 'כשקובעים מתי, יותר סיכוי שעושים.' }] }, 1300); break;
         case 'getCalendars': case 'refreshCalendars': case 'addCalendar': emit({ type: 'calendars', list: [demoCalendar()] }, 350); if (m.type !== 'getCalendars') emit({ type: 'calendarStatus', busy: false, text: m.type === 'addCalendar' ? 'היומן נוסף' : '', error: false }, 700); break;
         case 'importCalendarFile': case 'removeCalendar': break;
+        case 'calSync': {
+          const cs = window.__demoCalSync || (window.__demoCalSync = { on: false, calendar: '', nth: 0, count: 0, last: 0 });
+          if (m.action === 'list') { emit(Object.assign({ type: 'calSync', error: '', busy: false, calendars: [{ name: 'לוח שנה', nth: 0 }, { name: 'noa@gmail.com', nth: 0 }, { name: 'משפחה', nth: 0 }] }, cs), 500); break; }
+          if (m.action === 'set') Object.assign(cs, { on: true, calendar: m.calendar, nth: m.nth || 0, count: 4, last: Date.now() });
+          if (m.action === 'now') cs.last = Date.now();
+          if (m.action === 'off') Object.assign(cs, { on: false, count: 0 });
+          emit(Object.assign({ type: 'calSync', error: '', busy: false }, cs), m.action === 'state' ? 150 : 600);
+          if (m.action === 'set' || m.action === 'now') emit({ type: 'toast', text: 'היומן עודכן: 4 אירועים' }, 650);
+          break;
+        }
         case 'getReviewQueue': emit({ type: 'reviewQueue', count: 14, due: 6, fresh: 8, overdueDays: 2, courses: { 'מבני נתונים': 6 } }, 400); break;
         case 'startReview': emit({ type: 'reviewSession', cards: [
           { key: 'a1b2c3d4e5f6', front: 'מה הסיבוכיות של חיפוש בינארי במערך ממוין?', back: 'O(log n): בכל צעד חצי מהמערך נפסל.', tag: 'סיבוכיות', course: 'מבני נתונים', title: 'הרצאה 3', num: 3, path: '/x/3.html' },

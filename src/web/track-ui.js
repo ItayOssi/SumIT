@@ -30,6 +30,7 @@ function trackEvent(m) {
   if (m.type === 'trackTasks') { S.trackTasks = m; renderTrackTasks(); return; }
   if ((m.type === 'trackRoutineScan' || m.type === 'trackRatings' || m.type === 'trackWizard') && typeof twEvent === 'function') { twEvent(m); return; }
   if (m.type === 'trackStrategy' && trackStrategyRun && m.course === trackStrategyRun.course) trackStrategyRun.show(m);
+  if (m.type === 'calSync') { S.calSync = Object.assign({}, m, { calendars: m.calendars || (m.listError ? null : S.calSync && S.calSync.calendars) || null }); renderCalSync(); return; }
   if (m.type === 'icloudExport') {
     S.icloud = m;
     if (m.state === 'done') toast(m.text);
@@ -49,6 +50,46 @@ function renderICloud() {
   st.textContent = !m ? '' : busy ? 'מעתיק ' + m.done + '/' + m.total + (m.course ? ' · ' + m.course : '') : m.state === 'error' ? m.error : '✓ ' + m.text;
   rv.hidden = !(m && m.state === 'done');
   rv.onclick = () => send({ type: 'exportTool', op: 'icloudReveal', course: m.course });
+  icons(card);
+}
+
+// The card that keeps the Calendar app of the Mac (and through it Google Calendar) in step with the blocks: off, choosing a calendar, or on.
+// S.calSync is the last { type: 'calSync' } the host sent: { on, calendar, nth, count, last, error, busy, calendars }.
+function renderCalSync() {
+  const card = document.querySelector('[data-calsync-card]'); if (!card) return;
+  const body = card.querySelector('[data-calsync]'), m = S.calSync; body.innerHTML = '';
+  if (!m) { body.append(h('<small class="muted">בודק...</small>')); return; }
+  const btn = (label, cls, fn, ic) => { const b = h(`<button type="button" class="${cls}">${ic ? `<span data-ic="${ic}"></span>` : ''}</button>`); b.append(document.createTextNode(label)); b.disabled = !!m.busy; b.onclick = fn; return b; };
+  const act = (action, extra) => { S.calSync = Object.assign({}, m, { busy: true }); renderCalSync(); send(Object.assign({ type: 'calSync', action }, extra || {})); };
+  if (m.on) {
+    const st = h('<small class="track-icloud-status" aria-live="polite" dir="auto"></small>');
+    st.classList.add(m.error ? 'err' : 'ok'); st.dir = 'rtl';
+    if (m.error) st.textContent = m.error;
+    else {
+      // The name of the calendar is often an e-mail address: it is kept apart, so it does not turn the Hebrew around it.
+      const name = document.createElement('bdi'); name.textContent = m.calendar;
+      st.append('✓ מסונכרן ליומן ', name, ' · ' + (m.count === 1 ? 'בלוק אחד' : m.count + ' בלוקים') + (m.last && typeof agoLabel === 'function' ? ' · ' + agoLabel(m.last) : ''));
+    }
+    body.append(st);
+    const row = h('<div class="row wrap"></div>');
+    row.append(btn(m.busy ? 'מסנכרן...' : 'סנכרן עכשיו', 'soft', () => act('now'), m.busy ? 'spin' : 'refresh'));
+    row.append(btn('כבה', 'ghost small', () => act('off', { remove: false })));
+    row.append(btn('כבה והסר מהיומן', 'ghost small', () => { if (confirm('לכבות את הסנכרון ולהסיר מהיומן את הבלוקים ש-SumIT הוסיפה? בלוקים שכבר למדת נשארים.')) act('off', { remove: true }); }));
+    body.append(row);
+  } else if (m.calendars) {
+    if (!m.calendars.length) { body.append(h('<small class="track-icloud-status err">לא נמצא ב-Calendar יומן שאפשר לכתוב אליו.</small>')); }
+    else {
+      const sel = h('<select aria-label="היומן שאליו ייכתבו הבלוקים"></select>');
+      m.calendars.forEach((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = c.name + (c.nth ? ' (' + (c.nth + 1) + ')' : ''); sel.append(o); });
+      const prev = m.calendars.findIndex(c => c.name === m.calendar && c.nth === (m.nth || 0)); if (prev >= 0) sel.value = String(prev);
+      body.append(h('<small class="muted">בחר יומן. כדי שהבלוקים יגיעו ל-Google, בחר יומן של חשבון ה-Google שלך.</small>'));
+      body.append(sel);
+      body.append(btn('התחל לסנכרן', 'primary', () => { const c = m.calendars[Number(sel.value)]; act('set', { calendar: c.name, nth: c.nth }); }, 'check'));
+    }
+  } else {
+    body.append(btn(m.busy ? 'קורא את היומנים...' : 'הפעל סנכרון', 'soft', () => act('list'), m.busy ? 'spin' : 'refresh'));
+    if (m.listError) { const e = h('<small class="track-icloud-status err" dir="auto"></small>'); e.textContent = m.listError; body.append(e); }
+  }
   icons(card);
 }
 
@@ -162,7 +203,7 @@ function renderTrack() {
   const pane = h('<div class="track-pane" role="tabpanel"></div>');
   ({ overview: trackOverview, week: trackWeekPane, courses: trackCoursesPane, progress: trackProgressPane, tools: trackToolsPane })[S.trackTab](pane, t, p, st, plan);
   box.append(pane);
-  if (S.trackTab === 'tools') renderICloud();
+  if (S.trackTab === 'tools') { renderICloud(); renderCalSync(); if (!S.calSyncAsked) { S.calSyncAsked = true; send({ type: 'calSync', action: 'state' }); } }
   icons(box);
   window.scrollTo(0, keepY);
 }
@@ -377,7 +418,8 @@ function trackToolsPane(pane, t, p) {
   const tl = h(`<div class="card pad-lg track-card"><div class="track-card-head"><h3>ללמוד גם במקומות אחרים</h3><small class="muted">הקבצים נשמרים אצלך, ושום דבר לא נשלח לשום שירות</small></div>
     <label class="track-tool-course">קורס<select data-course><option value="">כל הקורסים (ל-Anki)</option></select></label>
     <div class="track-tools">
-      <div class="track-tool"><div class="track-tool-head"><span class="ic" data-ic="calendar"></span><b>יומן</b></div><small class="muted">הבלוקים של השבוע ל-Google Calendar, עם תזכורת 10 דקות לפני. או כקובץ iCal ל-Apple.</small><div class="row wrap"><button class="soft" data-gcal>ל-Google Calendar</button><button class="ghost small" data-ics>קובץ iCal</button></div></div>
+      <div class="track-tool" data-calsync-card><div class="track-tool-head"><span class="ic" data-ic="refresh"></span><b>סנכרון ליומן</b></div><small class="muted">כל שינוי בבלוקים נכתב מיד ליומן של המק (Calendar). אם היומן שייך לחשבון Google שלך, השינוי מגיע משם גם ל-Google Calendar.</small><div class="track-calsync" data-calsync></div></div>
+      <div class="track-tool"><div class="track-tool-head"><span class="ic" data-ic="calendar"></span><b>יומן, ידנית</b></div><small class="muted">הבלוקים של השבוע ל-Google Calendar פעם אחת, עם תזכורת 10 דקות לפני. או כקובץ iCal.</small><div class="row wrap"><button class="soft" data-gcal>ל-Google Calendar</button><button class="ghost small" data-ics>קובץ iCal</button></div></div>
       <div class="track-tool"><div class="track-tool-head"><span class="ic" data-ic="book"></span><b>NotebookLM</b></div><small class="muted">תיקייה עם הסיכומים, המידע על הקורס והכרטיסים, להעלאה ל-NotebookLM לסיכום קולי ושאלות.</small><button class="soft" data-nb>הכן חבילה</button></div>
       <div class="track-tool" data-icloud-card><div class="track-tool-head"><span class="ic" data-ic="cloud"></span><b>iPad</b></div><small class="muted">הסיכומים והכרטיסים של הקורס ל-iCloud Drive/SumIT, לאפליקציה באייפד או ל-Notability ו-Goodnotes. קובץ שסימנת עליו באייפד לא נדרס.</small><button class="soft" data-icloud></button><small class="track-icloud-status" data-icloud-status aria-live="polite" dir="auto"></small><button class="ghost small" data-icloud-reveal hidden>הצג ב-Finder</button></div>
       <div class="track-tool"><div class="track-tool-head"><span class="ic" data-ic="brain"></span><b>Anki</b></div><small class="muted">כרטיסי הזיכרון כקובץ לייבוא ל-Anki, לחזרה גם בטלפון.</small><button class="soft" data-anki>ייצוא כרטיסים</button></div>

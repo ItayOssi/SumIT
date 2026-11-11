@@ -35,6 +35,11 @@ async function run() {
   const root = path.join(platform.TempDir, 'sumit-regression-' + guidN());
   mkdirp(root);
   app.settings.studyRoot = root;
+  // The tests never reach the student's real Calendar: the sync is off, remembers in a temporary file, and its script is a missing program
+  // (runCalendarSyncTests puts a fake one in its place).
+  delete app.settings.calSync;
+  app.calSyncFile = path.join(root, 'calendar-sync.json');
+  process.env.SUMIT_OSASCRIPT = path.join(root, 'no-osascript');
 
   let passed = 0;
   const check = (label, ok) => {
@@ -235,6 +240,7 @@ async function run() {
 
     // 6h. Study tools: iCal for the blocks, a NotebookLM bundle, Anki cards
     await runStudyExportTests(app, root, check);
+    await runCalendarSyncTests(app, root, check);
 
     // 6i. Courses open offline: the saved list, the quiet background reads
     await runOfflineCoursesTests(app, root, check);
@@ -1599,6 +1605,150 @@ async function runStudyTrackTests(app, root, check) {
 
   app.Send = realSend; app.ask = realAsk; app.savePath = realSave; app.pickFiles = realPick; app.Toast = realToast;
   app.settings.studyRoot = saved;
+}
+
+// Study blocks into the Calendar app (calendar-sync.js). The Calendar app is a fake program here: it keeps "events" in a file.
+async function runCalendarSyncTests(app, root, check) {
+  const CS = require('../lib/modules/calendar-sync');
+  const at = (d, hh, mi) => new Date(2026, 10, d, hh, mi || 0).getTime();
+
+  // One block -> one event.
+  const ev = CS.blockEvent({ id: 'b2', day: 2, start: '14:30', minutes: 45, course: 'מבני נתונים', goal: 'תרגול עצים', done: false }, '2026-11-08');
+  check('a block becomes an event at its day and hour, named after the course, with the goal as its notes',
+    ev.start === at(10, 14, 30) && ev.end === at(10, 15, 15) && ev.title === 'לימוד: מבני נתונים' && ev.notes === 'תרגול עצים' && ev.key === 'b2@2026-11-08');
+  check('a block that was done is marked in its title, and a block without a real hour or id gives no event',
+    CS.blockEvent({ id: 'b2', day: 0, start: '09:00', minutes: 30, course: 'א', done: true }, '2026-11-08').title === '✓ לימוד: א'
+    && CS.blockEvent({ id: 'b2', day: 0, start: 'x', minutes: 30, course: 'א' }, '2026-11-08') === null && CS.blockEvent({ day: 0, start: '09:00', course: 'א' }, '2026-11-08') === null
+    && CS.planEvents({ weekStart: '', blocks: [{ id: 'b1', start: '09:00' }] }).length === 0);
+
+  // What to write.
+  const target = { calendar: 'Google', nth: 0 }, now = at(10, 12);
+  const e1 = { key: 'b1@w', title: 'לימוד: א', notes: '', start: at(10, 9), end: at(10, 10), done: false }, e2 = { key: 'b2@w', title: 'לימוד: ב', notes: '', start: at(11, 9), end: at(11, 10), done: false };
+  const first = CS.syncOps([e1, e2], {}, target, now, false);
+  check('new blocks are created, with a reminder only for the one that has not started yet',
+    first.ops.length === 2 && first.ops.every(o => o.op === 'put' && o.uid === '' && o.calendar === 'Google') && first.ops[0].alarm === 0 && first.ops[1].alarm === 10);
+  const known = CS.syncResult(first.ops, [{ key: 'b1@w', ok: true, uid: 'U1' }, { key: 'b2@w', ok: true, uid: 'U2' }], first.keep, {}).next;
+  check('what was written is remembered with its event', known['b1@w'].uid === 'U1' && known['b2@w'].uid === 'U2' && known['b2@w'].calendar === 'Google');
+  check('nothing changed: nothing is written', CS.syncOps([e1, e2], known, target, now, false).ops.length === 0);
+  const moved = CS.syncOps([e1, Object.assign({}, e2, { start: at(11, 14), end: at(11, 15) })], known, target, now, false);
+  check('a block that moved changes its own event', moved.ops.length === 1 && moved.ops[0].op === 'put' && moved.ops[0].uid === 'U2' && moved.ops[0].start === at(11, 14));
+  const gone = CS.syncOps([e1], known, target, now, false);
+  check('a block that was removed has its event deleted', gone.ops.length === 1 && gone.ops[0].op === 'delete' && gone.ops[0].uid === 'U2' && !gone.keep['b2@w']);
+  const doneKnown = Object.assign({}, known, { 'b1@w': Object.assign({}, known['b1@w'], { done: true }) });
+  const nextWeek = CS.syncOps([], doneKnown, target, now, false);
+  check('when a new week replaces the plan, a block that was studied stays in the calendar and the others are deleted',
+    nextWeek.ops.length === 1 && nextWeek.ops[0].uid === 'U2' && Object.keys(nextWeek.keep).length === 0);
+  const other = CS.syncOps([e1], { 'b1@w': known['b1@w'] }, { calendar: 'לוח שנה', nth: 0 }, now, false);
+  check('another calendar: the event is deleted in the old one and created in the new one',
+    other.ops.length === 2 && other.ops[0].op === 'delete' && other.ops[0].calendar === 'Google' && other.ops[1].op === 'put' && other.ops[1].calendar === 'לוח שנה' && other.ops[1].uid === '');
+  check('"sync now" writes everything again, to its own events', CS.syncOps([e1, e2], known, target, now, true).ops.map(o => o.uid).join() === 'U1,U2');
+  const half = CS.syncResult(moved.ops, [{ key: 'b2@w', ok: false, error: 'x' }], moved.keep, known);
+  check('a write that failed keeps what was remembered, to try again', half.failed.length === 1 && half.next['b2@w'].uid === 'U2' && half.next['b2@w'].hash === known['b2@w'].hash);
+  const delFail = CS.syncResult(gone.ops, [], gone.keep, known);
+  check('a delete that failed is remembered too', delFail.failed.length === 1 && delFail.next['b2@w'].uid === 'U2');
+
+  // The real script is JavaScript that macOS can compile (it is run only on a student's Mac, never here).
+  const scriptFile = path.join(__dirname, '..', 'lib', 'scripts', 'calendar-sync.jxa.js');
+  if (process.platform === 'darwin' && fileExists('/usr/bin/osacompile')) {
+    const c = spawnSync('/usr/bin/osacompile', ['-l', 'JavaScript', '-o', path.join(root, 'calendar-sync.scpt'), scriptFile], { encoding: 'utf8' });
+    check('the Calendar script compiles on macOS', c.status === 0);
+  }
+
+  // Through the host, with a fake Calendar app.
+  const store = path.join(root, 'fake-calendar.json'), fake = path.join(root, 'fake-osascript');
+  const read = () => JSON.parse(readText(store)), write = (x) => writeText(store, JSON.stringify(x));
+  write({ calendars: [{ name: 'Google', nth: 0, writable: true }, { name: 'חגים', nth: 0, writable: false }, { name: 'לוח שנה', nth: 0, writable: true }], events: {}, seq: 0, calls: [], fail: '' });
+  writeText(fake, `#!/usr/bin/env node
+const fs = require('fs'), a = process.argv.slice(2), s = JSON.parse(fs.readFileSync(${JSON.stringify(store)}, 'utf8'));
+const req = JSON.parse(a[a.length - 1]);
+s.calls.push(req.op + (a[0] === '-l' && a[1] === 'JavaScript' && a[2] === '-e' && a[3].includes("Application('Calendar')") ? '' : ':bad-args'));
+let out;
+if (s.fail) { fs.writeFileSync(${JSON.stringify(store)}, JSON.stringify(s)); process.stderr.write(s.fail); process.exit(1); }
+if (req.op === 'list') out = { ok: true, calendars: s.calendars };
+else out = { ok: true, results: req.ops.map(o => {
+  if (!s.calendars.some(c => c.name === o.calendar && c.nth === o.nth)) return { key: o.key, ok: false, error: 'no-calendar' };
+  const cal = o.calendar + '#' + o.nth, has = o.uid && s.events[o.uid] && s.events[o.uid].cal === cal;
+  if (o.op === 'delete') { if (has) delete s.events[o.uid]; return { key: o.key, ok: true }; }
+  const uid = has ? o.uid : 'U' + (++s.seq);
+  s.events[uid] = { cal, title: o.title, notes: o.notes, start: o.start, end: o.end, alarm: o.alarm };
+  return { key: o.key, ok: true, uid };
+}) };
+fs.writeFileSync(${JSON.stringify(store)}, JSON.stringify(s));
+process.stdout.write(JSON.stringify(out));
+`);
+  fs.chmodSync(fake, 0o755);
+  const savedScript = process.env.SUMIT_OSASCRIPT, savedRoot = app.settings.studyRoot, realSend = app.Send, sent = [];
+  process.env.SUMIT_OSASCRIPT = fake; app.settings.studyRoot = root; app.calSyncDelay = 0;
+  app.Send = (m) => sent.push(m);
+  const last = (type) => sent.filter(m => m.type === type).pop();
+  const until = async (fn) => { for (let i = 0; i < 200 && !fn(); i++) await new Promise(r => setTimeout(r, 25)); return fn(); };
+  const titles = () => Object.values(read().events).map(e => e.title).sort().join('|');
+  try {
+    // A week from tomorrow, so the blocks are in the future whatever the day the tests run.
+    const d0 = new Date(Date.now() + 86400000), ws = d0.getFullYear() + '-' + String(d0.getMonth() + 1).padStart(2, '0') + '-' + String(d0.getDate()).padStart(2, '0');
+    const prof = app.TrackLoad();
+    prof.courses = [{ name: 'אלגברה', level: 2, energy: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: true }];
+    prof.plan = { weekStart: ws, blocks: [{ id: 'b0', day: 0, start: '09:00', minutes: 60, course: 'אלגברה', goal: 'תרגול', done: false, doneMinutes: 0 }, { id: 'b1', day: 1, start: '10:00', minutes: 45, course: 'אלגברה', goal: 'חזרה', done: false, doneMinutes: 0 }] };
+    app.TrackSave(prof);
+    await new Promise(r => setTimeout(r, 80));
+    check('with the sync off, saving the plan does not touch the calendar', read().calls.length === 0);
+
+    await app.CalSyncHandle({ action: 'list' });
+    check('the page gets the calendars that can be written to, by name', last('calSync').calendars.map(c => c.name).join() === 'Google,לוח שנה' && !read().calls.join().includes('bad-args'));
+    sent.length = 0;
+    await app.CalSyncHandle({ action: 'set', calendar: 'Google', nth: 0 });
+    check('turning the sync on writes the blocks of the plan to the chosen calendar, with a reminder',
+      Object.keys(read().events).length === 2 && titles() === 'לימוד: אלגברה|לימוד: אלגברה' && Object.values(read().events).every(e => e.cal === 'Google#0' && e.alarm === 10)
+      && app.settings.calSync.on === true && last('calSync').on && last('calSync').count === 2 && last('calSync').error === '' && last('toast').text.includes('2 אירועים'));
+
+    // A change in the app reaches the calendar by itself.
+    const uids = Object.keys(read().events).sort().join();
+    const p2 = app.TrackLoad(); p2.plan.blocks[0].done = true; p2.plan.blocks[0].doneMinutes = 60; p2.plan.blocks[1].start = '16:00';
+    const callsBefore = read().calls.length;
+    app.TrackSave(p2); app.TrackSave(p2);
+    check('a block marked as done, and one that moved, change their own events a moment later, in one write',
+      await until(() => titles() === 'לימוד: אלגברה|✓ לימוד: אלגברה' && Object.values(read().events).some(e => new Date(e.start).getHours() === 16))
+      && Object.keys(read().events).sort().join() === uids && read().calls.length === callsBefore + 1);
+    const p3 = app.TrackLoad(); p3.plan.blocks = p3.plan.blocks.slice(0, 1); app.TrackSave(p3);
+    check('a block that was removed leaves the calendar', await until(() => Object.keys(read().events).length === 1) && titles() === '✓ לימוד: אלגברה');
+    const calls3 = read().calls.length; app.TrackSave(app.TrackLoad()); await new Promise(r => setTimeout(r, 120));
+    check('a save that changes no block writes nothing', read().calls.length === calls3);
+
+    // macOS did not allow it: said clearly, nothing forgotten.
+    const s1 = read(); s1.fail = 'execution error: Error: Not authorized to send Apple events to Calendar. (-1743)'; write(s1);
+    sent.length = 0;
+    const p4 = app.TrackLoad(); p4.plan.blocks.push({ id: 'b5', day: 2, start: '11:00', minutes: 30, course: 'אלגברה', goal: 'x', done: false, doneMinutes: 0 }); app.TrackSave(p4);
+    check('without the permission of macOS the student is told where to allow it, once',
+      await until(() => !!last('toast')) && last('toast').error && last('toast').text.includes('אוטומציה') && last('calSync').error.includes('הרשאה') && Object.keys(read().events).length === 1);
+    sent.length = 0; app.TrackSave(app.TrackLoad()); await until(() => sent.some(m => m.type === 'calSync'));
+    check('the same failure again is not announced again, and the event that was written is still remembered', !last('toast') && Object.keys(app.CalSyncLoad().events).length === 1);
+    const s2 = read(); s2.fail = ''; write(s2);
+    sent.length = 0; await app.CalSyncHandle({ action: 'now' });
+    check('"sync now" after the permission was given writes what was missing and clears the error', Object.keys(read().events).length === 2 && last('calSync').error === '' && !last('toast').error);
+
+    // Another calendar, a calendar that is gone, and turning it off.
+    await app.CalSyncHandle({ action: 'set', calendar: 'לוח שנה', nth: 0 });
+    check('choosing another calendar moves the events there', Object.values(read().events).length === 2 && Object.values(read().events).every(e => e.cal === 'לוח שנה#0'));
+    sent.length = 0; await app.CalSyncHandle({ action: 'set', calendar: 'אין כזה', nth: 0 });
+    check('a calendar that is not in the Calendar app gives a clear message', last('toast').error && last('toast').text.includes('לא נמצא'));
+    await app.CalSyncHandle({ action: 'set', calendar: 'לוח שנה', nth: 0 });
+    await app.CalSyncHandle({ action: 'off', remove: true });
+    check('"off and remove" deletes the events the app wrote and stops the sync', Object.keys(read().events).length === 0 && app.settings.calSync.on === false && Object.keys(app.CalSyncLoad().events).length === 0 && last('calSync').on === false);
+    const callsOff = read().calls.length; app.TrackSave(app.TrackLoad()); await new Promise(r => setTimeout(r, 120));
+    check('after it is off, saving the plan does not touch the calendar', read().calls.length === callsOff);
+    await app.CalSyncHandle({ action: 'set', calendar: 'Google', nth: 0 });
+    await app.CalSyncHandle({ action: 'off', remove: false });
+    check('"off" alone leaves the events in the calendar and forgets them', Object.keys(read().events).length === 2 && Object.keys(app.CalSyncLoad().events).length === 0);
+    sent.length = 0; await app.CalSyncHandle({ action: 'now' });
+    check('"sync now" while it is off says so and writes nothing', last('toast').error && Object.keys(read().events).length === 2);
+    process.env.SUMIT_OSASCRIPT = path.join(root, 'no-osascript');
+    sent.length = 0; await app.CalSyncHandle({ action: 'list' });
+    check('a Mac where the script cannot run gives a message, not a crash', last('toast').error && !!last('calSync').listError);
+  } finally {
+    clearTimeout(app.calSyncTimer);
+    delete app.settings.calSync; delete app.calSyncDelay;
+    process.env.SUMIT_OSASCRIPT = savedScript; app.settings.studyRoot = savedRoot; app.Send = realSend;
+  }
 }
 
 // "What to do in this block?" (block-plan.js): a plan that fills exactly the block, by rules or from an AI answer.
