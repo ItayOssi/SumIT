@@ -18,6 +18,9 @@ for p in sys.argv[1:]:
         print('failed', p, e)
 `;
 
+// Characters of course material in one chat question (about 15 to 25 thousand tokens of Hebrew text).
+const ContextBudget = 60000;
+
 function KeySetting(provider) { return provider === 'gemini' ? 'geminiKey' : provider === 'claude' ? 'claudeKey' : 'openaiKey'; }
 
 function HtmlToText(html) {
@@ -75,7 +78,8 @@ module.exports = {
     get AnthropicBase() { return process.env.SUMIT_ANTHROPIC_URL || 'https://api.anthropic.com'; },
     get GeminiModel() { const m = Str(this.settings, 'geminiModel').trim(); const raw = m.length > 0 ? m : 'gemini-flash-latest'; return raw.startsWith('models/') ? raw.slice(7) : raw; },
     get OpenAiModel() { return Str(this.settings, 'openaiModel').length > 0 ? Str(this.settings, 'openaiModel') : 'gpt-4o-mini'; },
-    get ClaudeModel() { return Str(this.settings, 'claudeModel').length > 0 ? Str(this.settings, 'claudeModel') : 'claude-3-5-haiku-latest'; },
+    // Claude 3 models are retired (their requests fail), so a saved one falls back to the current Haiku.
+    get ClaudeModel() { const m = Str(this.settings, 'claudeModel').trim(); return m.length > 0 && !m.startsWith('claude-3') ? m : 'claude-haiku-5-5'; },
 
     HasHelperKey(provider) { return Str(this.settings, KeySetting(provider)).length > 0; },
 
@@ -139,9 +143,13 @@ module.exports = {
         } else if (provider === 'claude') {
           url = this.AnthropicBase + '/v1/messages';
           const msgs = messages.map(m => ({ role: m[0] === 'assistant' ? 'assistant' : 'user', content: m[1] }));
+          // The system text holds the lecture material and stays the same across a chat, so it is cached:
+          // the next questions read it at a tenth of the price. Low effort: these are short answers.
+          // Current models reject a temperature other than the default, so none is sent.
           body = {
-            model: this.ClaudeModel, max_tokens: maxTokens, system,
-            messages: msgs, temperature: 0.2, stream: !!onChunk,
+            model: this.ClaudeModel, max_tokens: maxTokens,
+            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+            messages: msgs, output_config: { effort: 'low' }, stream: !!onChunk,
           };
           headers['x-api-key'] = key;
           headers['anthropic-version'] = '2023-06-01';
@@ -300,8 +308,10 @@ module.exports = {
       this.SendAiStatus();
     },
 
+    // The material sent with every chat question, most relevant first, at most ContextBudget characters:
+    // for a lecture, its summary, then the digests from that lecture back to the first; for the exam, the
+    // lecturer's profile, the exam prep page, then the digests. What doesn't fit is left out, never the start.
     HelperContext(course, scope) {
-      let sb = '';
       let lesson = 0;
       const exam = scope === 'exam';
       if (!exam) {
@@ -309,35 +319,32 @@ module.exports = {
         lesson = parseInt(scope.substring(7), 10);
         if (isNaN(lesson)) return null;
       }
-      const last = exam ? 200 : lesson;
+      const parts = [];
+      let used = 0;
+      const add = (head, body, cap) => {
+        const room = ContextBudget - used - head.length - 2;
+        if (room < 200 || !body) return;
+        const text = body.substring(0, Math.min(cap, room));
+        parts.push(head + '\n' + text + '\n');
+        used += head.length + text.length + 2;
+      };
       const digests = path.join(this.CourseDir(course), C.SumitDir, 'digests');
-      let found = 0;
-      for (let k = 1; k <= last; k++) {
+      const digest = (k) => {
         const f = path.join(digests, 'הרצאה ' + k + '.md');
-        if (!fileExists(f)) continue;
-        sb += '--- תקציר הרצאה ' + k + ' ---\n' + ReadCapped(f, 7000) + '\n';
-        found++;
-      }
+        if (fileExists(f)) add('--- תקציר הרצאה ' + k + ' ---', ReadCapped(f, 7000), 7000);
+      };
       if (!exam) {
         const page = this.StudyPagePath(course, lesson);
-        if (fileExists(page)) {
-          sb += '--- הסיכום המלא של הרצאה ' + lesson + ' (עם שיעורי הבית) ---\n' + HtmlToText(ReadCapped(page, 400000));
-          found++;
-        }
+        if (fileExists(page)) add('--- הסיכום המלא של הרצאה ' + lesson + ' (עם שיעורי הבית) ---', HtmlToText(ReadCapped(page, 400000)), 42000);
+        for (let k = lesson; k >= 1; k--) digest(k);
       } else {
         const profile = path.join(this.CourseDir(course), C.LecturerProfile);
-        if (fileExists(profile)) {
-          sb += '--- איך המרצה חושב ובוחן ---\n' + ReadCapped(profile, 12000) + '\n';
-          found++;
-        }
+        if (fileExists(profile)) add('--- איך המרצה חושב ובוחן ---', ReadCapped(profile, 12000), 12000);
         const prep = path.join(this.CourseDir(course), C.Exams, C.ExamPrepPage);
-        if (fileExists(prep)) {
-          sb += '--- דף ההכנה למבחן ---\n' + HtmlToText(ReadCapped(prep, 200000));
-          found++;
-        }
+        if (fileExists(prep)) add('--- דף ההכנה למבחן ---', HtmlToText(ReadCapped(prep, 200000)), 30000);
+        for (let k = 1; k <= 200; k++) digest(k);
       }
-      if (found === 0) return null;
-      return sb.length > 90000 ? sb.substring(0, 90000) : sb;
+      return parts.length === 0 ? null : parts.join('');
     },
 
     async HelperChat(course, scope, text, say) {

@@ -204,37 +204,46 @@ partial class HitStudent
 
     // The lecture digests and the summary the app made, for a question about a lecture (or all of them, for exam practice).
     // Null when there is nothing to read yet (the question then goes to Claude, who can read the files).
+    // At most this many characters of material go with one chat question (about 15 to 25 thousand tokens of Hebrew),
+    // most relevant first: for a lecture, its summary, then the digests from that lecture back to the first; for the exam,
+    // the lecturer's profile, the exam prep page, then the digests. What doesn't fit is left out, never the start.
+    const int ContextBudget = 60000;
+
     string HelperContext(string course, string scope)
     {
-        var sb = new StringBuilder();
         int lesson = 0;
         bool exam = scope == "exam";
         if (!exam && !(scope.StartsWith("lesson:") && int.TryParse(scope.Substring(7), out lesson))) return null;
-        int last = exam ? 200 : lesson;
-        string digests = Path.Combine(CourseDir(course), SumitDir, "digests");
+        var sb = new StringBuilder();
         int found = 0;
-        for (int k = 1; k <= last; k++)
+        Action<string, string, int> add = (head, body, cap) =>
+        {
+            int room = ContextBudget - sb.Length - head.Length - 2;
+            if (room < 200 || string.IsNullOrEmpty(body)) return;
+            sb.Append(head).Append("\n").Append(body.Length > Math.Min(cap, room) ? body.Substring(0, Math.Min(cap, room)) : body).Append("\n");
+            found++;
+        };
+        string digests = Path.Combine(CourseDir(course), SumitDir, "digests");
+        Action<int> digest = k =>
         {
             string f = Path.Combine(digests, "הרצאה " + k + ".md");
-            if (!File.Exists(f)) continue;
-            sb.Append("--- תקציר הרצאה ").Append(k).Append(" ---\n").Append(ReadCapped(f, 7000)).Append("\n");
-            found++;
-        }
+            if (File.Exists(f)) add("--- תקציר הרצאה " + k + " ---", ReadCapped(f, 7000), 7000);
+        };
         if (!exam)
         {
             string page = StudyPagePath(course, lesson);
-            if (File.Exists(page)) { sb.Append("--- הסיכום המלא של הרצאה ").Append(lesson).Append(" (עם שיעורי הבית) ---\n").Append(HtmlToText(ReadCapped(page, 400000))); found++; }
+            if (File.Exists(page)) add("--- הסיכום המלא של הרצאה " + lesson + " (עם שיעורי הבית) ---", HtmlToText(ReadCapped(page, 400000)), 42000);
+            for (int k = lesson; k >= 1; k--) digest(k);
         }
         else
         {
             string profile = Path.Combine(CourseDir(course), LecturerProfile);
-            if (File.Exists(profile)) { sb.Append("--- איך המרצה חושב ובוחן ---\n").Append(ReadCapped(profile, 12000)).Append("\n"); found++; }
+            if (File.Exists(profile)) add("--- איך המרצה חושב ובוחן ---", ReadCapped(profile, 12000), 12000);
             string prep = Path.Combine(CourseDir(course), Exams, ExamPrepPage);
-            if (File.Exists(prep)) { sb.Append("--- דף ההכנה למבחן ---\n").Append(HtmlToText(ReadCapped(prep, 200000))); found++; }
+            if (File.Exists(prep)) add("--- דף ההכנה למבחן ---", HtmlToText(ReadCapped(prep, 200000)), 30000);
+            for (int k = 1; k <= 200; k++) digest(k);
         }
-        if (found == 0) return null;
-        string text = sb.ToString();
-        return text.Length > 90000 ? text.Substring(0, 90000) : text;
+        return found == 0 ? null : sb.ToString();
     }
 
     // Answers a chat question with a helper. Returns false when the question should go to Claude instead.

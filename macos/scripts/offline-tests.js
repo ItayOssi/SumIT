@@ -461,6 +461,29 @@ async function runHelperTests(app, root, check) {
       ctx !== null && ctx.includes('DIGEST-ONE') && ctx.includes('SECTION-TWO') && ctx.includes('חשוב') && ctx.includes('$a+b$') && !ctx.includes('<b>') && !ctx.includes('alert(1)')
     );
     check('a later lecture is not mixed in', !app.HelperContext(course, 'lesson:1').includes('SECTION-TWO'));
+    check('the lecture\'s own summary comes before the digests', ctx.indexOf('SECTION-TWO') < ctx.indexOf('DIGEST-ONE'));
+
+    // Token budget: a long course sends its nearest material and stays under the cap.
+    for (let k = 3; k <= 12; k++) writeText(path.join(app.CourseDir(course), C.SumitDir, 'digests', 'הרצאה ' + k + '.md'), 'DIGEST-' + k + ' ' + 'ד'.repeat(9000));
+    app.SaveLecture(course, { num: 12, title: 'L12' });
+    writeText(app.StudyPagePath(course, 12), '<html><body><h2>PAGE-TWELVE</h2><p>' + 'ס'.repeat(80000) + '</p></body></html>');
+    const big = app.HelperContext(course, 'lesson:12');
+    check('a long course stays within the context budget', big.length <= 60000);
+    check('the budget keeps the lecture\'s summary and its own digest', big.includes('PAGE-TWELVE') && big.includes('DIGEST-12') && big.includes('DIGEST-11'));
+    check('the budget drops the oldest digests first', !big.includes('DIGEST-ONE') && !big.includes('DIGEST-3 '));
+
+    // Claude through an API key: the current Haiku, a cached system text, no temperature.
+    delete app.settings.claudeModel;
+    let cr = await app.HelperCall('claude', 'c'.repeat(30), 'SYSTEM-CLAUDE', [['user', 'שאלה']]);
+    const creq = requests[requests.length - 1];
+    check('Claude by key answers on the current Haiku', !cr.Error && cr.Text.includes('Claude') && creq.includes('"model":"claude-haiku-5-5"'));
+    check('the Claude system text is cached', creq.includes('"cache_control":{"type":"ephemeral"}') && creq.includes('SYSTEM-CLAUDE'));
+    check('no temperature goes to Claude, and the effort is low', !creq.includes('temperature') && creq.includes('"effort":"low"'));
+    app.settings.claudeModel = 'claude-3-5-haiku-latest';
+    check('a saved retired Claude 3 model moves to the current Haiku', app.ClaudeModel === 'claude-haiku-5-5');
+    app.settings.claudeModel = 'claude-sonnet-5-5';
+    check('a chosen current Claude model is kept', app.ClaudeModel === 'claude-sonnet-5-5');
+    delete app.settings.claudeModel;
 
     const said = [];
     const answered = await app.HelperChat(course, 'lesson:2', 'תסביר לי', (role, t) => said.push(role + ':' + t));
@@ -692,6 +715,40 @@ else:
     await app.RunAi('routing', root, 'test', null, null, null);
     check('non-quota errors do not spend another provider', routed.length === 1);
     app.aiWorkOverride = null;
+
+    // Claude CLI: none of the student's own MCP servers, and a lighter model for chats and short reading jobs.
+    delete app.settings.claudeCliModel;
+    const sumArgs = app.ClaudeArgs('sum|c|1', null, null);
+    const chatArgs = app.ClaudeArgs('chat|c|lesson:1', 'S1', 'SYS');
+    check('Claude runs without the student\'s MCP servers', sumArgs.includes('--strict-mcp-config') && chatArgs.includes('--strict-mcp-config'));
+    check('a study page keeps the account\'s own model', !sumArgs.includes('--model') && app.ClaudeModelFor('exam|c', {}) === null && app.ClaudeModelFor('hw|c', {}) === null);
+    check('a chat, the timetable and the syllabus run on Sonnet',
+      chatArgs[chatArgs.indexOf('--model') + 1] === 'sonnet' && app.ClaudeModelFor('timetable', {}) === 'sonnet' && app.ClaudeModelFor('info|c', {}) === 'sonnet');
+    check('a chat resumes its session with its system text', chatArgs[chatArgs.indexOf('--resume') + 1] === 'S1' && chatArgs[chatArgs.indexOf('--append-system-prompt') + 1] === 'SYS');
+    check('the model setting overrides the choice', app.ClaudeModelFor('chat|c', { claudeCliModel: 'default' }) === null && app.ClaudeModelFor('sum|c', { claudeCliModel: 'opus' }) === 'opus');
+
+    // A long Claude chat starts a new session with the last turns as text, instead of resending everything.
+    const chatCourse = 'chat-session-course';
+    app.SaveLecture(chatCourse, { num: 1, title: 'L1' });
+    writeText(path.join(app.LectureDir(chatCourse, 1), 'slides.txt'), 'חומר');
+    const savedPref = app.settings.helperPref;
+    app.settings.helperPref = 'claude';
+    const realRunAi = app.RunAi;
+    const seen = [];
+    let nextSession = 'SESSION-A';
+    app.RunAi = async (key, cwd, prompt, session) => {
+      seen.push({ key, prompt, session });
+      return { Error: false, Text: 'תשובה ' + seen.length, Session: session || nextSession, Provider: 'claude' };
+    };
+    for (let i = 0; i < 9; i++) await app.Chat(chatCourse, 'שאלה ' + (i + 1), 'lesson:1');
+    check('the first questions of a chat resume one session', seen[0].session === null && seen.slice(1, 8).every(s => s.session === 'SESSION-A'));
+    check('after 8 questions the chat starts a new session', seen[8].session === null);
+    check('the new session gets the last turns as text', seen[8].prompt.includes('השיחה עד עכשיו') && seen[8].prompt.includes('שאלה 8') && seen[8].prompt.includes('שאלה 9') && !seen[8].prompt.includes('שאלה 1\n'));
+    nextSession = 'SESSION-B';
+    await app.Chat(chatCourse, 'שאלה 10', 'lesson:1');
+    check('the turn count starts again with the new session', Int(app.LoadMeta(chatCourse).lectureChatTurns, 'lesson:1') === 2 && seen[9].session === 'SESSION-A');
+    app.RunAi = realRunAi;
+    app.settings.helperPref = savedPref;
     app.claudeLoggedIn = wasLogged;
     delete process.env.SUMIT_CLAUDE;
 

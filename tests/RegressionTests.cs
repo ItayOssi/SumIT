@@ -270,6 +270,16 @@ partial class HitStudent
             string ctx = app.HelperContext(course, "lesson:2");
             check("the context holds the earlier digest and the summary text, without markup", ctx != null && ctx.Contains("DIGEST-ONE") && ctx.Contains("SECTION-TWO") && ctx.Contains("חשוב") && ctx.Contains("$a+b$") && !ctx.Contains("<b>") && !ctx.Contains("alert(1)"));
             check("a later lecture is not mixed in", !app.HelperContext(course, "lesson:1").Contains("SECTION-TWO"));
+            check("the lecture's own summary comes before the digests", ctx.IndexOf("SECTION-TWO") < ctx.IndexOf("DIGEST-ONE"));
+            // Token budget: a long course sends its nearest material and stays under the cap.
+            for (int k = 3; k <= 12; k++) File.WriteAllText(Path.Combine(app.CourseDir(course), SumitDir, "digests", "הרצאה " + k + ".md"), "DIGEST-" + k + " " + new string('ד', 9000));
+            app.SaveLecture(course, new Dictionary<string, object> { { "num", 12 }, { "title", "L12" } });
+            Directory.CreateDirectory(Path.GetDirectoryName(app.StudyPagePath(course, 12)));
+            File.WriteAllText(app.StudyPagePath(course, 12), "<html><body><h2>PAGE-TWELVE</h2><p>" + new string('ס', 80000) + "</p></body></html>");
+            string big = app.HelperContext(course, "lesson:12");
+            check("a long course stays within the context budget", big.Length <= 60000);
+            check("the budget keeps the lecture's summary and its own digest", big.Contains("PAGE-TWELVE") && big.Contains("DIGEST-12") && big.Contains("DIGEST-11"));
+            check("the budget drops the oldest digests first", !big.Contains("DIGEST-ONE") && !big.Contains("DIGEST-3 "));
             var said = new List<string>();
             bool answered = Run(() => app.HelperChat(course, "lesson:2", "תסביר לי", (role, t) => said.Add(role + ":" + t)));
             check("the chat is answered by a helper and remembered", answered && said.Count == 1 && said[0].StartsWith("assistant:") && app.LoadMeta(course).ContainsKey("lectureChatHistories"));
@@ -397,6 +407,14 @@ if ($env:FAKE_NAME -eq 'codex' -and $m.Success) {
             Run(() => app.RunAi("routing", root, "test", null, null, null));
             check("non-quota errors do not spend another provider", routed.Count == 1);
             app.aiWorkOverride = null; app.claudeLoggedIn = wasLogged;
+            // Claude CLI: none of the student's own MCP servers, and a lighter model for chats and short reading jobs.
+            app.settings.Remove("claudeCliModel");
+            string sumArgs = app.ClaudeArgs("sum|c|1", null, null), chatArgs = app.ClaudeArgs("chat|c|lesson:1", "S1", "SYS");
+            check("Claude runs without the student's MCP servers", sumArgs.Contains(" --strict-mcp-config") && chatArgs.Contains(" --strict-mcp-config"));
+            check("a study page keeps the account's own model", !sumArgs.Contains("--model") && ClaudeModelFor("exam|c", new Dictionary<string, object>()) == null && ClaudeModelFor("hw|c", new Dictionary<string, object>()) == null);
+            check("a chat, the timetable and the syllabus run on Sonnet", chatArgs.Contains(" --model " + Q("sonnet")) && ClaudeModelFor("timetable", new Dictionary<string, object>()) == "sonnet" && ClaudeModelFor("info|c", new Dictionary<string, object>()) == "sonnet");
+            check("a chat resumes its session with its system text", chatArgs.Contains(" --resume " + Q("S1")) && chatArgs.Contains(" --append-system-prompt " + Q("SYS")));
+            check("the model setting overrides the choice", ClaudeModelFor("chat|c", new Dictionary<string, object> { { "claudeCliModel", "default" } }) == null && ClaudeModelFor("sum|c", new Dictionary<string, object> { { "claudeCliModel", "opus" } }) == "opus");
             // A second opinion on a lecture summary: the notes are added to the page, and a repeat replaces them.
             string course = "review-course";
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 1 }, { "title", "L1" } });
