@@ -58,7 +58,8 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-            node -e 'require("fs").writeFileSync("lib/google-oauth.json", JSON.stringify({ secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET }))'
+            # The secret may be the bare "GOCSPX-..." or the whole client JSON downloaded from Google: only the bare one is written.
+            node -e 'const { ClientSecret } = require("./lib/modules/drive-sync"); const s = ClientSecret(process.env.GOOGLE_OAUTH_CLIENT_SECRET); if (!s) { console.error("GOOGLE_OAUTH_CLIENT_SECRET has no client secret"); process.exit(1); } require("fs").writeFileSync("lib/google-oauth.json", JSON.stringify({ secret: s }))'
             echo "Google sign-in: configured"
           else
             echo "::warning::GOOGLE_OAUTH_CLIENT_SECRET is not set: the Drive sync cannot sign in in this build"

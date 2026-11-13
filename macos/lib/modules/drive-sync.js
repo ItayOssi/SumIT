@@ -66,6 +66,14 @@ function ConflictName(rel, when) {
   return stem + ' (מ-Drive ' + two(d.getDate()) + '.' + two(d.getMonth() + 1) + ' ' + two(d.getHours()) + '-' + two(d.getMinutes()) + ')' + ext;
 }
 
+// The client secret as Google's console hands it out can be the bare "GOCSPX-..." or the whole downloaded client JSON
+// ({"installed": {"client_secret": ...}}); Google answers invalid_client to anything but the bare secret.
+function ClientSecret(value) {
+  const v = String(value || '').trim();
+  if (!v.startsWith('{')) return v;
+  try { const j = JSON.parse(v); return Str(Dict(j, 'installed') || Dict(j, 'web') || j, 'client_secret').trim(); } catch { return ''; }
+}
+
 function SyncableSettings(settings) {
   const out = {};
   for (const [k, v] of Object.entries(settings || {})) {
@@ -77,7 +85,7 @@ function SyncableSettings(settings) {
 }
 
 module.exports = {
-  SyncPlan, ConflictName, SyncableSettings,
+  SyncPlan, ConflictName, SyncableSettings, ClientSecret,
   methods: {
     DrivePlan(local, remote, base) { return SyncPlan(local, remote, base); },
     DriveConflictName(rel, when) { return ConflictName(rel, when); },
@@ -88,8 +96,8 @@ module.exports = {
     // The secret of a desktop client is not a real secret (Google says so), but it stays out of the public code:
     // the release workflow writes lib/google-oauth.json from a repository secret, and a developer sets the environment.
     get DriveClientSecret() {
-      if (process.env.SUMIT_GOOGLE_CLIENT_SECRET) return process.env.SUMIT_GOOGLE_CLIENT_SECRET;
-      try { return Str(JSON.parse(readText(path.join(__dirname, '..', 'google-oauth.json'))), 'secret'); } catch { return ''; }
+      if (process.env.SUMIT_GOOGLE_CLIENT_SECRET) return ClientSecret(process.env.SUMIT_GOOGLE_CLIENT_SECRET);
+      try { return ClientSecret(Str(JSON.parse(readText(path.join(__dirname, '..', 'google-oauth.json'))), 'secret')); } catch { return ''; }
     },
     get DriveApi() { return (process.env.SUMIT_DRIVE_API || 'https://www.googleapis.com').replace(/\/+$/, ''); },
     get DriveTokenUrl() { return process.env.SUMIT_GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token'; },

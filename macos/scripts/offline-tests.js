@@ -1988,6 +1988,9 @@ async function runDriveTests(app, root, check) {
   const ss = D.SyncableSettings({ helperPref: 'openai', theme: 'dark', geminiKey: 'SECRET', claudeKey: 'S2', studyRoot: '/x', recordingsDir: '/y', drive: { refresh: 'r' }, calSync: { on: 1 }, order: ['a', 'b'], deep: { a: 1 } });
   check('the settings that travel are the student\'s choices: no keys, folders, account or objects', JSON.stringify(ss) === JSON.stringify({ helperPref: 'openai', theme: 'dark', order: ['a', 'b'] }));
 
+  const downloaded = JSON.stringify({ installed: { client_id: 'id.apps.googleusercontent.com', client_secret: 'GOCSPX-abc', redirect_uris: ['http://localhost'] } });
+  check('the client secret is sent bare, also when the whole downloaded client JSON was stored', D.ClientSecret(downloaded) === 'GOCSPX-abc' && D.ClientSecret(' GOCSPX-abc\n') === 'GOCSPX-abc' && D.ClientSecret('{oops') === '' && D.ClientSecret('') === '');
+
   // Two computers, one Google account, through the fake Google.
   const g = fakeGoogle();
   await new Promise(r => g.server.listen(0, '127.0.0.1', r));
