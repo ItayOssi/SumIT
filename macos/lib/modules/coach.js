@@ -14,6 +14,8 @@ const Reasons = ['start', 'confused', 'toomuch', 'exam', 'homework'];
 const ReasonText = { start: 'לא יודע מאיפה להתחיל', confused: 'לא מבין את החומר', toomuch: 'יש יותר מדי דברים', exam: 'מבחן מתקרב', homework: 'נתקעתי בתרגיל' };
 const MinutesChoices = [20, 45, 90];
 const MaxSteps = 6;
+// How long the AI may take before the steps made by rules are shown instead.
+const CoachAiMs = 25000;
 
 const pad = (n) => String(n).padStart(2, '0');
 const localDate = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -216,7 +218,7 @@ module.exports = {
         let steps = null, source = 'rules';
         if (this.HelperOrder().length > 0) {
           try {
-            const r = await this.HelperAsk(this.CoachSystem(), [['user', this.CoachPrompt(ctx)]]);
+            const r = await this.HelperAsk(this.CoachSystem(), [['user', this.CoachPrompt(ctx)]], null, null, { fast: true, timeoutMs: this.coachAiMs || CoachAiMs });
             const parsed = r && !r.Error ? this.JsonFromAnswer(r.Text) : null;
             steps = this.CleanCoachSteps(parsed && parsed.steps, ctx);
             if (steps) source = 'ai';

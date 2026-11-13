@@ -92,7 +92,7 @@ module.exports = {
 
     HelperProvider() { return this.HelperOrder()[0] || null; },
 
-    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null, extraImages = null, maxTokens = 2048) {
+    async HelperCall(provider, key, system, messages, onChunk = null, imageBuffer = null, extraImages = null, maxTokens = 2048, timeoutMs = 180000) {
       if (provider === 'gemini') {
         const primary = this.GeminiModel;
         // The -latest aliases follow Google's current Flash models, so they don't retire like fixed versions.
@@ -100,7 +100,7 @@ module.exports = {
         const models = Array.from(new Set(candidates));
         let lastReply = null;
         for (const model of models) {
-          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model, extraImages, maxTokens);
+          const res = await this.HelperCallSingle('gemini', key, system, messages, onChunk, imageBuffer, model, extraImages, maxTokens, timeoutMs);
           if (!res.Error) return res;
           lastReply = res;
           // The next model only on a quota limit (429) or a model that no longer exists (404).
@@ -108,10 +108,10 @@ module.exports = {
         }
         return lastReply || { Text: 'שגיאה בפנייה ל-Gemini', Provider: 'gemini', Error: true, Limit: true };
       }
-      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer, null, extraImages, maxTokens);
+      return this.HelperCallSingle(provider, key, system, messages, onChunk, imageBuffer, null, extraImages, maxTokens, timeoutMs);
     },
 
-    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null, extraImages = null, maxTokens = 2048) {
+    async HelperCallSingle(provider, key, system, messages, onChunk = null, imageBuffer = null, geminiModelOverride = null, extraImages = null, maxTokens = 2048, timeoutMs = 180000) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       try {
         let url, body, headers = { 'Content-Type': 'application/json' };
@@ -160,7 +160,7 @@ module.exports = {
           headers['Authorization'] = 'Bearer ' + key;
         }
 
-        const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(180000) });
+        const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
         if (!resp.ok) {
           const text = await resp.text();
           reply.Error = true;
@@ -265,20 +265,25 @@ module.exports = {
       }
     },
 
-    async HelperAsk(system, messages, only = null, onChunk = null) {
+    // opts.fast: the quick CLI form (see HelperCallCli). opts.timeoutMs: one deadline for the whole question, across the
+    // providers, so a slow one cannot hold the page; when it passes, the last error is returned.
+    async HelperAsk(system, messages, only = null, onChunk = null, opts = {}) {
       let last = null;
+      const deadline = opts.timeoutMs ? Date.now() + opts.timeoutMs : 0;
+      const left = () => deadline ? deadline - Date.now() : 0;
       for (const provider of this.HelperOrder()) {
         if (only !== null && provider !== only) continue;
+        if (deadline && left() < 1000) break;
         let r = null;
         if (this.HelperMode(provider) === 'account') {
-          r = await this.HelperCallCli(provider, system, messages);
-          if (r.Error && this.HasHelperKey(provider)) r = null;
+          r = await this.HelperCallCli(provider, system, messages, null, Object.assign({}, opts, deadline ? { timeoutMs: left() } : {}));
+          if (r.Error && this.HasHelperKey(provider) && (!deadline || left() >= 1000)) r = null;
         }
-        if (!r) r = await this.HelperCall(provider, Unprotect(Str(this.settings, KeySetting(provider))), system, messages, onChunk);
+        if (!r) r = await this.HelperCall(provider, Unprotect(Str(this.settings, KeySetting(provider))), system, messages, onChunk, null, null, 2048, deadline ? Math.max(1000, left()) : 180000);
         if (!r.Error) return r;
         last = r;
       }
-      return last;
+      return last || (deadline ? { Text: 'הזמן הקצוב נגמר', Provider: null, Error: true, Limit: false } : null);
     },
 
     async SetHelperKey(provider, key) {

@@ -160,8 +160,9 @@ module.exports = {
       });
     },
 
-    // opts.fast (the summary chat): low-effort models, and a short prompt goes straight into -p instead of a file the
+    // opts.fast (the summary chat, "I'm stuck"): low-effort models, and a short prompt goes straight into -p instead of a file the
     // agent must open first - that tool round trip roughly doubled the wait. opts.onChunk(delta, full) streams the answer.
+    // opts.timeoutMs: how long the CLI may run (default 5 minutes for agy, 4 for codex); a run that times out is not retried.
     async HelperCallCli(provider, system, messages, imageBuffer = null, opts = {}) {
       const reply = { Text: '', Provider: provider, Error: false, Limit: false };
       const dir = path.join(platform.TempDir, 'SumIT-brain-' + guidN());
@@ -194,7 +195,7 @@ module.exports = {
           const stream = typeof opts.onChunk === 'function';
           for (const mod of models) {
             const args = ['-p', pArgs, '--mode', 'plan', '--model', mod].concat(stream ? ['--output-format', 'stream-json'] : []);
-            r = await this.RunCli(exe, args, null, dir, 300000, false, stream ? AgyStreamParser(opts.onChunk) : null);
+            r = await this.RunCli(exe, args, null, dir, opts.timeoutMs || 300000, false, stream ? AgyStreamParser(opts.onChunk) : null);
             text = stream ? AgyStreamAnswer(r.stdout) : r.stdout.trim();
             if (/Authentication required|authentication failed/i.test(r.stderr)) {
               this.settings.agyOk = false;
@@ -203,7 +204,7 @@ module.exports = {
               reply.Text = 'ההתחברות ל-Google פגה. התחבר שוב בהגדרות';
               return reply;
             }
-            if (r.code === 0 && text.length > 0) break;
+            if ((r.code === 0 && text.length > 0) || r.code === -2) break;
             const errLower = (r.stderr + ' ' + r.stdout).toLowerCase();
             const isLimit = errLower.includes('usage limit') || errLower.includes('rate limit') || errLower.includes('quota') || errLower.includes('429');
             if (!isLimit) break;
@@ -211,7 +212,7 @@ module.exports = {
         } else {
           const exe = this.FindCodex();
           const answer = path.join(dir, 'answer.txt');
-          r = await this.RunCli(exe, ['exec', '--ignore-user-config', '--skip-git-repo-check', '-s', 'read-only', '--ephemeral', '-o', answer, '-'], prompt, dir, 240000);
+          r = await this.RunCli(exe, ['exec', '--ignore-user-config', '--skip-git-repo-check', '-s', 'read-only', '--ephemeral', '-o', answer, '-'], prompt, dir, opts.timeoutMs || 240000);
           text = fileExists(answer) ? readText(answer).trim() : '';
         }
         if (r.code !== 0 || text.length === 0) {

@@ -2311,6 +2311,35 @@ async function runCoachTests(app, root, check) {
   check('one request at a time', sent.find(m => m.requestId === 'b').error === true && sent.find(m => m.requestId === 'a').steps.length >= 3);
   res = await ask({ course: '' });
   check('no course is refused with a clear message', res.error === true && !app.coachBusy);
+  let opts = null;
+  app.HelperAsk = async (system, messages, only, onChunk, o) => { opts = o; return { Error: true }; };
+  await ask();
+  check('the coach asks the quick way, with a deadline', opts && opts.fast === true && opts.timeoutMs > 0 && opts.timeoutMs <= 30000);
+  delete app.HelperAsk;
+
+  // One deadline for the whole question: a slow first provider leaves no time for the second, and the CLI gets what is left.
+  const realMode = app.HelperMode, realCli = app.HelperCallCli, realHas = app.HasHelperKey, realCall = app.HelperCall;
+  const cliCalls = [];
+  app.HelperOrder = () => ['gemini', 'openai']; app.HelperMode = () => 'account'; app.HasHelperKey = () => false;
+  app.HelperCall = async () => { cliCalls.push('http'); return { Error: true }; };
+  app.HelperCallCli = async (provider, system, messages, img, o) => { cliCalls.push({ provider, fast: o.fast, timeoutMs: o.timeoutMs }); await new Promise(r => setTimeout(r, o.timeoutMs)); return { Error: true, Text: 'הזמן הקצוב נגמר' }; };
+  const t0 = Date.now();
+  const late = await app.HelperAsk('s', [['user', 'u']], null, null, { fast: true, timeoutMs: 1500 });
+  check('a slow helper is cut at the deadline and the next one is not started', late.Error && cliCalls.length === 1 && cliCalls[0].fast === true && cliCalls[0].timeoutMs <= 1500 && Date.now() - t0 < 2500);
+  app.HelperMode = realMode; app.HelperCallCli = realCli; app.HasHelperKey = realHas; app.HelperCall = realCall;
+
+  app.HelperOrder = () => ['gemini'];
+  app.coachAiMs = 1200;
+  app.HelperAsk = async (system, messages, only, onChunk, o) => { await new Promise(r => setTimeout(r, o.timeoutMs + 50)); return { Error: true, Text: 'הזמן הקצוב נגמר' }; };
+  const t1 = Date.now();
+  res = await ask();
+  check('when the AI is too slow the steps made by rules come at the deadline', res.source === 'rules' && res.steps.length >= 3 && Date.now() - t1 < 2500);
+  delete app.coachAiMs;
+
+  // A CLI run that passes its time is stopped, not waited for.
+  const t2 = Date.now();
+  const slow = await app.RunCli('/bin/sleep', ['5'], null, null, 200);
+  check('a CLI run is stopped at its timeout', slow.code === -2 && Date.now() - t2 < 2000);
   delete app.HelperOrder; delete app.HelperAsk; app.Send = realSend;
 
   // A task made from a step keeps its length, kind and lecture, and nothing else.
