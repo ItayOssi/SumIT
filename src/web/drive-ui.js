@@ -77,23 +77,31 @@ function renderDriveAccount() {
     box.innerHTML = '';
     const row = h(`<div class="check-row${s.connected ? ' ok' : ''}"><div class="ci" data-ic="cloud"></div><div class="grow"><b></b><small></small></div></div>`);
     const when = s.last ? new Date(s.last).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    row.querySelector('b').textContent = s.connected ? (s.email ? 'מחובר כ-' + s.email : 'מחובר ל-Google') : s.connecting ? 'ממתין לאישור בדפדפן…' : 'לא מחובר לחשבון Google';
+    row.querySelector('b').textContent = s.connecting ? 'ממתין לאישור בדפדפן…' : s.connected ? (s.email ? 'מחובר כ-' + s.email : 'מחובר ל-Google') : 'לא מחובר לחשבון Google';
     row.querySelector('small').textContent = s.connected ? (s.busy ? 'מסנכרן…' : when ? 'סונכרן לאחרונה ' + when + '. הפרופיל, הסיכומים והמטלות נשמרים ב-Drive.' : 'מסנכרן בפעם הראשונה…')
       : 'התחבר, והשם, התמונה, הסיכומים והמטלות שלך יישמרו ב-Drive ויחזרו בכל מחשב.';
-    if (!s.connected) {
+    if (s.connecting) {
+      const c = h('<button class="ghost small">ביטול</button>'); c.onclick = () => send({ type: 'driveSync', action: 'cancel' }); row.append(c);
+    } else if (!s.connected) {
       const b = h('<button class="primary"><span data-ic="cloud"></span></button>');
-      b.append(document.createTextNode(s.connecting ? 'ממתין…' : 'התחבר עם Google'));
-      b.disabled = !!s.connecting;
+      b.append(document.createTextNode('התחבר עם Google'));
       b.onclick = () => { driveState.connecting = true; renderDrive(); send({ type: 'driveSync', action: 'connect' }); };
       row.append(b);
-      if (s.connecting) { const c = h('<button class="ghost small">ביטול</button>'); c.onclick = () => send({ type: 'driveSync', action: 'cancel' }); row.append(c); }
     } else if (id === 'profileGoogle') {
       const b = h('<button class="soft small"><span data-ic="refresh"></span>סנכרן עכשיו</button>');
       b.disabled = !!s.busy;
       b.onclick = () => { driveState.busy = true; renderDrive(); send({ type: 'driveSync', action: 'now' }); };
       row.append(b);
     }
-    box.append(row); icons(box);
+    box.append(row);
+    // Signed in already: Google again, for another account or to take the name and the picture from it (they replace the ones here).
+    if (s.connected && !s.connecting && id === 'profileGoogle') {
+      const again = h('<button class="ghost small profile-google-again"><span data-ic="user"></span>החלף חשבון / עדכן את השם והתמונה מ-Google</button>');
+      again.disabled = !!s.busy;
+      again.onclick = () => { driveState.connecting = true; renderDrive(); send({ type: 'driveSync', action: 'connect', refreshProfile: true }); };
+      box.append(again);
+    }
+    icons(box);
   }
 }
 

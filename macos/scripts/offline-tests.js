@@ -2055,6 +2055,9 @@ async function runDriveTests(app, root, check) {
     app.settings.displayName = 'השם שלי'; fs.writeFileSync(app.ProfileImageFile, 'MINE');
     await app.DriveFillProfile({ name: 'נועה', picture: 'https://lh3.googleusercontent.com/a/x=s96-c' });
     check('a name and a picture the student set are kept', app.settings.displayName === 'השם שלי' && readText(app.ProfileImageFile) === 'MINE' && asked.length === 1);
+    await app.DriveFillProfile({ name: 'נועה', picture: 'https://lh3.googleusercontent.com/a/x=s96-c' }, true);
+    check('"update from Google" in the profile replaces them', app.settings.displayName === 'נועה' && readText(app.ProfileImageFile) === 'JPEGDATA' && asked.length === 2);
+    app.settings.displayName = 'השם שלי'; fs.writeFileSync(app.ProfileImageFile, 'MINE');
 
     // The picture and the tasks reach another computer with the settings.
     const RA = path.join(pdir, 'rootA'), RB = path.join(pdir, 'rootB'); mkdirp(RA); mkdirp(RB);

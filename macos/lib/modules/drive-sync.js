@@ -130,7 +130,8 @@ module.exports = {
 
     // ---------- signing in ----------
     // Opens Google's page in the browser and waits for its answer on 127.0.0.1. open(url) is the browser (tests pass their own).
-    async DriveConnect(open) {
+    // { refreshProfile: true } ("switch account / update from Google" in the profile) also replaces the name and the picture.
+    async DriveConnect(open, opts = {}) {
       if (!this.DriveClientId || !this.DriveClientSecret) throw new Error('החיבור ל-Google עוד לא מוגדר בגרסה הזו של SumIT.');
       const verifier = b64url(crypto.randomBytes(32)), challenge = b64url(crypto.createHash('sha256').update(verifier).digest()), state = b64url(crypto.randomBytes(16));
       let finish;
@@ -158,19 +159,23 @@ module.exports = {
         const tok = await this.DriveTokenRequest({ code, client_id: this.DriveClientId, client_secret: this.DriveClientSecret, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: redirect });
         if (!tok.refresh_token) throw new Error('Google לא החזיר הרשאה קבועה. נסה להתחבר שוב.');
         const who = IdTokenProfile(tok.id_token);
+        const before = Unprotect(Str(Dict(this.settings, 'drive') || {}, 'refresh'));
         this.settings.drive = { refresh: Protect(tok.refresh_token), email: who.email, connected: new Date().toISOString(), last: '', root: '' };
         this.driveAccess = { token: tok.access_token, until: Date.now() + (Number(tok.expires_in) || 3000) * 1000 };
-        await this.DriveFillProfile(who);
+        await this.DriveFillProfile(who, !!opts.refreshProfile);
         this.SaveSettings();
+        // Signed in again: the permission of the previous sign-in is given back to Google.
+        if (before && before !== tok.refresh_token) { try { await fetch(this.DriveRevokeUrl + '?token=' + enc(before), { method: 'POST' }); } catch { } }
         return who.email;
       } finally { clearTimeout(timer); server.close(); this.driveLogin = null; }
     },
 
-    // The first sign-in fills what the student has not set yet: the name, and the picture of the Google account. Never replaces their own.
-    async DriveFillProfile(who) {
+    // The first sign-in fills what the student has not set yet: the name, and the picture of the Google account. Their own is replaced
+    // only when they asked for it (force).
+    async DriveFillProfile(who, force) {
       let changed = false;
-      if (who.name && !Str(this.settings, 'displayName').trim()) { this.settings.displayName = who.name.trim().slice(0, 40); changed = true; }
-      if (who.picture && /^https:\/\//.test(who.picture) && !fileExists(this.ProfileImageFile)) {
+      if (who.name && (force || !Str(this.settings, 'displayName').trim())) { this.settings.displayName = who.name.trim().slice(0, 40); changed = true; }
+      if (who.picture && /^https:\/\//.test(who.picture) && (force || !fileExists(this.ProfileImageFile))) {
         try {
           const res = await fetch(who.picture.replace(/=s\d+(-c)?$/, '=s256-c'));
           if (res.ok) { this.SetProfileImageBytes(Buffer.from(await res.arrayBuffer())); changed = true; }
@@ -461,7 +466,7 @@ module.exports = {
         if (action === 'connect') {
           if (this.driveLogin) return;
           this.DriveSend({ connecting: true });
-          const email = await this.DriveConnect();
+          const email = await this.DriveConnect(null, { refreshProfile: m.refreshProfile === true });
           this.DriveSend({ text: 'מחובר' + (email ? ' כ-' + email : '') + '. מסנכרן…' });
           const c = await this.DriveSync();
           this.DriveSend({ done: c, text: this.DriveDoneText(c, true) });
