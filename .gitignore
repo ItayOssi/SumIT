@@ -12,3 +12,6 @@ macos/node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# The Google sign-in secret, written by the release workflow from a repository secret
+macos/lib/google-oauth.json

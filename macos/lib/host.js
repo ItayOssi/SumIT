@@ -298,8 +298,10 @@ class Host {
       if (Date.now() - this.lastUpdateCheck > 4 * 3600 * 1000) this.CheckForUpdate();
       this.RefreshCalendarsIfStale();
       try { if (typeof this.TrackStreakReminder === 'function') this.TrackStreakReminder(new Date()); } catch { }
+      if (typeof this.DriveTick === 'function') this.DriveTick();
     }, 45000);
     this.CheckForUpdate();
+    if (typeof this.DriveTick === 'function') setTimeout(() => this.DriveTick(), 8000);   // a sync soon after the start
   }
 
   onClosing() {
@@ -684,6 +686,7 @@ class Host {
       case 'track': this.TrackHandle(m); break;
       case 'exportTool': this.ExportToolHandle(m); break;
       case 'calSync': this.CalSyncHandle(m); break;
+      case 'driveSync': this.DriveHandle(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1112,7 +1115,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

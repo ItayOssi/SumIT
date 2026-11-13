@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const http = require('http');
+const crypto = require('crypto');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
@@ -237,6 +238,9 @@ async function run() {
 
     // 6f2. "המחשה חזותית": the spec, the sandboxed frame and the request from the summary page
     await runVisualTests(app, root, check);
+
+    // 6f3. Sync with Google Drive: the rules, sign-in and two computers, through a fake Google
+    await runDriveTests(app, root, check);
 
     // 6g. Study track (beta): the profile, the strategy, the week of blocks and the progress
     await runStudyTrackTests(app, root, check);
@@ -1906,6 +1910,190 @@ async function runBlockPlanTests(app, check) {
   res = await ask({ title: '  ' });
   check('a block without a name is refused with a clear message', res.error === true && !app.blockBusy);
   delete app.HelperOrder; delete app.HelperAsk; app.Send = realSend;
+}
+
+// A fake Google (sign-in and Drive) on 127.0.0.1: the tests never reach the real one.
+function fakeGoogle() {
+  const crypto = require('crypto');
+  const g = { files: new Map(), n: 0, revoked: [], tokens: new Set(), refresh: 'rt-1', challenge: '', fail401: 0, uploads: { multipart: 0, resumable: 0 }, resumable: new Map() };
+  const md5 = (b) => crypto.createHash('md5').update(b).digest('hex');
+  const make = (meta, content) => { const id = 'f' + (++g.n); g.files.set(id, { id, name: meta.name, mimeType: meta.mimeType || 'application/octet-stream', parents: meta.parents || [], appProperties: meta.appProperties || {}, trashed: false, content: content || null }); return g.files.get(id); };
+  const out = (f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, parents: f.parents, md5Checksum: f.content ? md5(f.content) : undefined, size: f.content ? String(f.content.length) : undefined });
+  const multipart = (buf, type) => {
+    const boundary = /boundary=([^;]+)/.exec(type)[1], s = buf.toString('latin1'), parts = s.split('--' + boundary).slice(1, -1);
+    const body = (p) => { const i = p.indexOf('\r\n\r\n'); return p.slice(i + 4, p.length - 2); };
+    return { meta: JSON.parse(Buffer.from(body(parts[0]), 'latin1').toString('utf8')), content: Buffer.from(body(parts[1]), 'latin1') };
+  };
+  g.server = http.createServer((req, res) => {
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => {
+      const buf = Buffer.concat(chunks), u = new URL(req.url, 'http://x'), json = (code, o, headers) => { res.writeHead(code, Object.assign({ 'content-type': 'application/json' }, headers || {})); res.end(JSON.stringify(o)); };
+      if (u.pathname === '/token') {
+        const f = new URLSearchParams(buf.toString());
+        if (f.get('grant_type') === 'authorization_code') {
+          const ok = f.get('code') === 'good-code' && f.get('client_secret') === 'test-secret' && crypto.createHash('sha256').update(f.get('code_verifier') || '').digest('base64url') === g.challenge;
+          if (!ok) return json(400, { error: 'invalid_grant' });
+          const t = 'at-' + (++g.n); g.tokens.add(t);
+          const idt = 'x.' + Buffer.from(JSON.stringify({ email: 'student@gmail.com' })).toString('base64url') + '.y';
+          return json(200, { access_token: t, expires_in: 3600, refresh_token: g.refresh, id_token: idt });
+        }
+        if (f.get('grant_type') === 'refresh_token') {
+          if (f.get('refresh_token') !== g.refresh || g.revoked.includes(f.get('refresh_token'))) return json(400, { error: 'invalid_grant' });
+          const t = 'at-' + (++g.n); g.tokens.add(t); return json(200, { access_token: t, expires_in: 3600 });
+        }
+        return json(400, { error: 'unsupported' });
+      }
+      if (u.pathname === '/revoke') { g.revoked.push(u.searchParams.get('token')); return json(200, {}); }
+      const auth = (req.headers.authorization || '').replace('Bearer ', '');
+      if (!g.tokens.has(auth)) return json(401, { error: 'auth' });
+      if (g.fail401 > 0) { g.fail401--; g.tokens.delete(auth); return json(401, { error: 'expired' }); }
+      if (u.pathname.startsWith('/resumable/')) {
+        const r = g.resumable.get(u.pathname.slice(11)); if (!r) return json(404, {});
+        const f = r.id ? g.files.get(r.id) : make(r.meta, null); f.content = buf; g.uploads.resumable++; return json(200, out(f));
+      }
+      const up = /^\/upload\/drive\/v3\/files(?:\/([^/]+))?$/.exec(u.pathname);
+      if (up) {
+        if (u.searchParams.get('uploadType') === 'resumable') { const k = 'r' + (++g.n); g.resumable.set(k, { id: up[1], meta: JSON.parse(buf.toString() || '{}') }); res.writeHead(200, { location: 'http://127.0.0.1:' + g.server.address().port + '/resumable/' + k }); return res.end(); }
+        const mp = multipart(buf, req.headers['content-type']); g.uploads.multipart++;
+        const f = up[1] ? g.files.get(up[1]) : make(mp.meta, null); f.content = mp.content; return json(200, out(f));
+      }
+      const one = /^\/drive\/v3\/files\/([^/]+)$/.exec(u.pathname);
+      if (one) {
+        const f = g.files.get(decodeURIComponent(one[1])); if (!f) return json(404, {});
+        if (req.method === 'PATCH') { Object.assign(f, JSON.parse(buf.toString() || '{}')); return json(200, { id: f.id }); }
+        if (u.searchParams.get('alt') === 'media') { res.writeHead(200); return res.end(f.content); }
+        return json(200, out(f));
+      }
+      if (u.pathname === '/drive/v3/files') {
+        if (req.method === 'POST') { const f = make(JSON.parse(buf.toString()), null); return json(200, { id: f.id }); }
+        const q = u.searchParams.get('q') || '', rootQ = q.includes('sumitRoot');
+        const list = Array.from(g.files.values()).filter(f => !f.trashed && (rootQ ? f.appProperties.sumitRoot === '1' : f.appProperties.sumit === '1'));
+        return json(200, { files: list.map(out) });
+      }
+      json(404, { error: 'unknown ' + u.pathname });
+    });
+  });
+  return g;
+}
+
+async function runDriveTests(app, root, check) {
+  const D = require('../lib/modules/drive-sync');
+  // The rules of a sync, without Drive.
+  const P = (local, remote, base) => Object.fromEntries(D.SyncPlan(local, remote, base).map(p => [p.rel, p.act]));
+  const x = { md5: 'x' }, y = { md5: 'y' }, z = { md5: 'z' };
+  const plan = P({ same: x, mine: y, theirs: x, both: y, newHere: x, goneThere: x, changedAfterGone: y }, { same: x, mine: x, theirs: y, both: z, newThere: x, goneHere: x, changedThere: y }, { mine: x, theirs: x, both: x, goneThere: x, goneHere: x, changedAfterGone: x, changedThere: x, gone: x });
+  check('a sync moves only what changed, and on the side that changed', plan.same === 'same' && plan.mine === 'upload' && plan.theirs === 'download' && plan.newHere === 'upload' && plan.newThere === 'download');
+  check('a file changed on both sides keeps both, and so does one both computers had before they were joined', plan.both === 'conflict' && P({ a: x }, { a: y }, {}).a === 'conflict');
+  check('a delete on one side goes to the other only when the file did not change there', plan.goneThere === 'deleteLocal' && plan.goneHere === 'deleteRemote' && plan.changedAfterGone === 'upload' && plan.changedThere === 'download' && plan.gone === 'forget');
+  check('the other version of a file has the date in its name', D.ConflictName('קורסים/א/סיכום.html', new Date(2026, 10, 13, 9, 5)) === 'קורסים/א/סיכום (מ-Drive 13.11 09-05).html');
+  const ss = D.SyncableSettings({ helperPref: 'openai', theme: 'dark', geminiKey: 'SECRET', claudeKey: 'S2', studyRoot: '/x', recordingsDir: '/y', drive: { refresh: 'r' }, calSync: { on: 1 }, order: ['a', 'b'], deep: { a: 1 } });
+  check('the settings that travel are the student\'s choices: no keys, folders, account or objects', JSON.stringify(ss) === JSON.stringify({ helperPref: 'openai', theme: 'dark', order: ['a', 'b'] }));
+
+  // Two computers, one Google account, through the fake Google.
+  const g = fakeGoogle();
+  await new Promise(r => g.server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + g.server.address().port;
+  const env = { SUMIT_DRIVE_API: base, SUMIT_GOOGLE_TOKEN_URL: base + '/token', SUMIT_GOOGLE_REVOKE_URL: base + '/revoke', SUMIT_GOOGLE_AUTH_URL: base + '/auth', SUMIT_GOOGLE_CLIENT_ID: 'test-client', SUMIT_GOOGLE_CLIENT_SECRET: 'test-secret' };
+  const savedEnv = {}; for (const k of Object.keys(env)) { savedEnv[k] = process.env[k]; process.env[k] = env[k]; }
+  const saved = { study: app.settings.studyRoot, rec: app.settings.recordingsDir, drive: app.settings.drive, send: app.Send, helper: app.settings.helperPref, gkey: app.settings.geminiKey };
+  const sent = []; app.Send = (m) => sent.push(m); app.driveFast = true;
+  const old = Date.now() / 1000 - 3600;
+  const put = (dir, rel, content) => { const f = path.join(dir, ...rel.split('/')); mkdirp(path.dirname(f)); fs.writeFileSync(f, content); fs.utimesSync(f, old, old); return f; };
+  const A = path.join(root, 'drive-A'), B = path.join(root, 'drive-B');
+  const useA = () => { app.settings.studyRoot = path.join(A, 'קורסים'); app.settings.recordingsDir = path.join(A, 'הקלטות'); app.driveStateFile = path.join(root, 'drive-state-A.json'); app.driveAccess = null; };
+  const useB = () => { app.settings.studyRoot = path.join(B, 'קורסים'); app.settings.recordingsDir = path.join(B, 'הקלטות'); app.driveStateFile = path.join(root, 'drive-state-B.json'); app.driveAccess = null; };
+  const trashed = []; app.driveTrash = async (f) => { trashed.push(f); fs.rmSync(f, { force: true }); };
+  try {
+    useA();
+    put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/סיכום.html', '<h1>סיכום 1</h1>');
+    put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/.sumit-math/katex.min.js', 'copy');
+    put(A, 'קורסים/מבני נתונים/.DS_Store', 'x');
+    put(A, 'הקלטות/שיעור 1.mp4', 'video');
+    put(A, 'פרופיל/profile.json', '{"streak":1}');
+    const big = crypto.randomBytes(6 * 1024 * 1024); put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/הרצאה.pdf', big);
+    delete app.settings.drive;
+    app.settings.helperPref = 'openai'; app.settings.geminiKey = 'SECRET-KEY';
+
+    // Signing in: PKCE, only drive.file, the answer on 127.0.0.1, and a stranger's answer is ignored.
+    let authUrl = null;
+    const email = await app.DriveConnect(async (url) => {
+      authUrl = new URL(url); g.challenge = authUrl.searchParams.get('code_challenge');
+      const redirect = authUrl.searchParams.get('redirect_uri');
+      await fetch(redirect + '/?code=evil&state=wrong').catch(() => { });
+      await fetch(redirect + '/?code=good-code&state=' + authUrl.searchParams.get('state'));
+    });
+    check('signing in asks for drive.file only, with PKCE, offline access and a redirect to this computer',
+      authUrl.searchParams.get('scope') === 'https://www.googleapis.com/auth/drive.file openid email' && authUrl.searchParams.get('code_challenge_method') === 'S256'
+        && authUrl.searchParams.get('access_type') === 'offline' && /^http:\/\/127\.0\.0\.1:\d+$/.test(authUrl.searchParams.get('redirect_uri')) && authUrl.searchParams.get('client_id') === 'test-client');
+    check('the account is connected, and its token is kept encrypted', email === 'student@gmail.com' && app.DriveConnected() && app.settings.drive.refresh !== 'rt-1' && Unprotect(app.settings.drive.refresh) === 'rt-1');
+
+    const c1 = await app.DriveSync();
+    const remoteNames = Array.from(g.files.values()).map(f => f.name);
+    check('the first sync uploads the study folder into a "SumIT" folder of Drive', c1.up === 4 && remoteNames.includes('SumIT') && remoteNames.includes('סיכום.html') && remoteNames.includes('profile.json') && remoteNames.includes('settings-sync.json'));
+    check('copies made again by the app, system files and the recordings stay on the computer', !remoteNames.includes('katex.min.js') && !remoteNames.includes('.DS_Store') && !remoteNames.includes('שיעור 1.mp4'));
+    check('a big file goes up in a resumable upload, small ones in one request', g.uploads.resumable === 1 && g.uploads.multipart === 3);
+    const settingsFile = Array.from(g.files.values()).find(f => f.name === 'settings-sync.json');
+    check('the settings in Drive carry the choices but never the keys', /openai/.test(settingsFile.content.toString()) && !/SECRET-KEY/.test(settingsFile.content.toString()));
+    const c2 = await app.DriveSync();
+    check('a second sync with nothing changed moves nothing', c2.up === 0 && c2.down === 0 && c2.same === 4);
+
+    // The second computer: it had its own copy of one summary, and different settings.
+    useB();
+    put(B, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/סיכום.html', '<h1>סיכום 1 עם הערות שלי</h1>');
+    app.settings.helperPref = 'gemini'; app.settings.geminiKey = 'OTHER-KEY'; app.settings.drive.settingsSig = ''; app.settings.drive.settingsApplied = '';
+    fs.rmSync(path.join(B, '.sumit'), { recursive: true, force: true });
+    const c3 = await app.DriveSync();
+    const conflictCopy = fs.readdirSync(path.join(B, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1')).find(n => n.includes('מ-Drive'));
+    check('another computer gets everything, and a file it already had differently keeps both versions',
+      c3.down >= 2 && c3.conflicts === 1 && fileExists(path.join(B, 'פרופיל', 'profile.json')) && fs.readFileSync(path.join(B, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1', 'הרצאה.pdf')).equals(big)
+        && !!conflictCopy && readText(path.join(B, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1', conflictCopy)) === '<h1>סיכום 1</h1>' && app.settings.drive.conflicts.length === 1);
+    check('the settings of the first computer arrive, and this computer keeps its own key', app.settings.helperPref === 'openai' && app.settings.geminiKey === 'OTHER-KEY');
+
+    // A change on one computer reaches the other; a delete goes to the Trash there.
+    put(B, 'קורסים/מבני נתונים/הרצאות/הרצאה 2/סיכום.html', '<h1>סיכום 2</h1>');
+    await app.DriveSync();
+    useA();
+    const c4 = await app.DriveSync();
+    check('what the second computer added comes down to the first', fileExists(path.join(A, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 2', 'סיכום.html')) && c4.down >= 2
+      && readText(path.join(A, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1', 'סיכום.html')) === '<h1>סיכום 1 עם הערות שלי</h1>');
+    fs.rmSync(path.join(A, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 2', 'סיכום.html'));
+    const c5 = await app.DriveSync();
+    useB();
+    const c6 = await app.DriveSync();
+    check('a file deleted on one computer goes to Drive\'s trash and to the Trash of the other', c5.deleted === 1 && c6.deleted === 1 && trashed.some(f => f.endsWith(path.join('הרצאה 2', 'סיכום.html')))
+      && Array.from(g.files.values()).some(f => f.trashed && f.name === 'סיכום.html'));
+
+    // Many deletes at once (a wrong folder, say) stop the sync until the student says yes.
+    useA();
+    for (let i = 0; i < 30; i++) put(A, 'קורסים/תרגילים/ת' + i + '.txt', 'תרגיל ' + i);
+    await app.DriveSync();
+    fs.rmSync(path.join(A, 'קורסים', 'תרגילים'), { recursive: true, force: true });
+    let stopped = null; try { await app.DriveSync(); } catch (ex) { stopped = ex; }
+    check('a sync that would delete many files at once stops and asks', stopped && stopped.massDelete === 30 && Array.from(g.files.values()).filter(f => /^ת\d+\.txt$/.test(f.name) && !f.trashed).length === 30);
+    const c7 = await app.DriveSync({ allowDeletes: true });
+    check('after the student says yes, it goes on', c7.deleted === 30);
+    useB();
+    let stoppedB = null; try { await app.DriveSync(); } catch (ex) { stoppedB = ex; }
+    check('the other computer is not asked about files it never had', !stoppedB);
+
+    // A token that ran out is renewed by itself; one taken back in the Google account disconnects this computer.
+    g.fail401 = 1; useA();
+    const c8 = await app.DriveSync();
+    check('an expired access token is renewed without the student', c8 && c8.failed === undefined);
+    sent.length = 0;
+    await app.DriveHandle({ action: 'state' });
+    check('the settings card gets the account and the last sync', sent[0].type === 'driveSync' && sent[0].connected && sent[0].configured && sent[0].email === 'student@gmail.com' && !!sent[0].last);
+    await app.DriveDisconnect();
+    check('disconnecting takes the permission back from Google and forgets it here, and the files stay', g.revoked.includes('rt-1') && !app.DriveConnected() && !fileExists(app.driveStateFile) && fileExists(path.join(A, 'פרופיל', 'profile.json')));
+    app.settings.drive = { refresh: Protect('rt-1'), email: 'x' }; app.driveAccess = null;
+    let gone = null; try { await app.DriveSync(); } catch (ex) { gone = ex; }
+    check('a permission taken back in the Google account disconnects this computer and says so', gone && /פגה/.test(gone.message) && !app.DriveConnected());
+  } finally {
+    g.server.close();
+    for (const k of Object.keys(env)) { if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k]; }
+    app.settings.studyRoot = saved.study; app.settings.recordingsDir = saved.rec; app.Send = saved.send; app.settings.helperPref = saved.helper; app.settings.geminiKey = saved.gkey;
+    if (saved.drive === undefined) delete app.settings.drive; else app.settings.drive = saved.drive;
+    delete app.driveStateFile; delete app.driveTrash; delete app.driveAccess; delete app.driveFast;
+  }
 }
 
 async function runVisualTests(app, root, check) {

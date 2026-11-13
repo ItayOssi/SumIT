@@ -50,6 +50,20 @@ jobs:
         working-directory: macos
         run: env -u CI npm test
 
+      # The Google sign-in of the Drive sync: the client's secret comes from the repository secret GOOGLE_OAUTH_CLIENT_SECRET
+      # (Settings > Secrets and variables > Actions). Without it the app builds, and its "connect" button says sign-in is not set up.
+      - name: Google sign-in secret
+        working-directory: macos
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            node -e 'require("fs").writeFileSync("lib/google-oauth.json", JSON.stringify({ secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET }))'
+            echo "Google sign-in: configured"
+          else
+            echo "::warning::GOOGLE_OAUTH_CLIENT_SECRET is not set: the Drive sync cannot sign in in this build"
+          fi
+
       # Signed ad-hoc ("identity": "-" in package.json): unsigned, macOS calls a downloaded copy "damaged".
       - name: Build DMG and ZIP
         working-directory: macos

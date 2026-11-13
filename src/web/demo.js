@@ -153,6 +153,15 @@
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
         case 'trackPing': emit({ type: 'trackReady' }, 300); break;
+        // The Drive sync card: in the demo nothing reaches Google; "connect" pretends the browser said yes.
+        case 'driveSync': {
+          const base = { type: 'driveSync', ready: true, configured: true, busy: false, conflicts: [] };
+          if (m.action === 'connect') { emit(Object.assign({}, base, { connecting: true, connected: false }), 100); emit(Object.assign({}, base, { connected: true, email: 'noa.levi@gmail.com', busy: true, progress: { done: 3, total: 8 } }), 1400); emit(Object.assign({}, base, { connected: true, email: 'noa.levi@gmail.com', last: new Date().toISOString(), text: 'סונכרן: 8 עלו. (בדמו לא עולים קבצים)' }), 2600); }
+          else if (m.action === 'now') emit(Object.assign({}, base, { connected: true, email: 'noa.levi@gmail.com', last: new Date().toISOString(), text: 'הכל מעודכן.' }), 600);
+          else if (m.action === 'disconnect') emit(Object.assign({}, base, { connected: false, text: 'התנתקת. הקבצים נשארו במחשב וב-Drive.' }), 300);
+          else emit(Object.assign({}, base, { connected: false }), 200);
+          break;
+        }
         case 'track': trackDemo(m); break;
         case 'exportTool':
           if (m.op === 'icloud') { [1, 2, 3].forEach(i => emit({ type: 'icloudExport', state: 'busy', course: m.course, done: i - 1, total: 3 }, 250 * i)); emit({ type: 'icloudExport', state: 'done', course: m.course, total: 3, added: 3, updated: 0, unchanged: 0, kept: 0, text: '3 סיכומים סונכרנו ל-iCloud (בדמו לא נכתבים קבצים)' }, 1100); break; }

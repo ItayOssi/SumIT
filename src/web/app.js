@@ -1909,6 +1909,7 @@ function askOptionalFeatures() {
   if (!S.calendarsAsked && typeof askCalendars === 'function') { S.calendarsAsked = true; askCalendars(); }
   if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
   if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); if (typeof askTrack === 'function') askTrack(); }
+  if (!S.driveAsked && typeof askDrive === 'function') { S.driveAsked = true; askDrive(); }
 }
 window.addEventListener('load', askOptionalFeatures);
 
@@ -2122,6 +2123,7 @@ function onMessage(m) {
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
+    case 'driveSync': if (typeof driveEvent === 'function') driveEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
