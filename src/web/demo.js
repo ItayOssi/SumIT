@@ -152,6 +152,7 @@
           break;
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
+        case 'ticketPing': emit({ type: 'ticketReady' }, 300); break;
         case 'trackPing': emit({ type: 'trackReady' }, 300); break;
         // The Drive sync card: in the demo nothing reaches Google; "connect" pretends the browser said yes.
         case 'driveSync': {

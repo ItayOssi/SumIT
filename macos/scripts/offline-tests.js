@@ -862,6 +862,57 @@ async function runReviewAndPlannerTests(app, root, check) {
   app.Send = realSend; app.Toast = realToast;
   app.settings.studyRoot = saved;
 
+  // The tasks ticket in the sidebar: everything due, from the student's tasks, Moodle, homework dates and the syllabus.
+  {
+    const T = require('../../src/web/tasks-ticket.js');
+    const sylId = T.syllabusId('פיזיקה', '2099-01-05', 'הגשת דוח מעבדה');
+    const input = {
+      today: '2099-01-02',
+      tasks: [{ id: 'a', title: 'לקנות מחשבון', course: '', due: '2099-01-03', done: false }, { id: 'b', title: 'בוצע', due: '2099-01-02', done: true },
+        { id: 'c', title: 'בלי תאריך', due: '', done: false }, { id: 'd', title: 'פספסתי', due: '2098-12-30', done: false }],
+      events: [{ id: 7, name: 'תרגיל 3', course: 'אלגוריתמים', when: new Date(2099, 0, 3, 23, 59).getTime() / 1000, url: 'https://moodle/x' },
+        { id: 8, name: 'ישן', course: 'אלגוריתמים', when: new Date(2098, 11, 20, 12).getTime() / 1000 }],
+      courses: [
+        { id: 1, name: 'אלגוריתמים', local: { lectures: [{ num: 2, title: 'גרפים', due: '2099-01-03' }, { num: 1, due: '2098-12-31' }], info: { importantDates: [{ date: '2099-01-03', what: 'בוחן אמצע' }, { date: '2099-06-01', what: 'רחוק מדי' }, { date: '2098-12-01', what: 'עבר' }] } } },
+        { id: 2, name: 'פיזיקה', local: { lectures: [], info: { importantDates: [{ date: '2099-01-05', what: 'הגשת דוח מעבדה' }] } } },
+      ],
+    };
+    const list = T.items(input), ids = list.map(i => i.id);
+    check('the ticket takes the four sources and leaves out done tasks, past homework and syllabus dates past or too far',
+      ['mine-a', 'mine-c', 'mine-d', 'moodle-7', 'homework-אלגוריתמים-2', sylId].every(x => ids.includes(x)) && !ids.includes('mine-b') && !ids.includes('moodle-8') && !ids.includes('homework-אלגוריתמים-1') && list.filter(i => i.source === 'syllabus').length === 2);
+    const day3 = list.filter(i => i.date === '2099-01-03').map(i => i.source);
+    check('on the same day: an exam first, then Moodle, homework, the own task', JSON.stringify(day3) === JSON.stringify(['syllabus', 'moodle', 'homework', 'mine']) && list[0].id === 'mine-d' && list[list.length - 1].id === 'mine-c');
+    check('the groups: overdue, tomorrow, this week, no date', list.find(i => i.id === 'mine-d').group === 'overdue' && list.find(i => i.id === 'moodle-7').group === 'tomorrow' && list.find(i => i.id === sylId).group === 'week' && list.find(i => i.id === 'mine-c').group === 'none');
+    const copied = T.items(Object.assign({}, input, { tasks: input.tasks.concat([{ id: sylId, title: 'הגשת דוח מעבדה', course: 'פיזיקה', due: '2099-01-05', done: true }]) }));
+    check('a syllabus date copied to the own tasks is not shown twice, and not again once done', !copied.some(i => i.id === sylId || i.id === 'mine-' + sylId));
+    const sum = T.summary(list);
+    check('the chip: the count, red for an overdue task, and the nearest dated item', sum.count === list.length && sum.level === 'bad' && sum.next.id === 'mine-d');
+    check('the chip is orange when the nearest is within three days, and plain when nothing is', T.summary(T.items({ today: '2099-01-02', tasks: [{ id: 'x', title: 'y', due: '2099-01-04' }] })).level === 'warn' && T.summary(T.items({ today: '2099-01-02', tasks: [{ id: 'x', title: 'y', due: '2099-02-04' }] })).level === '');
+    check('the host is told only about what is due in the next two days', JSON.stringify(T.reminders(list).map(r => r.id).sort()) === JSON.stringify(['homework-אלגוריתמים-2', 'mine-a', 'moodle-7', T.syllabusId('אלגוריתמים', '2099-01-03', 'בוחן אמצע')].sort()));
+
+    // The reminder of the host, the day before (macOS).
+    const remDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sumit-ticket-'));
+    const saved = { p: app.ticketRemindedPath, r: app.ticketReminded, list: app.ticketReminders };
+    app.ticketRemindedPath = path.join(remDir, 'task-reminders.json'); app.ticketReminded = undefined;
+    const kept = app.TicketSetReminders([{ id: 'm1', title: 'תרגיל 3', course: 'אלגוריתמים', date: '2099-01-03' }, { id: 'm2', title: 'היום', date: '2099-01-02' }, { id: 'm3', title: 'בעוד יומיים', date: '2099-01-04' }, { id: '', title: 'x', date: '2099-01-03' }, { id: 'z', title: 'bad', date: 'מחר' }]);
+    const told = []; const notify = (t, b) => told.push(t + '|' + b);
+    check('the host keeps only items with an id, a title and a date', kept.length === 3);
+    check('nothing is said before nine in the morning', app.TicketRemind(new Date(2099, 0, 2, 8, 30), notify).length === 0 && told.length === 0);
+    app.TicketRemind(new Date(2099, 0, 2, 9, 5), notify);
+    check('from nine, one notification for what is due tomorrow, and not for today or the day after', told.length === 1 && told[0].includes('תרגיל 3') && told[0].includes('אלגוריתמים'));
+    app.TicketRemind(new Date(2099, 0, 2, 9, 6), notify); app.ticketReminded = undefined; app.TicketRemind(new Date(2099, 0, 2, 18, 0), notify);
+    check('it is said once, also after the app starts again', told.length === 1 && fileExists(app.ticketRemindedPath));
+    app.TicketSetReminders([{ id: 'm1', title: 'תרגיל 3', course: 'אלגוריתמים', date: '2099-01-04' }]);
+    app.TicketRemind(new Date(2099, 0, 3, 10, 0), notify);
+    check('a task whose date moved is reminded again', told.length === 2);
+    const pingSent = []; const realSend2 = app.Send; app.Send = (m) => pingSent.push(m);
+    await app.HandleUiMessage({ type: 'ticketPing' });
+    app.Send = realSend2;
+    check('the page is told the ticket reminders exist (macOS only)', pingSent.some(m => m.type === 'ticketReady'));
+    app.ticketRemindedPath = saved.p; app.ticketReminded = saved.r; app.ticketReminders = saved.list;
+    try { fs.rmSync(remDir, { recursive: true, force: true }); } catch { }
+  }
+
   // "What to do today".
   const P = require('../../src/web/planner.js');
   const day = (h, m) => new Date(2026, 10, 10, h, m);   // Tuesday

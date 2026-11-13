@@ -689,6 +689,7 @@ function thisSemester(courses) {
   return cur.some(mine) ? cur.filter(mine) : cur;
 }
 function renderHome() {
+  if (typeof ticketRender === 'function') ticketRender();
   renderStats(); renderNextUp(); if (typeof renderToday === 'function') renderToday();
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
@@ -1910,6 +1911,7 @@ function askOptionalFeatures() {
   if (!S.coachAsked && typeof askCoach === 'function') { S.coachAsked = true; askCoach(); }
   if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); if (typeof askTrack === 'function') askTrack(); }
   if (!S.driveAsked && typeof askDrive === 'function') { S.driveAsked = true; askDrive(); }
+  if (!S.ticketAsked && typeof ticketRender === 'function') { S.ticketAsked = true; send({ type: 'ticketPing' }); }
 }
 window.addEventListener('load', askOptionalFeatures);
 
@@ -1953,6 +1955,7 @@ function onMessage(m) {
     case 'home': S.events = m.events || []; if (m.name) S.userName = m.name; renderHome(); renderWizardMoodle(); renderProfile(S.settings); break;
     case 'courses':
       S.courses = (m.data || []).filter(c => !/^ספרי[יה]ה?\s*$/.test((c.name || '').trim())); renderCourses(); fillDownloadCourses();
+      if (typeof ticketRender === 'function') ticketRender();
       if (S.view === 'home') renderHome();
       if (!$('wizard').hidden) renderWizardCourses();
       break;
@@ -2011,6 +2014,7 @@ function onMessage(m) {
       renderLectures(); renderCourseHeader();
       if (S.tab !== 'lessons') setTab(S.tab);
       if (S.courses) { const c = S.courses.find(x => x.name === m.course); if (c) c.local = m.local; }
+      if (typeof ticketRender === 'function') ticketRender();
       break;
     case 'newMaterial': {
       S.newMaterial = S.newMaterial || {};
@@ -2125,6 +2129,7 @@ function onMessage(m) {
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
     case 'driveSync': if (typeof driveEvent === 'function') driveEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
+    case 'ticketReady': case 'ticketOpen': ticketEvent(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;

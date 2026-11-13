@@ -1446,3 +1446,28 @@ button.icon-only svg { width: 16px; height: 16px; }
 .drive-warn { background: var(--warn-soft); border-radius: 12px; padding: 10px 12px; }
 .drive-warn b { color: var(--warn); }
 .drive-conflicts { margin: 6px 0 0; padding-inline-start: 18px; font-size: 12.5px; color: var(--muted); }
+
+/* The tasks ticket in the sidebar (tasks-ticket-ui.js): what is due, visible on every screen. */
+.ticket-btn { height: auto; min-height: 44px; padding: 7px 12px; position: relative; text-align: start; }
+.ticket-btn svg { flex: none; }
+.ticket-btn:hover svg { transform: rotate(-12deg); }
+.ticket-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ticket-text b { font-size: 12.5px; color: var(--text); }
+.ticket-text small { font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ticket-count { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+.ticket[data-level="warn"] .ticket-ic, .ticket[data-level="warn"] .ticket-text small { color: var(--warn); }
+.ticket[data-level="warn"] .ticket-count { background: var(--warn-soft); color: var(--warn); }
+.ticket[data-level="bad"] .ticket-ic, .ticket[data-level="bad"] .ticket-text small { color: var(--bad); }
+.ticket[data-level="bad"] .ticket-count { background: var(--bad); color: #fff; }
+.ticket[data-level="bad"] .ticket-ic svg { animation: ticket-ring 2.4s ease-in-out 2; transform-origin: 50% 10%; }
+@keyframes ticket-ring { 0%, 60%, 100% { transform: none; } 10%, 30%, 50% { transform: rotate(14deg); } 20%, 40% { transform: rotate(-14deg); } }
+.ticket-dlg { width: min(620px, 94vw); max-height: 86vh; overflow: auto; }
+.ticket-add { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
+.ticket-add [data-title] { flex: 1; min-width: 200px; }
+.ticket-group h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 14px 0 8px; color: var(--muted); }
+.ticket-group[data-g="overdue"] h3 { color: var(--bad); }
+.ticket-row .grow { min-width: 0; }
+.ticket-row.clickable .grow { cursor: pointer; }
+.ticket-row.clickable .grow:hover b { color: var(--accent); }
+.ticket-row small { display: block; margin-top: 3px; }
+@media (max-width: 860px) { .ticket-btn { justify-content: center; padding: 0; height: 40px; min-height: 0; } .ticket-count { position: absolute; top: 0; inset-inline-end: 2px; min-width: 17px; height: 17px; font-size: 10px; } }

@@ -298,6 +298,7 @@ class Host {
       if (Date.now() - this.lastUpdateCheck > 4 * 3600 * 1000) this.CheckForUpdate();
       this.RefreshCalendarsIfStale();
       try { if (typeof this.TrackStreakReminder === 'function') this.TrackStreakReminder(new Date()); } catch { }
+      try { if (typeof this.TicketRemind === 'function') this.TicketRemind(new Date()); } catch { }
       if (typeof this.DriveTick === 'function') this.DriveTick();
     }, 45000);
     this.CheckForUpdate();
@@ -679,6 +680,8 @@ class Host {
       case 'flashcards': this.MakeFlashcards(m); break;
       case 'pomodoroAlert': this.SchedulePomodoroAlert(m); break;
       case 'coachPing': this.Send({ type: 'coachReady' }); break;
+      case 'ticketPing': this.Send({ type: 'ticketReady' }); break;
+      case 'ticketReminders': this.TicketSetReminders(m.items); break;
       case 'stuckHelp': this.StuckHelp(m); break;
       case 'blockPing': this.Send({ type: 'blockReady' }); break;
       case 'blockPlan': this.BlockHelp(m); break;
@@ -1115,7 +1118,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support', 'task-reminders'])
   useModule('./modules/' + f);
 
 module.exports = { Host };
