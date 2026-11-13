@@ -257,7 +257,11 @@ class Host {
     u.wc.on('will-redirect', (e, url) => { if (!url.toLowerCase().startsWith(UI_ORIGIN)) { e.preventDefault(); this.OpenExternal(url); } });
     u.wc.setWindowOpenHandler(({ url }) => { this.OpenExternal(url); return { action: 'deny' }; });
     ipcMain.on('sumit-ui-message', (e, json) => this.OnUiMessage(e, json));
-    ipcMain.on('sumit-site-message', (e, json) => { if (typeof this.OnSummarySelectionMessage === 'function') this.OnSummarySelectionMessage(json); });
+    ipcMain.on('sumit-site-message', (e, json) => {
+      // "המחשה חזותית" requests count only from the site view's own page (visual.js also checks it is a summary, with its token).
+      if (json && json.type === 'vizRequest') { if (this.site && e.sender === this.site.wc && typeof this.VisualRequest === 'function') this.VisualRequest(json); return; }
+      if (typeof this.OnSummarySelectionMessage === 'function') this.OnSummarySelectionMessage(json);
+    });
     u.wc.on('dom-ready', () => u.wc.insertCSS('h1,h2,h3,.brand b{font-family:-apple-system,"SF Pro Display",system-ui,sans-serif}body{font-family:-apple-system,"SF Pro Text",system-ui,sans-serif}').catch(() => { }));
     let demoArgs = '';
     for (const a of process.argv) if (a.startsWith('--demo-')) demoArgs += '&' + encodeURIComponent(a.substring(7).split('=')[0]) + '=' + encodeURIComponent(a.includes('=') ? a.split('=')[1] : '1');
@@ -282,6 +286,7 @@ class Host {
     sc.wc.on('did-navigate-in-page', onNav);
     sc.wc.on('did-start-loading', () => this.Send({ type: 'siteLoading', loading: true }));
     sc.wc.on('did-stop-loading', () => this.Send({ type: 'siteLoading', loading: false }));
+    sc.wc.on('did-finish-load', () => { if (typeof this.InjectVisualTools === 'function') this.InjectVisualTools(); });
 
     this.CleanUpOldFiles();
     this.InstallSkill();
@@ -292,6 +297,7 @@ class Host {
       // The app often stays open for days: look for a new version every few hours, not only at start.
       if (Date.now() - this.lastUpdateCheck > 4 * 3600 * 1000) this.CheckForUpdate();
       this.RefreshCalendarsIfStale();
+      try { if (typeof this.TrackStreakReminder === 'function') this.TrackStreakReminder(new Date()); } catch { }
     }, 45000);
     this.CheckForUpdate();
   }
@@ -1106,7 +1112,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'support'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'support'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

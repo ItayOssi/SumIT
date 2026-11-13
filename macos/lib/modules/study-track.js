@@ -261,7 +261,7 @@ function cleanProfile(raw) {
       const t = obj(t0), title = Trunc(Str(t, 'title').trim(), 100);
       if (!title) continue;
       let id = Trunc(Str(t, 'id'), 20); if (!id || ids.has(id)) id = 't' + (topics.length + 1) + '-' + ids.size;
-      ids.add(id); topics.push({ id, title, done: t.done === true });
+      ids.add(id); topics.push({ id, title, done: t.done === true, doneDate: t.done === true && isDate(Str(t, 'doneDate')) ? Str(t, 'doneDate') : '' });
     }
     p.progress[k] = { topics };
   }
@@ -480,14 +480,49 @@ function progressStats(profile, today) {
   }
   for (const e of profile.log) { const row = per[e.course]; if (row) row.total += e.minutes; }
   for (const e of inWeek) { const row = per[e.course]; if (row) row.week += e.minutes; }
-  const days = new Set(profile.log.map(e => e.date));
-  let streak = 0, d = today;
-  if (!days.has(d)) d = addDays(d, -1);
-  while (days.has(d) && streak < 1000) { streak++; d = addDays(d, -1); }
+  const streak = streakInfo(profile, today);
   return {
     weekStart: ws, plannedMinutes: planned.reduce((n, b) => n + b.minutes, 0), plannedBlocks: planned.length, doneBlocks: planned.filter(b => b.done).length,
-    weekMinutes: inWeek.reduce((n, e) => n + e.minutes, 0), totalMinutes: profile.log.reduce((n, e) => n + e.minutes, 0), streak, perCourse: per,
+    weekMinutes: inWeek.reduce((n, e) => n + e.minutes, 0), totalMinutes: profile.log.reduce((n, e) => n + e.minutes, 0), streak: streak.current, streakInfo: streak, perCourse: per,
   };
+}
+
+// ---------- The streak (as in Duolingo) ----------
+
+// A day counts when something was finished in it: a study block marked done, or a topic ticked off. Time logged by hand alone
+// does not. Every 7 days in a row earn a freeze (2 at most), and a freeze covers one missed day by itself. Today counts as soon
+// as something is finished; until then the streak still stands, "at risk".
+const StreakMilestones = [3, 7, 14, 30, 50, 100, 150, 200, 365, 500, 1000];
+const StreakFreezeEvery = 7, StreakFreezeMax = 2;
+function streakDays(profile) {
+  const days = new Set();
+  for (const e of profile.log) if (e.block && isDate(e.date)) days.add(e.date);
+  for (const k of Object.keys(profile.progress || {})) for (const t of arr(obj(profile.progress[k]).topics)) if (t.done && isDate(t.doneDate)) days.add(t.doneDate);
+  return days;
+}
+function streakInfo(profile, today) {
+  const days = streakDays(profile), sorted = Array.from(days).filter(d => d <= today).sort();
+  let current = 0, best = 0, freezes = 0;
+  const frozen = new Set();
+  if (sorted.length) {
+    // Walk every day from the first one to yesterday; today is added only when it is done.
+    for (let d = sorted[0], n = 0; d < today && n < 4000; d = addDays(d, 1), n++) {
+      if (days.has(d)) {
+        current++; best = Math.max(best, current);
+        if (current % StreakFreezeEvery === 0) freezes = Math.min(StreakFreezeMax, freezes + 1);
+      } else if (current > 0 && freezes > 0) { freezes--; frozen.add(d); }
+      else { current = 0; }
+    }
+  }
+  const todayDone = days.has(today);
+  if (todayDone) { current++; best = Math.max(best, current); if (current % StreakFreezeEvery === 0) freezes = Math.min(StreakFreezeMax, freezes + 1); }
+  const ws = weekStartOf(today), week = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(ws, i);
+    week.push({ date: d, state: days.has(d) ? 'done' : frozen.has(d) ? 'frozen' : d === today ? 'today' : d > today ? 'future' : 'missed' });
+  }
+  const next = StreakMilestones.find(x => x > current) || current + 100, prev = StreakMilestones.filter(x => x <= current).pop() || 0;
+  return { current, best, todayDone, atRisk: !todayDone && current > 0, freezes, week, next, prev, milestone: todayDone && StreakMilestones.includes(current) ? current : 0 };
 }
 
 // ---------- The host ----------
@@ -499,6 +534,19 @@ module.exports = {
     TrackWeekStart(today) { return weekStartOf(today); },
     TrackBuildWeek(profile, classes, opts) { return buildWeek(profile, classes, opts); },
     TrackStats(profile, today) { return progressStats(profile, today); },
+    TrackStreak(profile, today) { return streakInfo(profile, today); },
+    // In the evening, once a day: a streak that nothing has kept today yet gets a reminder (like Duolingo's). Returns what it said.
+    TrackStreakReminder(now, notify) {
+      if (now.getHours() < 20) return '';
+      const today = localDate(now);
+      if (this.streakReminded === today || !fileExists(this.TrackFile)) return '';
+      const s = streakInfo(this.TrackLoad(), today);
+      if (!s.atRisk) return '';
+      this.streakReminded = today;
+      const body = 'הרצף שלך עומד על ' + s.current + (s.current === 1 ? ' יום' : ' ימים') + '. סיים היום בלוק לימוד או נושא אחד כדי לשמור עליו.' + (s.freezes ? ' (יש לך ' + s.freezes + ' 🧊 שיגנו עליו אם לא.)' : '');
+      (notify || ((t, b) => this.PomodoroNotify(t, b)))('🔥 הרצף בסכנה', body);
+      return body;
+    },
     TrackFallback(ctx) { return fallbackStrategy(ctx); },
     TrackCleanStrategy(raw) { return cleanStrategy(raw); },
     TrackKind(n) { return courseKind(n); },
@@ -563,9 +611,12 @@ module.exports = {
     TrackBuildFromRoutine(profile, classes, today, now, over) {
       const rt = profile.routine, win = routineWindow(rt), o = obj(over);
       const days = arr(o.days).length ? arr(o.days).map(Number).filter(d => d >= 0 && d <= 6) : rt.days;
-      const nextWeek = !days.length || now.getDay() > Math.max(...days);
-      return buildWeek(profile, classes, { weekStart: nextWeek ? addDays(weekStartOf(today), 7) : weekStartOf(today), today, nowMin: now.getHours() * 60 + now.getMinutes(),
-        hours: Number(o.hours) || rt.hours, days, from: Str(o, 'from') || win.from, to: Str(o, 'to') || win.to, blocked: rt.commitments, block: rt.block, peak: rt.peak,
+      // This week while one of its study days still has room for a block; after the last one's window (Thursday at 22:30, say), the next week.
+      const nowMin = now.getHours() * 60 + now.getMinutes(), to = Str(o, 'to') || win.to, firstFree = Math.ceil((nowMin + 15) / 15) * 15;
+      const roomLeft = days.some(d => d > now.getDay() || (d === now.getDay() && firstFree + (Number(rt.block) || 60) <= toMin(to)));
+      const nextWeek = !days.length || !roomLeft;
+      return buildWeek(profile, classes, { weekStart: nextWeek ? addDays(weekStartOf(today), 7) : weekStartOf(today), today, nowMin,
+        hours: Number(o.hours) || rt.hours, days, from: Str(o, 'from') || win.from, to, blocked: rt.commitments, block: rt.block, peak: rt.peak,
         goals: goalsFromTasks(this.TrackTasks(profile, today)) });
     },
 
@@ -876,7 +927,7 @@ module.exports = {
           if (title && row.topics.length < Limits.topics) row.topics.push({ id: 't' + Date.now().toString(36) + row.topics.length, title, done: false });
         } else {
           const t = row.topics.find(x => x.id === Str(m, 'id'));
-          if (t && act === 'toggle') t.done = !t.done;
+          if (t && act === 'toggle') { t.done = !t.done; t.doneDate = t.done ? today : ''; }
           if (t && act === 'remove') row.topics = row.topics.filter(x => x !== t);
         }
         save(); state(); return;

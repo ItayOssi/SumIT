@@ -22,6 +22,14 @@
   const trackProfile = { version: 1, name: '', created: iso(new Date()), strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [],
     routine: { done: false, wake: '07:30', sleep: '23:30', peak: 'morning', days: [0, 1, 2, 3, 4], hours: 10, block: 45, commitments: [], updated: '' },
     courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 0, examDate: iso(new Date(Date.now() + 12 * 86400000)), notes: '', manual: false }, { name: 'אלגברה לינארית 2', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: false }] };
+  // The demo's streak: 4 days before today were done (one kept by a freeze), so the flame waits for a block marked done today.
+  const demoStreak = (p, today) => {
+    const t = iso(today), back = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return iso(d); };
+    const done = new Set([back(5), back(4), back(3), back(1)].concat(p.log.filter(e => e.block).map(e => e.date))), frozen = back(2), todayDone = done.has(t);
+    const current = 4 + (todayDone ? 1 : 0), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
+    const week = []; for (let i = 0; i < 7; i++) { const d = new Date(ws); d.setDate(d.getDate() + i); const di = iso(d); week.push({ date: di, state: done.has(di) ? 'done' : di === frozen ? 'frozen' : di === t ? 'today' : di > t ? 'future' : 'missed' }); }
+    return { current, best: Math.max(9, current), todayDone, atRisk: !todayDone, freezes: 1, week, next: 7, prev: 3, milestone: 0 };
+  };
   const trackSnapshot = (extra) => {
     const today = new Date(), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
     const p = trackProfile, wsIso = iso(ws), wl = p.log.filter(e => e.date >= wsIso), per = {};
@@ -29,7 +37,7 @@
     const bl = p.plan.blocks;
     return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0, calendars: 1, window: { from: '08:30', to: '22:30' },
       suggested: ['פיזיקה 1', 'חשבון אינפיניטסימלי 2'].filter(n => !p.courses.some(c => c.name === n)).map(name => ({ name, where: 'מערכת השעות' })),
-      stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: p.log.length ? 1 : 0, perCourse: per } }, extra || {});
+      stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: demoStreak(p, today).current, streakInfo: demoStreak(p, today), perCourse: per } }, extra || {});
   };
   const trackDemo = (m) => {
     const p = trackProfile, c = p.courses.find(x => x.name === m.course);

@@ -1374,3 +1374,68 @@ button.icon-only svg { width: 16px; height: 16px; }
   .track-pane .track-stat b { font-size: 20px; }
 }
 @media (prefers-reduced-motion: reduce) { .track-ring-fg, .track-col-bar, .track-hbar .total, .track-pane { transition: none; animation: none; } }
+
+/* ---- The streak (as in Duolingo): a flame that is lit on days something was finished ---- */
+.streak-badge { flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px 6px 10px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); font-size: 17px; transition: transform .15s var(--ease); }
+.streak-badge:hover { transform: scale(1.05); }
+.streak-badge b { font-size: 17px; font-variant-numeric: tabular-nums; color: #f08a24; }
+.streak-badge:not(.lit) .streak-flame { filter: grayscale(1); opacity: .55; }
+.streak-badge:not(.lit) b { color: var(--muted); }
+.streak-badge.lit { background: linear-gradient(135deg, #fff4e6, #ffe3c2); border-color: #ffc98a; }
+:root[data-theme="dark"] .streak-badge.lit { background: linear-gradient(135deg, #3a2414, #4a2a10); border-color: #8a4b17; }
+
+.streak-card { margin-bottom: 14px; position: relative; overflow: hidden; }
+.streak-card.lit { background: linear-gradient(135deg, #fff6ea, var(--surface) 65%); border-color: #ffd3a1; }
+.streak-card.risk { background: linear-gradient(135deg, #fff0e8, var(--surface) 65%); border-color: #ffb48a; }
+:root[data-theme="dark"] .streak-card.lit, :root[data-theme="dark"] .streak-card.risk { background: linear-gradient(135deg, #33210f, var(--surface) 65%); border-color: #6b3d16; }
+.streak-main { display: flex; align-items: center; gap: 18px; }
+.streak-big { position: relative; flex: none; width: 82px; height: 82px; display: grid; place-items: center; }
+.streak-big .streak-flame { font-size: 58px; line-height: 1; transform-origin: 50% 90%; }
+.streak-card.lit .streak-big .streak-flame { animation: streakFlicker 2.4s ease-in-out infinite; filter: drop-shadow(0 6px 14px rgba(255, 130, 20, .45)); }
+.streak-card:not(.lit) .streak-big .streak-flame { filter: grayscale(1); opacity: .45; }
+.streak-big b { position: absolute; bottom: -2px; inset-inline: 0; text-align: center; font-size: 22px; font-weight: 800; color: #fff;
+  text-shadow: 0 1px 0 rgba(0,0,0,.25), 0 0 8px rgba(180, 70, 0, .6); font-variant-numeric: tabular-nums; }
+.streak-card:not(.lit) .streak-big b { color: var(--text); text-shadow: none; }
+@keyframes streakFlicker { 0%,100% { transform: scale(1) rotate(-2deg); } 30% { transform: scale(1.06, .97) rotate(2deg); } 60% { transform: scale(.97, 1.05) rotate(-1deg); } }
+.streak-text { flex: 1; min-width: 0; }
+.streak-text h3 { margin: 0 0 4px; font-size: 19px; }
+.streak-text p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.streak-card.risk .streak-text p { color: #c2531b; font-weight: 600; }
+.streak-side { display: grid; justify-items: end; gap: 6px; }
+.streak-freeze { padding: 4px 10px; border-radius: 999px; background: #e3f3fd; color: #1673a8; font-weight: 700; font-size: 13px; cursor: help; }
+:root[data-theme="dark"] .streak-freeze { background: #10304a; color: #8ccdf5; }
+.streak-freeze.none { filter: grayscale(1); opacity: .5; }
+.streak-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin: 16px 0 12px; }
+.streak-day { display: grid; justify-items: center; gap: 5px; }
+.streak-day small { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.streak-day span { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 800;
+  background: var(--surface-2); border: 2px solid var(--border); color: #fff; transition: transform .2s var(--ease); }
+.streak-day.done span { background: linear-gradient(135deg, #ffb340, #ff7a1a); border-color: transparent; box-shadow: 0 4px 10px -3px rgba(255, 122, 26, .6); }
+.streak-day.frozen span { background: linear-gradient(135deg, #8fd3fe, #4aa8e8); border-color: transparent; }
+.streak-day.today span { border-style: dashed; border-color: #ff9a3c; }
+.streak-card.lit .streak-day.today span { border: 0; }
+.streak-day.missed span { opacity: .55; }
+.streak-day.future span { opacity: .35; }
+.streak-goal { display: flex; align-items: center; gap: 12px; }
+.streak-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.streak-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ffb340, #ff6a00); transition: width .8s var(--ease); }
+.streak-goal small { white-space: nowrap; }
+
+.streak-pop { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(10, 10, 20, .25); backdrop-filter: blur(2px);
+  animation: streakFade .25s ease-out both; cursor: pointer; }
+.streak-pop.out { animation: streakFadeOut .45s ease-in both; }
+.streak-pop-card { position: relative; display: grid; justify-items: center; gap: 2px; padding: 26px 40px 22px; border-radius: 26px; background: var(--surface);
+  box-shadow: 0 30px 70px -20px rgba(0,0,0,.45); animation: streakPop .55s cubic-bezier(.2, 1.6, .4, 1) both; }
+.streak-pop-card .streak-flame { font-size: 76px; line-height: 1; filter: drop-shadow(0 8px 18px rgba(255, 120, 20, .5)); animation: streakFlicker 1.6s ease-in-out infinite; }
+.streak-pop-card b { font-size: 44px; font-weight: 900; color: #ff7a1a; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.streak-pop-card p { margin: 4px 0 0; font-size: 16px; font-weight: 600; }
+.streak-spark { position: absolute; top: 50px; left: 50%; width: 9px; height: 9px; border-radius: 2px; background: #ffb340;
+  animation: streakSpark .9s ease-out .15s both; transform: rotate(var(--a)) translateY(0); }
+.streak-spark:nth-child(3n) { background: #4aa8e8; } .streak-spark:nth-child(3n+1) { background: #ff5d7a; }
+@keyframes streakSpark { from { opacity: 1; transform: rotate(var(--a)) translateY(0) scale(1); } to { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--d) * -1.6)) scale(.6); } }
+@keyframes streakPop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes streakFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes streakFadeOut { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .streak-card.lit .streak-big .streak-flame, .streak-pop-card, .streak-pop-card .streak-flame, .streak-spark { animation: none; } }
+@media (max-width: 640px) { .streak-main { flex-wrap: wrap; } .streak-day span { width: 28px; height: 28px; } }

@@ -18,7 +18,11 @@ const TRACK_TASK_IC = { homework: 'clipboard', exam: 'exam', review: 'refresh', 
 function trackEvent(m) {
   if (m.type === 'trackReady') { S.trackOk = true; const n = $('navTrack'); if (n) n.hidden = false; return; }
   if (m.type === 'trackState') {
+    const before = S.track && S.track.stats && S.track.stats.streakInfo;
     S.track = m;
+    const after = m.stats && m.stats.streakInfo;
+    // The first thing finished today lights the flame: a small celebration, a bigger one on a milestone.
+    if (before && after && !before.todayDone && after.todayDone) streakCelebrate(after);
     if (m.wizardDone) S.trackTab = 'overview';
     if (m.built && !m.wizardDone) toast(m.built.unplaced ? 'השבוע נבנה. ' + minLabel(m.built.unplaced) + ' לא נכנסו, אפשר להרחיב ימים או שעות.' : 'השבוע נבנה סביב מערכת השעות');
     renderTrack(); window.dispatchEvent(new Event('sumit-track'));
@@ -172,6 +176,7 @@ function renderTrack() {
     <div class="row wrap track-hero-actions"><button class="primary" data-wizard><span data-ic="sparkles"></span></button><button class="soft" data-rebuild><span data-ic="refresh"></span>בנה שוב את השבוע</button></div></div></div>`);
   const share = st.plannedMinutes ? st.weekMinutes / st.plannedMinutes : 0;
   hero.prepend(trackRing(share, st.plannedMinutes ? Math.round(share * 100) + '%' : minLabel(st.weekMinutes), st.plannedMinutes ? 'מהשבוע' : 'השבוע'));
+  if (st.streakInfo) hero.append(streakBadge(st.streakInfo));
   hero.querySelector('h2').textContent = p.name ? 'היי ' + p.name + ', זה השבוע שלך' : 'זה השבוע שלך';
   const peak = hasRoutine ? { morning: 'בבוקר', noon: 'בצהריים', evening: 'בערב' }[p.routine.peak] : '';
   hero.querySelector('[data-line]').textContent = hasRoutine
@@ -223,8 +228,9 @@ function trackOverview(pane, t, p, st, plan) {
   const tile = (label, value, sub) => { const d = h('<div class="track-stat"><small class="muted"></small><b></b><span class="muted"></span></div>'); d.querySelector('b').textContent = value; d.querySelector('small').textContent = label; d.querySelector('span').textContent = sub || ''; stats.append(d); };
   tile('למדת השבוע', minLabel(st.weekMinutes), st.plannedMinutes ? 'מתוך ' + minLabel(st.plannedMinutes) : '');
   tile('בלוקים', st.doneBlocks + '/' + st.plannedBlocks, st.plannedBlocks ? 'בוצעו' : 'אין עדיין תוכנית');
-  tile('רצף', st.streak + (st.streak === 1 ? ' יום' : ' ימים'), st.streak ? 'ימים ברצף' : 'רשום זמן כדי להתחיל');
+  tile('הרצף הכי ארוך', st.streakInfo ? streakDays(st.streakInfo.best) : '0 ימים', 'ימים ברצף שבהם השלמת משהו');
   tile('סך הכל', minLabel(st.totalMinutes), 'מאז שהתחלת');
+  if (st.streakInfo) pane.append(streakCard(st.streakInfo));
   pane.append(stats);
 
   const grid = h('<div class="track-grid"></div>');
@@ -572,4 +578,63 @@ function openBlockEditor(profile, day, block, preset) {
   };
   dialog.addEventListener('close', () => dialog.remove());
   dialog.showModal();
+}
+
+
+// ---- The streak, as in Duolingo: a day counts when a block or a topic was finished in it.
+const streakDays = (n) => n === 1 ? 'יום אחד' : n + ' ימים';
+const STREAK_LETTERS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+
+// The flame in the header: lit when today counts, gray while the streak waits for today.
+function streakBadge(si) {
+  const b = h('<div class="streak-badge" role="img"><span class="streak-flame"></span><b></b></div>');
+  b.classList.toggle('lit', si.todayDone); b.classList.toggle('cold', !si.current);
+  b.querySelector('.streak-flame').textContent = '🔥'; b.querySelector('b').textContent = si.current;
+  b.setAttribute('aria-label', 'רצף של ' + streakDays(si.current) + (si.todayDone ? ', היום כבר נספר' : si.atRisk ? ', עוד לא נשמר היום' : ''));
+  b.title = si.todayDone ? 'היום כבר נספר ברצף' : si.atRisk ? 'סיים היום בלוק או נושא כדי לשמור על הרצף' : 'סיים בלוק או נושא כדי להתחיל רצף';
+  b.onclick = () => { S.trackTab = 'overview'; renderTrack(); };
+  return b;
+}
+
+// The streak card on the overview: the flame and the number, what to do today, the days of this week, the freezes and the next milestone.
+function streakCard(si) {
+  const c = h(`<div class="card pad-lg streak-card"><div class="streak-main"><div class="streak-big"><span class="streak-flame"></span><b></b></div>
+    <div class="streak-text"><h3></h3><p class="muted"></p></div><div class="streak-side"><span class="streak-freeze" data-freeze></span><small class="muted" data-best></small></div></div>
+    <div class="streak-week"></div><div class="streak-goal"><div class="streak-bar"><i></i></div><small class="muted" data-next></small></div></div>`);
+  c.classList.toggle('lit', si.todayDone); c.classList.toggle('risk', si.atRisk);
+  c.querySelector('.streak-flame').textContent = '🔥';
+  c.querySelector('.streak-big b').textContent = si.current;
+  c.querySelector('h3').textContent = si.current ? 'רצף של ' + streakDays(si.current) : 'מתחילים רצף';
+  c.querySelector('p').textContent = si.todayDone ? 'כל הכבוד! היום כבר נספר. נתראה מחר 👋'
+    : si.atRisk ? 'הרצף בסכנה: סיים היום בלוק לימוד או סמן נושא שהשלמת.' + (si.freezes ? ' אם לא, 🧊 אחד ישמור עליו.' : '')
+    : 'סיים בלוק לימוד או סמן נושא שהשלמת, והלהבה נדלקת.';
+  const fz = c.querySelector('[data-freeze]');
+  fz.textContent = '🧊 ' + si.freezes; fz.title = 'הקפאות רצף: כל 7 ימים ברצף נותנים אחת (עד 2). הקפאה שומרת על הרצף ביום שפספסת.';
+  fz.classList.toggle('none', !si.freezes);
+  c.querySelector('[data-best]').textContent = 'שיא: ' + streakDays(si.best);
+  const week = c.querySelector('.streak-week');
+  si.week.forEach((d, i) => {
+    const cell = h('<div class="streak-day"><small></small><span></span></div>');
+    cell.classList.add(d.state);
+    cell.querySelector('small').textContent = STREAK_LETTERS[i];
+    cell.querySelector('span').textContent = { done: '✓', frozen: '🧊', missed: '', today: '', future: '' }[d.state];
+    cell.title = trackDM(d.date) + ' · ' + { done: 'נספר', frozen: 'נשמר בהקפאה', missed: 'לא נספר', today: 'היום: עוד לא', future: '' }[d.state];
+    week.append(cell);
+  });
+  const span = Math.max(1, si.next - si.prev);
+  c.querySelector('.streak-bar i').style.width = Math.round((si.current - si.prev) / span * 100) + '%';
+  c.querySelector('[data-next]').textContent = 'עוד ' + streakDays(si.next - si.current) + ' ליעד הבא: ' + si.next + ' 🔥';
+  return c;
+}
+
+function streakCelebrate(si) {
+  const big = !!si.milestone;
+  const o = h(`<div class="streak-pop${big ? ' big' : ''}" role="status" aria-live="polite"><div class="streak-pop-card"><span class="streak-flame"></span><b></b><p></p></div></div>`);
+  o.querySelector('.streak-flame').textContent = '🔥'; o.querySelector('b').textContent = si.current;
+  o.querySelector('p').textContent = big ? 'יעד חדש! ' + streakDays(si.current) + ' ברצף 🎉' : si.current === 1 ? 'הרצף התחיל! חזור מחר כדי להגדיל אותו.' : 'הרצף גדל ל-' + streakDays(si.current) + '!';
+  if (big) for (let i = 0; i < 18; i++) { const sp = h('<i class="streak-spark"></i>'); sp.style.setProperty('--a', (i * 20) + 'deg'); sp.style.setProperty('--d', (60 + (i % 3) * 25) + 'px'); o.querySelector('.streak-pop-card').append(sp); }
+  o.onclick = () => o.remove();
+  document.body.append(o);
+  setTimeout(() => o.classList.add('out'), big ? 2600 : 1700);
+  setTimeout(() => o.remove(), big ? 3100 : 2200);
 }

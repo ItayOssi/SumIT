@@ -235,6 +235,9 @@ async function run() {
     // 6f. "What to do in this block?": a plan that fills a block of the calendar
     await runBlockPlanTests(app, check);
 
+    // 6f2. "המחשה חזותית": the spec, the sandboxed frame and the request from the summary page
+    await runVisualTests(app, root, check);
+
     // 6g. Study track (beta): the profile, the strategy, the week of blocks and the progress
     await runStudyTrackTests(app, root, check);
 
@@ -1393,10 +1396,37 @@ async function runStudyTrackTests(app, root, check) {
 
   // Progress: minutes of the week, the streak, topics.
   const logged = app.TrackClean({ courses: [{ name: 'א' }, { name: 'ב' }], progress: { א: { topics: [{ id: 'x', title: 'עצים', done: true }, { id: 'y', title: 'גרפים' }] } },
-    log: [{ date: '2026-11-05', course: 'א', minutes: 30 }, { date: '2026-11-04', course: 'א', minutes: 45 }, { date: '2026-11-03', course: 'ב', minutes: 20 }, { date: '2026-10-30', course: 'ב', minutes: 60 }] });
+    log: [{ date: '2026-11-05', course: 'א', minutes: 30, block: 'b1' }, { date: '2026-11-04', course: 'א', minutes: 45, block: 'b2' }, { date: '2026-11-03', course: 'ב', minutes: 20, block: 'b3' }, { date: '2026-10-30', course: 'ב', minutes: 60, block: 'b4' }] });
   const st = app.TrackStats(logged, '2026-11-05');
   check('progress: minutes of this week, the total, a streak that skips the older day, and the topics', st.weekMinutes === 95 && st.totalMinutes === 155 && st.streak === 3 && st.perCourse['א'].week === 75 && st.perCourse['ב'].total === 80 && st.perCourse['א'].topicsDone === 1 && st.perCourse['א'].topics === 2);
   check('a streak survives a day that has not been logged yet, and ends after two', app.TrackStats(logged, '2026-11-06').streak === 3 && app.TrackStats(logged, '2026-11-07').streak === 0);
+
+  // The streak, as in Duolingo: only days something was finished in, freezes earned every 7 days, the week, milestones and the reminder.
+  const dayN = (n) => { const d = new Date(2026, 10, 1 + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const handOnly = app.TrackClean({ courses: [{ name: 'א' }], log: [{ date: '2026-11-05', course: 'א', minutes: 90 }, { date: '2026-11-04', course: 'א', minutes: 60 }] });
+  check('time logged by hand alone does not light the streak', app.TrackStreak(handOnly, '2026-11-05').current === 0 && app.TrackStats(handOnly, '2026-11-05').weekMinutes === 150);
+  const topicDay = app.TrackClean({ courses: [{ name: 'א' }], progress: { א: { topics: [{ id: 'x', title: 'עצים', done: true, doneDate: '2026-11-05' }, { id: 'y', title: 'גרפים', done: false, doneDate: '2026-11-04' }] } } });
+  const tds = app.TrackStreak(topicDay, '2026-11-05');
+  check('a topic finished today counts, a topic that is not done does not', tds.current === 1 && tds.todayDone && !tds.atRisk && topicDay.progress['א'].topics[1].doneDate === '');
+  const run = (days) => app.TrackClean({ courses: [{ name: 'א' }], log: days.map((n, i) => ({ date: dayN(n), course: 'א', minutes: 30, block: 'k' + i })) });
+  const week7 = app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6]), dayN(6));
+  check('seven days in a row: a milestone today and a freeze earned', week7.current === 7 && week7.best === 7 && week7.milestone === 7 && week7.freezes === 1 && week7.next === 14 && week7.prev === 7);
+  const saved1 = app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6, 8]), dayN(8));
+  check('a freeze covers one missed day by itself, and the streak goes on', saved1.current === 8 && saved1.freezes === 0 && saved1.week.find(d => d.date === dayN(7)).state === 'frozen');
+  check('without a freeze, a missed day ends the streak; the best stays', app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6, 8, 9]), dayN(11)).current === 0 && app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6, 8, 9]), dayN(11)).best === 9
+    && app.TrackStreak(run([0, 1, 2, 4]), dayN(4)).current === 1);
+  const risk = app.TrackStreak(run([0, 1, 2]), dayN(3));
+  check('a streak that waits for today is "at risk", and the week shows each day',
+    risk.current === 3 && risk.atRisk && !risk.todayDone && risk.week.length === 7 && risk.week[0].date === '2026-11-01' && risk.week.map(d => d.state).join(',') === 'done,done,done,today,future,future,future');
+  const remFile = path.join(root, 'streak-profile.json'); writeText(remFile, JSON.stringify(run([0, 1, 2])));
+  Object.defineProperty(app, 'TrackFile', { value: remFile, configurable: true });
+  const said = [], note = (t, b) => said.push(t + ' ' + b);
+  delete app.streakReminded;
+  const early = app.TrackStreakReminder(new Date(2026, 10, 4, 18, 0), note), late = app.TrackStreakReminder(new Date(2026, 10, 4, 20, 30), note), again2 = app.TrackStreakReminder(new Date(2026, 10, 4, 21, 0), note);
+  check('in the evening a streak at risk gets one reminder a day, not before 20:00 and not twice', early === '' && /3 ימים/.test(late) && again2 === '' && said.length === 1 && /בסכנה/.test(said[0]));
+  writeText(remFile, JSON.stringify(run([0, 1, 2, 3]))); delete app.streakReminded;
+  check('no reminder when today already counts', app.TrackStreakReminder(new Date(2026, 10, 4, 20, 30), note) === '' && said.length === 1);
+  delete app.TrackFile; delete app.streakReminded;
 
   // The strategy: by the kind of course, from the exam, and cleaned when it comes from an AI.
   check('courses are told apart by name', app.TrackKind('חדו"א 1') === 'math' && app.TrackKind('מבני נתונים') === 'theory' && app.TrackKind('תכנות בשפת C') === 'code' && app.TrackKind('פסיכולוגיה') === 'general');
@@ -1602,6 +1632,9 @@ async function runStudyTrackTests(app, root, check) {
   const wizB = wizP.plan.blocks.filter(b => !b.done);
   check('the week is built from the routine: inside its window, not over the commitment, and the heavy course in the evening',
     !!state.built && wizB.length > 0 && wizB.every(b => mins(b.start) >= 540 && mins(b.start) + b.minutes <= 1320) && wizB.every(b => b.day !== 1 || mins(b.start) + b.minutes <= 945 || mins(b.start) >= 1215) && wizB.filter(b => b.course === 'חדו"א 1').every(b => mins(b.start) >= 960));
+  const lateThu = app.TrackBuildFromRoutine(wizP, [], '2026-11-12', new Date(2026, 10, 12, 22, 39)), thuEvening = app.TrackBuildFromRoutine(wizP, [], '2026-11-12', new Date(2026, 10, 12, 18, 0));
+  check('after the window of the last study day the week is built for the next week, not left empty; earlier that day it is still this week',
+    lateThu.weekStart === '2026-11-15' && lateThu.blocks.length > 0 && thuEvening.weekStart === '2026-11-08' && thuEvening.blocks.length > 0 && thuEvening.blocks.every(b => b.day === 4 && mins(b.start) >= 1095));
   app.ask = async () => true;
   state = await op({ op: 'wizardFinish', routine: { days: [0, 1] }, courses: [{ name: 'פסיכולוגיה', level: 2, energy: 2 }] });
   check('a course that was not chosen is removed when the student agrees', state.profile.courses.length === 1 && state.profile.courses[0].name === 'פסיכולוגיה' && state.profile.courses[0].level === 2);
@@ -1873,6 +1906,132 @@ async function runBlockPlanTests(app, check) {
   res = await ask({ title: '  ' });
   check('a block without a name is refused with a clear message', res.error === true && !app.blockBusy);
   delete app.HelperOrder; delete app.HelperAsk; app.Send = realSend;
+}
+
+async function runVisualTests(app, root, check) {
+  const V = require(path.join(platform.WebDir, 'viz-runtime.js'));
+  const val = (src, scope, vars) => V.compile(src, vars || Object.keys(scope || {}))(scope || {});
+  const throws = (fn) => { try { fn(); return false; } catch { return true; } };
+
+  // Expressions: parsed, never eval'd.
+  check('an expression keeps the order of operations, powers to the right and a minus before a power',
+    val('1+2*3^2') === 19 && val('2^3^2') === 512 && val('-x^2', { x: 3 }) === -9 && val('2^-1') === 0.5);
+  check('an expression takes 2x, 3(x+1), functions, pi and a parameter',
+    val('2x', { x: 4 }) === 8 && val('3(x+1)', { x: 1 }) === 6 && Math.abs(val('sin(pi/2)+a*cos(0)', { a: 2 }) - 3) < 1e-12 && val('max(1,x,3)', { x: 7 }) === 7);
+  check('an expression with an unknown name, code or a stray sign is refused',
+    throws(() => V.compile('constructor', ['x'])) && throws(() => V.compile('alert(1)', ['x'])) && throws(() => V.compile('x;fetch(1)', ['x']))
+      && throws(() => V.compile('y', ['x'])) && throws(() => V.compile('(x', ['x'])) && throws(() => V.compile('x'.repeat(300), ['x'])) && throws(() => V.compile('', ['x'])));
+
+  // The spec.
+  check('a spec with a broken expression is refused before it is drawn', throws(() => V.normalize({ kind: 'plot', curves: [{ expr: 'a*sin(x)' }, { expr: 'bad(' }] })));
+  const plotOk = V.normalize({ kind: 'plot', x: [0, 10], curves: [{ expr: 'a*sin(x)', label: 'y' }], points: [{ x: 'pi', y: 'a', label: 'P' }, { x: 'q', y: 1 }],
+    params: [{ name: 'a', min: 0, max: 5, value: 9 }, { name: 'x', min: 0, max: 1 }, { name: 'sin', min: 0, max: 1 }, { name: 'b', min: 3, max: 1 }, { name: 'a', min: 0, max: 1 }],
+    steps: [{ text: 'שלב', show: [0, 1, 7, -1, 1.5], set: { a: 99, zz: 1 } }, { text: '' }] });
+  check('parameters: a variable, a function, a duplicate or an empty range is dropped, and a value is kept in its range',
+    plotOk.params.length === 1 && plotOk.params[0].name === 'a' && plotOk.params[0].value === 5 && plotOk.points.length === 1);
+  check('steps: only items that exist, and a parameter set within its range',
+    plotOk.steps.length === 1 && JSON.stringify(plotOk.steps[0].show) === '[0,1]' && plotOk.steps[0].set.a === 5 && !('zz' in plotOk.steps[0].set));
+  check('an unknown kind or an empty answer is refused', throws(() => V.normalize({ kind: 'script' })) && throws(() => V.normalize(null)));
+  const circ = V.normalize({ kind: 'circuit', parts: [{ type: 'R', a: [0, 0], b: [2, 0], label: 'R={R}' }, { type: 'X', a: [0, 0], b: [1, 1] }, { type: 'W', a: [1, 1], b: [1, 1] }, { type: 'C', a: [0, 0], b: [99, 0] }, { type: 'G', a: [2, 0] }], params: [{ name: 'R', min: 1, max: 100, value: 10 }] });
+  check('a circuit keeps only known parts on the grid with two different ends (ground has one)', circ.parts.length === 2 && circ.parts[1].type === 'G' && circ.parts[1].b === null);
+  const mesh = V.normalize({ kind: 'circuit', style: 'board', parts: [{ type: 'B', a: [0, 6], b: [0, 3], label: '17V', color: 'cyan' }, { type: 'R', a: [0, 0], b: [0, 3], color: 'hotpink' }],
+    loops: [{ box: [0, 0, 3, 6], label: 'I_1', dir: 'cw', color: 'blue' }, { box: [3, 3, 1, 1] }, { box: [3, 0, 6, 3] }],
+    equations: ['12 I_1 - 3 I_2 = 17', '<script>x</script>'], steps: [{ text: 'לולאה', loops: [0, 5], eq: 9 }, { text: 'הכל' }] });
+  check('the board style: a battery, a named color only, loops on the grid and equations as plain math text',
+    mesh.style === 'board' && mesh.parts[0].type === 'B' && mesh.parts[0].color === 'cyan' && mesh.parts[1].color === '' && mesh.loops.length === 2 && mesh.loops[0].dir === 'cw'
+      && mesh.loops[1].label === 'I_2' && mesh.loops[1].dir === 'ccw' && mesh.equations.length === 1);
+  check('a step highlights only loops that exist and shows at most the equations there are',
+    JSON.stringify(mesh.steps[0].loops) === '[0]' && mesh.steps[0].eq === 1 && mesh.steps[1].loops === null && mesh.steps[1].eq === null && V.normalize({ kind: 'plot', style: 'neon', curves: [{ expr: 'x' }] }).style === '');
+  check('the board frame says so on its <html>', /<html[^>]*data-style="board"/.test(app.VisualSrcdoc(mesh)) && !/<html[^>]*data-style/.test(app.VisualSrcdoc(circ)));
+  check('a circuit with no usable part is refused', throws(() => V.normalize({ kind: 'circuit', parts: [{ type: 'X', a: [0, 0], b: [1, 0] }] })));
+  const f3 = V.normalize({ kind: 'field3d', range: 500, n: 20, field: ['-y', 'x', '0'], points: [{ x: 0, y: 0, z: 1, label: 'q' }] });
+  check('a 3D field: the range and the grid are capped, and it needs a field, a curve or a surface',
+    f3.range === 100 && f3.n === 7 && f3.field.length === 3 && throws(() => V.normalize({ kind: 'field3d' })) && throws(() => V.normalize({ kind: 'field3d', field: ['x', 'q', '0'] })));
+  check('a wave adds the sum only with two waves or more',
+    V.normalize({ kind: 'wave', curves: [{ expr: 'sin(x-t)' }], sum: true }).sum === false && V.normalize({ kind: 'wave', waves: [{ expr: 'sin(x-t)' }, { expr: 'sin(x+t)' }], sum: true }).sum === true);
+
+  // The custom kind: small, and nothing that reaches the network or the page around it.
+  check('a custom visual passes when it is small and stays in its frame', V.normalize({ kind: 'custom', html: '<svg width="10"></svg><script>let a=1</script>' }).html.includes('<svg'));
+  check('a custom visual that is too big, or reaches the network or the page, is refused',
+    throws(() => V.normalize({ kind: 'custom', html: 'x'.repeat(V.MaxCustom + 1) })) && throws(() => V.normalize({ kind: 'custom', html: '<script>fetch("https://e.x")</script>' }))
+      && throws(() => V.normalize({ kind: 'custom', html: '<img src="https://e.x/a.png">' })) && throws(() => V.normalize({ kind: 'custom', html: '<script>parent.document.body</script>' }))
+      && throws(() => V.normalize({ kind: 'custom', html: '<iframe></iframe>' })) && throws(() => V.normalize({ kind: 'custom', html: '<script>new WebSocket("x")</script>' })));
+
+  // The AI's answer and the frame.
+  check('the answer is read from inside a code fence', app.ParseVisual('הנה:\n```json\n{"kind":"plot","curves":[{"expr":"x^2"}]}\n```').spec.curves[0].expr === 'x^2');
+  check('an answer that is not JSON, or does not pass, says why', app.ParseVisual('אין לי מושג').error === 'התשובה אינה JSON' && /סוג המחשה/.test(app.ParseVisual('{"kind":"nope"}').error));
+  const evil = V.normalize({ kind: 'plot', title: '</script><script>alert(1)</script>', curves: [{ expr: 'x', label: '<!--' }] });
+  const doc = app.VisualSrcdoc(evil);
+  check('the frame has no network and nothing else outside it',
+    doc.includes("connect-src 'none'") && doc.includes("default-src 'none'") && doc.includes("frame-src 'none'") && doc.includes('data-theme="light"'));
+  check('text from the AI cannot close the frame\'s script', (doc.match(/<\/script>/gi) || []).length === 2 && !doc.includes('<script>alert(1)') && doc.includes('SumitViz.mount'));
+  check('the renderer itself never closes its script early', !fs.readFileSync(path.join(platform.WebDir, 'viz-runtime.js'), 'utf8').match(/<\/script/i));
+  const customDoc = app.VisualSrcdoc(V.normalize({ kind: 'custom', title: '<b>ש</b>', html: '<p>hi</p>' }));
+  check('a custom frame gets only its own HTML, with its title escaped', customDoc.includes('<p>hi</p>') && customDoc.includes('&lt;b&gt;') && !customDoc.includes('SumitViz.mount'));
+
+  // The request from the summary page.
+  const saved = { root: app.settings.studyRoot, demo: app.demo, ask: app.SummaryGemini, site: app.site };
+  app.settings.studyRoot = path.join(root, 'viz-courses');
+  const pageFile = path.join(app.settings.studyRoot, 'פיזיקה 1', 'הרצאות', 'הרצאה 3', 'סיכום.html');
+  mkdirp(path.dirname(pageFile)); writeText(pageFile, '<html><body>סוד-של-הסיכום</body></html>');
+  const sent = [], scripts = [];
+  app.site = { source: require('url').pathToFileURL(pageFile).href, wc: { isDestroyed: () => false, send: (ch, msg) => sent.push(msg) }, executeScript: async (js) => { scripts.push(js); } };
+  app.demo = false;
+  try {
+    await app.InjectVisualTools();
+    check('a summary gets the button script with a fresh token', scripts.length === 1 && app.vizToken && scripts[0].includes(JSON.stringify(app.vizToken)) && scripts[0].includes('sumitVizLoaded'));
+    const question = 'שאלה 2: מסה m=2 ק"ג תלויה על קפיץ עם קבוע k=8 ניוטון למטר. מצא את תדירות התנודה ושרטט את המיקום כפונקציה של הזמן.';
+    const calls = [];
+    const good = '{"kind":"plot","x":[0,10],"params":[{"name":"k","min":1,"max":20,"value":8}],"curves":[{"expr":"cos(sqrt(k/2)*x)","label":"x(t)"}]}';
+    let answers = ['זה לא JSON', good];
+    app.SummaryGemini = async (system, messages, img, extra, onChunk, opts) => { calls.push({ system, messages, opts }); return { Provider: 'gemini', Error: false, Text: answers.shift() }; };
+    const token = app.vizToken;
+    await app.VisualRequest({ type: 'vizRequest', token: 'wrong', id: 'v1', question });
+    check('a request with another token does nothing', sent.length === 0 && calls.length === 0);
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v1', question });
+    check('a bad first answer is sent back once with the reason, and the fixed one is shown',
+      calls.length === 2 && calls[1].messages.length === 3 && /לא עברה בדיקה/.test(calls[1].messages[2][1]) && sent.map(m => m.state).join(',') === 'busy,done' && sent[1].srcdoc.includes('SumitViz.mount') && sent[1].provider === 'Gemini');
+    check('only the question goes to the AI, not the summary, with a short answer cap',
+      calls[0].messages.length === 1 && calls[0].messages[0][1] === 'השאלה:\n' + question && !JSON.stringify(calls).includes('סוד-של-הסיכום') && calls[0].opts.maxTokens <= 1500);
+    const cache = app.VisualCacheFile(pageFile, question);
+    check('the visual is kept next to the summary', fileExists(cache) && JSON.parse(readText(cache)).spec.kind === 'plot');
+    sent.length = 0;
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v1', question });
+    check('opening it again costs no AI call', calls.length === 2 && sent.length === 1 && sent[0].state === 'done' && sent[0].cached === true);
+    sent.length = 0; answers = [good];
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v1', question, force: true });
+    check('"build again" asks the AI again', calls.length === 3 && sent.map(m => m.state).join(',') === 'busy,done' && !sent[1].cached);
+    sent.length = 0; answers = ['{"kind":"nope"}', '{"kind":"nope"}'];
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v2', question: question + ' (ב)' });
+    check('two bad answers end in an error the student can retry', sent.map(m => m.state).join(',') === 'busy,error' && /אפשר לנסות שוב/.test(sent[1].text) && !fileExists(app.VisualCacheFile(pageFile, question + ' (ב)')));
+    sent.length = 0;
+    app.SummaryGemini = async () => ({ Provider: 'gemini', Error: true, Text: 'אין מנוע AI מחובר.' });
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v3', question: question + ' (ג)' });
+    check('no AI connected: the page says so', sent.map(m => m.state).join(',') === 'busy,error' && /אין מנוע/.test(sent[1].text));
+    sent.length = 0;
+    let release; app.SummaryGemini = () => new Promise((r) => { release = () => r({ Provider: 'gemini', Error: false, Text: good }); });
+    const first = app.VisualRequest({ type: 'vizRequest', token, id: 'v4', question: question + ' (ד)' });
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v5', question: question + ' (ה)' });
+    release(); await first;
+    check('one visual at a time: a second button waits for the first', sent.some(m => m.id === 'v5' && m.state === 'error' && /כבר בונה/.test(m.text)) && sent.some(m => m.id === 'v4' && m.state === 'done'));
+    sent.length = 0;
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v6', question: 'קצר' });
+    await app.VisualRequest({ type: 'vizRequest', token, id: '../x', question });
+    check('a question too short, or a bad button id, gets nothing from the AI', sent.length === 1 && sent[0].state === 'error');
+    app.site.source = 'https://moodle.hitsmart.ac.il/course/view.php?id=1';
+    scripts.length = 0; sent.length = 0;
+    await app.InjectVisualTools();
+    await app.VisualRequest({ type: 'vizRequest', token, id: 'v1', question });
+    check('a web page in the site view gets no buttons, and an old token stops counting', scripts.length === 0 && app.vizToken === '' && sent.length === 0);
+    app.site.source = require('url').pathToFileURL(path.join(root, 'outside.html')).href; writeText(path.join(root, 'outside.html'), 'x');
+    await app.InjectVisualTools();
+    check('an HTML file outside the study folder gets no buttons', scripts.length === 0 && app.vizToken === '');
+    app.demo = true;
+    check('the demo makes a visual without an AI', (await app.MakeVisual(question)).spec.kind === 'plot');
+  } finally {
+    app.settings.studyRoot = saved.root; app.demo = saved.demo; app.SummaryGemini = saved.ask; app.site = saved.site;
+    delete app.vizToken; delete app.vizPage;
+  }
 }
 
 async function runCoachTests(app, root, check) {
