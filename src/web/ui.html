@@ -360,6 +360,7 @@
   <div class="profile-dlg">
     <div class="row" style="align-items:center"><h2 class="grow" style="margin:0">הפרופיל שלי</h2><button class="small ghost" id="profileClose" title="סגור"><span data-ic="x"></span></button></div>
     <div class="profile-photo"><img id="profilePreview" class="avatar-img" alt="" hidden><div class="row"><button id="pickProfile" class="soft">בחר תמונה</button><button id="clearProfile" class="ghost">הסר</button></div></div>
+    <div class="profile-google" id="profileGoogle" hidden></div>
     <label>השם שלי<input id="profName" placeholder="השם שלי" dir="auto" maxlength="40"></label>
     <label>תיאור קצר<input id="profBio" placeholder="למשל: סטודנט להנדסת חשמל" dir="auto" maxlength="80"></label>
     <small class="muted">השם והתיאור מופיעים בראש התפריט במקום SumIT.</small>
@@ -403,11 +404,17 @@
         <div class="check-row" id="wizNotRow" hidden><div class="ci" data-ic="note"></div><div class="grow"><b>מחברת Notability <span class="chip">לא חובה</span></b><small id="wizNot">אם Notability מגבה את המחברות לתיקייה במחשב, בחר אותה כאן</small></div><button id="wizNotBtn">בחר</button></div>
       </div>
       <div class="step" data-step="5">
+        <h1>שמירה בחשבון Google</h1>
+        <p class="lead">מתחברים עם Google, והפרופיל שלך (השם והתמונה), הסיכומים, המטלות והכרטיסים נשמרים ב-Drive שלך. במחשב אחר מתחברים לאותו חשבון, והכל חוזר.</p>
+        <div id="wizGoogle"></div>
+        <p class="muted">לא חובה. אפשר להתחבר גם אחר כך, בלחיצה על התמונה שלך בראש התפריט.</p>
+      </div>
+      <div class="step" data-step="6">
         <h1>יאללה, מתחילים!</h1>
         <p class="lead">היכנס לקורס, צור הרצאה ובחר את הקבצים הרלוונטיים מ-Moodle, מ-CS24 או מהמחשב. אחר כך צור סיכום ושיעורי בית בלחיצה.</p>
       </div>
       <div class="foot">
-        <div class="steps" id="wizDots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="steps" id="wizDots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
         <div class="grow"></div>
         <button class="ghost" id="wizSkip">דלג</button>
         <button class="ghost" id="wizBack" hidden>חזרה</button>

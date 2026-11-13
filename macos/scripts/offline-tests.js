@@ -2039,6 +2039,43 @@ async function runDriveTests(app, root, check) {
   const ss = D.SyncableSettings({ helperPref: 'openai', theme: 'dark', geminiKey: 'SECRET', claudeKey: 'S2', studyRoot: '/x', recordingsDir: '/y', drive: { refresh: 'r' }, calSync: { on: 1 }, order: ['a', 'b'], deep: { a: 1 } });
   check('the settings that travel are the student\'s choices: no keys, folders, account or objects', JSON.stringify(ss) === JSON.stringify({ helperPref: 'openai', theme: 'dark', order: ['a', 'b'] }));
 
+  const tl = D.SyncableSettings({ tasks: [{ id: 'a', title: 'להגיש', due: '2099-01-01', done: false, deep: { x: 1 } }, 'junk'], calendars: [{ url: 'https://secret' }] });
+  check('the student\'s own tasks travel with the settings, other lists of records do not', JSON.stringify(tl) === JSON.stringify({ tasks: [{ id: 'a', title: 'להגיש', due: '2099-01-01', done: false }] }));
+  const tok = (o) => 'h.' + Buffer.from(JSON.stringify(o)).toString('base64') + '.s';
+  check('the name and the picture of the account are read from Google\'s answer', JSON.stringify(D.IdTokenProfile(tok({ email: 'a@b.c', name: 'נועה לוי', given_name: 'נועה', picture: 'https://lh3/p=s96-c' }))) === JSON.stringify({ email: 'a@b.c', name: 'נועה', picture: 'https://lh3/p=s96-c' }) && D.IdTokenProfile('broken').email === '');
+  {
+    // The first sign-in fills an empty profile from Google, and never replaces what the student set.
+    const pdir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sumit-photo-'));
+    const keep = { name: app.settings.displayName, pf: app.profileImageFile, bytes: app.SetProfileImageBytes, send: app.SendSettings, fetch: global.fetch };
+    const asked = []; global.fetch = async (u) => { asked.push(u); return { ok: true, arrayBuffer: async () => Buffer.from('JPEGDATA') }; };
+    app.SetProfileImageBytes = (buf) => fs.writeFileSync(app.ProfileImageFile, buf); app.SendSettings = () => { };
+    app.profileImageFile = path.join(pdir, 'A.jpg'); app.settings.displayName = '';
+    await app.DriveFillProfile({ name: 'נועה', picture: 'https://lh3.googleusercontent.com/a/x=s96-c' });
+    check('an empty profile gets the name and a bigger copy of the picture of the Google account', app.settings.displayName === 'נועה' && readText(app.ProfileImageFile) === 'JPEGDATA' && asked[0].endsWith('=s256-c'));
+    app.settings.displayName = 'השם שלי'; fs.writeFileSync(app.ProfileImageFile, 'MINE');
+    await app.DriveFillProfile({ name: 'נועה', picture: 'https://lh3.googleusercontent.com/a/x=s96-c' });
+    check('a name and a picture the student set are kept', app.settings.displayName === 'השם שלי' && readText(app.ProfileImageFile) === 'MINE' && asked.length === 1);
+
+    // The picture and the tasks reach another computer with the settings.
+    const RA = path.join(pdir, 'rootA'), RB = path.join(pdir, 'rootB'); mkdirp(RA); mkdirp(RB);
+    const keepDrive = app.settings.drive, keepTasks = app.settings.tasks, keepPhoto = app.settings.photo;
+    app.settings.drive = {}; app.settings.tasks = [{ id: 't1', title: 'להגיש תרגיל', course: '', due: '2099-01-03', done: false }];
+    app.DriveSettingsOut(RA);
+    check('the picture is put next to the settings, and the settings name it by its md5', readText(path.join(RA, '.sumit', 'profile.jpg')) === 'MINE' && JSON.parse(readText(path.join(RA, '.sumit', 'settings-sync.json'))).settings.photo === crypto.createHash('md5').update('MINE').digest('hex'));
+    fs.cpSync(path.join(RA, '.sumit'), path.join(RB, '.sumit'), { recursive: true });   // what the sync carries to the other computer
+    app.profileImageFile = path.join(pdir, 'B.jpg'); app.settings.drive = {}; app.settings.tasks = []; app.settings.displayName = '';
+    const took = app.DriveSettingsIn(RB);
+    check('another computer takes the name, the picture and the tasks', took && app.settings.displayName === 'השם שלי' && readText(app.ProfileImageFile) === 'MINE' && app.settings.tasks.length === 1 && app.settings.tasks[0].title === 'להגיש תרגיל');
+    app.profileImageFile = path.join(pdir, 'A.jpg'); fs.unlinkSync(app.ProfileImageFile); app.settings.drive = { settingsSig: 'old', settingsApplied: '9999' };
+    app.DriveSettingsOut(RA); fs.rmSync(path.join(RB, '.sumit'), { recursive: true }); fs.cpSync(path.join(RA, '.sumit'), path.join(RB, '.sumit'), { recursive: true });
+    app.profileImageFile = path.join(pdir, 'B.jpg'); app.settings.drive = { settingsApplied: '' };
+    app.DriveSettingsIn(RB);
+    check('a picture removed on one computer is removed on the other', !fileExists(path.join(RA, '.sumit', 'profile.jpg')) && !fileExists(app.ProfileImageFile));
+    app.settings.drive = keepDrive; app.settings.tasks = keepTasks; app.settings.photo = keepPhoto;
+    app.settings.displayName = keep.name; app.profileImageFile = keep.pf; app.SetProfileImageBytes = keep.bytes; app.SendSettings = keep.send; global.fetch = keep.fetch;
+    try { fs.rmSync(pdir, { recursive: true, force: true }); } catch { }
+  }
+
   const downloaded = JSON.stringify({ installed: { client_id: 'id.apps.googleusercontent.com', client_secret: 'GOCSPX-abc', redirect_uris: ['http://localhost'] } });
   check('the client secret is sent bare, also when the whole downloaded client JSON was stored', D.ClientSecret(downloaded) === 'GOCSPX-abc' && D.ClientSecret(' GOCSPX-abc\n') === 'GOCSPX-abc' && D.ClientSecret('{oops') === '' && D.ClientSecret('') === '');
 
@@ -2075,8 +2112,8 @@ async function runDriveTests(app, root, check) {
       await fetch(redirect + '/?code=evil&state=wrong').catch(() => { });
       await fetch(redirect + '/?code=good-code&state=' + authUrl.searchParams.get('state'));
     });
-    check('signing in asks for drive.file only, with PKCE, offline access and a redirect to this computer',
-      authUrl.searchParams.get('scope') === 'https://www.googleapis.com/auth/drive.file openid email' && authUrl.searchParams.get('code_challenge_method') === 'S256'
+    check('signing in asks for drive.file only (and the name and picture of the account), with PKCE, offline access and a redirect to this computer',
+      authUrl.searchParams.get('scope') === 'https://www.googleapis.com/auth/drive.file openid email profile' && authUrl.searchParams.get('code_challenge_method') === 'S256'
         && authUrl.searchParams.get('access_type') === 'offline' && /^http:\/\/127\.0\.0\.1:\d+$/.test(authUrl.searchParams.get('redirect_uri')) && authUrl.searchParams.get('client_id') === 'test-client');
     check('the account is connected, and its token is kept encrypted', email === 'student@gmail.com' && app.DriveConnected() && app.settings.drive.refresh !== 'rt-1' && Unprotect(app.settings.drive.refresh) === 'rt-1');
 

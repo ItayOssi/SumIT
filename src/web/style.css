@@ -1471,3 +1471,10 @@ button.icon-only svg { width: 16px; height: 16px; }
 .ticket-row.clickable .grow:hover b { color: var(--accent); }
 .ticket-row small { display: block; margin-top: 3px; }
 @media (max-width: 860px) { .ticket-btn { justify-content: center; padding: 0; height: 40px; min-height: 0; } .ticket-count { position: absolute; top: 0; inset-inline-end: 2px; min-width: 17px; height: 17px; font-size: 10px; } }
+
+/* The Google account around the picture in the sidebar (drive-ui.js): a ring that says whether the profile is synced. */
+#navLogo { cursor: pointer; border-radius: 50%; transition: box-shadow .2s; }
+#navLogo[data-cloud="ok"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ok); }
+#navLogo[data-cloud="busy"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--warn); }
+#navLogo[data-cloud="bad"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--bad); }
+.profile-google .check-row, #wizGoogle .check-row { margin: 0; }

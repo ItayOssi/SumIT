@@ -4,6 +4,7 @@ let driveState = null;
 function driveEvent(m) {
   const first = !driveState;
   driveState = Object.assign({}, driveState || {}, m);
+  if (!m.error) delete driveState.error;
   if (!m.busy) { delete driveState.progress; driveState.busy = false; }
   if (m.connecting === undefined) driveState.connecting = false;
   renderDrive();
@@ -13,6 +14,7 @@ function driveEvent(m) {
 
 function renderDrive() {
   const card = $('driveCard'), body = $('driveBody'), s = driveState;
+  renderDriveAccount();
   if (!card || !s) return;
   card.hidden = false;
   const chip = $('driveChip');
@@ -61,6 +63,38 @@ function renderDrive() {
     }
   }
   icons(card);
+}
+
+// The Google account where the student meets it: in the profile (a click on the picture), in the setup wizard, and as a ring
+// around the picture in the sidebar (green: synced, orange: syncing, none: not connected).
+function renderDriveAccount() {
+  const s = driveState, logo = $('navLogo');
+  if (logo) logo.dataset.cloud = !s || s.configured === false ? '' : !s.connected ? 'off' : s.error ? 'bad' : s.busy ? 'busy' : 'ok';
+  for (const id of ['profileGoogle', 'wizGoogle']) {
+    const box = $(id); if (!box) continue;
+    box.hidden = !s || s.configured === false;
+    if (box.hidden) continue;
+    box.innerHTML = '';
+    const row = h(`<div class="check-row${s.connected ? ' ok' : ''}"><div class="ci" data-ic="cloud"></div><div class="grow"><b></b><small></small></div></div>`);
+    const when = s.last ? new Date(s.last).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    row.querySelector('b').textContent = s.connected ? (s.email ? 'מחובר כ-' + s.email : 'מחובר ל-Google') : s.connecting ? 'ממתין לאישור בדפדפן…' : 'לא מחובר לחשבון Google';
+    row.querySelector('small').textContent = s.connected ? (s.busy ? 'מסנכרן…' : when ? 'סונכרן לאחרונה ' + when + '. הפרופיל, הסיכומים והמטלות נשמרים ב-Drive.' : 'מסנכרן בפעם הראשונה…')
+      : 'התחבר, והשם, התמונה, הסיכומים והמטלות שלך יישמרו ב-Drive ויחזרו בכל מחשב.';
+    if (!s.connected) {
+      const b = h('<button class="primary"><span data-ic="cloud"></span></button>');
+      b.append(document.createTextNode(s.connecting ? 'ממתין…' : 'התחבר עם Google'));
+      b.disabled = !!s.connecting;
+      b.onclick = () => { driveState.connecting = true; renderDrive(); send({ type: 'driveSync', action: 'connect' }); };
+      row.append(b);
+      if (s.connecting) { const c = h('<button class="ghost small">ביטול</button>'); c.onclick = () => send({ type: 'driveSync', action: 'cancel' }); row.append(c); }
+    } else if (id === 'profileGoogle') {
+      const b = h('<button class="soft small"><span data-ic="refresh"></span>סנכרן עכשיו</button>');
+      b.disabled = !!s.busy;
+      b.onclick = () => { driveState.busy = true; renderDrive(); send({ type: 'driveSync', action: 'now' }); };
+      row.append(b);
+    }
+    box.append(row); icons(box);
+  }
 }
 
 function askDrive() { send({ type: 'driveSync', action: 'state' }); }

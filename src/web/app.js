@@ -1776,8 +1776,10 @@ function renderProfile(st) {
 $('helperPref').onchange = () => send({ type: 'setOption', name: 'helperPref', value: $('helperPref').value });
 $('saveProfile').onclick = () => { send({ type: 'setProfile', name: $('profName').value, bio: $('profBio').value }); $('profileDlg').hidden = true; toast('נשמר'); };
 // The pen on the picture opens the profile: name, short description and picture.
-function openProfile(e) { if (e) { e.stopPropagation(); e.preventDefault(); } renderProfile(S.settings || {}); $('profileDlg').hidden = false; icons($('profileDlg')); setTimeout(() => $('profName').focus(), 50); }
+function openProfile(e) { if (e) { e.stopPropagation(); e.preventDefault(); } renderProfile(S.settings || {}); if (typeof renderDrive === 'function') renderDrive(); $('profileDlg').hidden = false; icons($('profileDlg')); setTimeout(() => $('profName').focus(), 50); }
 $('editProfile').onclick = openProfile;
+// The picture itself opens the profile too: that is where the Google account is connected.
+$('navLogo').onclick = openProfile;
 $('editProfile').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') openProfile(e); };
 $('profileClose').onclick = () => { $('profileDlg').hidden = true; };
 $('profileDlg').onclick = (e) => { if (e.target === $('profileDlg')) $('profileDlg').hidden = true; };
@@ -1841,9 +1843,12 @@ $('themeToggle').onclick = () => {
 
 // ---------- First-run setup ----------
 let wizStep = 0, wizPoll = null;
-// Order: welcome -> Moodle -> pick this semester's courses -> AI -> folders -> done (downloads start in the background).
-const wizArt = ['welcome', 'campus', 'folders', 'ai', 'folders', 'done'];
-const wizNext = ['בוא נתחיל', 'המשך', 'המשך', 'המשך', 'המשך', 'לאפליקציה'];
+// Order: welcome -> Moodle -> pick this semester's courses -> AI -> folders -> Google (macOS) -> done (downloads start in the background).
+const wizArt = ['welcome', 'campus', 'folders', 'ai', 'folders', 'welcome', 'done'];
+const wizNext = ['בוא נתחיל', 'המשך', 'המשך', 'המשך', 'המשך', 'המשך', 'לאפליקציה'];
+// The Google step is shown only where the host can sync (macOS) and the sign-in is set up in this version.
+const WIZ_GOOGLE = 5;
+const wizGoogleOk = () => typeof driveState !== 'undefined' && !!driveState && driveState.configured !== false;
 const LAST = wizNext.length - 1;
 function renderWizardCourses() {
   const box = $('wizCourses'); if (!box) return;
@@ -1866,9 +1871,10 @@ function closeWizard() {
   send({ type: 'finishOnboarding' });
 }
 function goStep(n) {
+  if (n === WIZ_GOOGLE && !wizGoogleOk()) n = wizStep < n ? n + 1 : n - 1;
   wizStep = n;
   document.querySelectorAll('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
-  document.querySelectorAll('#wizDots i').forEach((d, i) => d.classList.toggle('on', i === n));
+  document.querySelectorAll('#wizDots i').forEach((d, i) => { d.classList.toggle('on', i === n); d.hidden = i === WIZ_GOOGLE && !wizGoogleOk(); });
   $('wizArt').innerHTML = ART[wizArt[n]]();
   if (window.mountWizGauntlet) window.mountWizGauntlet($('wizArt'));   // the stones fly into the gauntlet as things get connected
   $('wizNext').textContent = wizNext[n];
@@ -1877,7 +1883,7 @@ function goStep(n) {
   clearInterval(wizPoll);
   if (n === 1 || n === 3) wizPoll = setInterval(() => send({ type: 'checkStatus' }), 5000);
   if (n === 2 && S.moodle === 'ready' && !S.courses) send({ type: 'loadCourses' });
-  renderProviders(); renderWizardMoodle(); renderWizardCourses();
+  renderProviders(); renderWizardMoodle(); renderWizardCourses(); if (n === WIZ_GOOGLE) renderDrive();
 }
 $('wizNext').onclick = () => {
   if (wizStep === 1 && S.moodle !== 'ready') { toast('קודם מתחברים ל-Moodle, ואז ממשיכים'); return; }

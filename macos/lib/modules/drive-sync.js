@@ -20,7 +20,8 @@ const { Str, Dict, IsInside, fileExists, dirExists, mkdirp, readText, writeText,
 const platform = require('../platform');
 const C = require('../constants');
 
-const Scope = 'https://www.googleapis.com/auth/drive.file openid email';
+// openid, email and profile: the name and the picture of the account fill the student's profile when it is still empty.
+const Scope = 'https://www.googleapis.com/auth/drive.file openid email profile';
 const FolderMime = 'application/vnd.google-apps.folder';
 const MaxFile = 100 * 1024 * 1024;           // larger files stay on this computer
 const SimpleUpload = 5 * 1024 * 1024;        // above this, a resumable upload
@@ -30,8 +31,11 @@ const MassDelete = { count: 25, share: 0.3 };
 const SkipDirs = new Set(['.sumit-math', '.git', 'node_modules', '.Trash', '.sumit-sync-tmp']);
 const SkipFile = /^(\.DS_Store|Thumbs\.db|desktop\.ini|~\$.*|\..*\.tmp|.*\.(tmp|partial|crdownload|rendering|part|download|sumit-download))$|^\.~/i;
 const SettingsRel = '.sumit/settings-sync.json';
+const PhotoRel = '.sumit/profile.jpg';   // the profile picture travels next to the settings; settings.photo is its md5
 // Settings that are about the student, not about this computer: never keys, tokens, folders or window places.
 const SettingsSkip = /key|token|secret|password|dir$|root$|path|drive|window|bounds|zoom|lastupdate|install|machine|device|calsync/i;
+// Lists of records that are also about the student: their own tasks.
+const SettingsLists = new Set(['tasks']);
 
 const enc = (s) => encodeURIComponent(s);
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -66,6 +70,14 @@ function ConflictName(rel, when) {
   return stem + ' (מ-Drive ' + two(d.getDate()) + '.' + two(d.getMonth() + 1) + ' ' + two(d.getHours()) + '-' + two(d.getMinutes()) + ')' + ext;
 }
 
+// The name and the picture in Google's id_token (no check of the signature: it came straight from Google's token endpoint over TLS).
+function IdTokenProfile(idToken) {
+  try {
+    const j = JSON.parse(Buffer.from(String(idToken || '').split('.')[1] || '', 'base64').toString('utf8'));
+    return { email: Str(j, 'email'), name: Str(j, 'given_name') || Str(j, 'name'), picture: Str(j, 'picture') };
+  } catch { return { email: '', name: '', picture: '' }; }
+}
+
 // The client secret as Google's console hands it out can be the bare "GOCSPX-..." or the whole downloaded client JSON
 // ({"installed": {"client_secret": ...}}); Google answers invalid_client to anything but the bare secret.
 function ClientSecret(value) {
@@ -80,12 +92,15 @@ function SyncableSettings(settings) {
     if (SettingsSkip.test(k)) continue;
     if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) out[k] = v;
     else if (Array.isArray(v) && v.every(x => ['string', 'number', 'boolean'].includes(typeof x))) out[k] = v.slice();
+    else if (SettingsLists.has(k) && Array.isArray(v)) out[k] = v.filter(x => x && typeof x === 'object' && !Array.isArray(x)).map(x => {
+      const o = {}; for (const [a, b] of Object.entries(x)) if (b === null || ['string', 'number', 'boolean'].includes(typeof b)) o[a] = b; return o;
+    });
   }
   return out;
 }
 
 module.exports = {
-  SyncPlan, ConflictName, SyncableSettings, ClientSecret,
+  SyncPlan, ConflictName, SyncableSettings, ClientSecret, IdTokenProfile,
   methods: {
     DrivePlan(local, remote, base) { return SyncPlan(local, remote, base); },
     DriveConflictName(rel, when) { return ConflictName(rel, when); },
@@ -142,13 +157,27 @@ module.exports = {
         const code = await answer;
         const tok = await this.DriveTokenRequest({ code, client_id: this.DriveClientId, client_secret: this.DriveClientSecret, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: redirect });
         if (!tok.refresh_token) throw new Error('Google לא החזיר הרשאה קבועה. נסה להתחבר שוב.');
-        let email = '';
-        try { email = Str(JSON.parse(Buffer.from(String(tok.id_token || '').split('.')[1] || '', 'base64').toString('utf8')), 'email'); } catch { }
-        this.settings.drive = { refresh: Protect(tok.refresh_token), email, connected: new Date().toISOString(), last: '', root: '' };
+        const who = IdTokenProfile(tok.id_token);
+        this.settings.drive = { refresh: Protect(tok.refresh_token), email: who.email, connected: new Date().toISOString(), last: '', root: '' };
         this.driveAccess = { token: tok.access_token, until: Date.now() + (Number(tok.expires_in) || 3000) * 1000 };
+        await this.DriveFillProfile(who);
         this.SaveSettings();
-        return email;
+        return who.email;
       } finally { clearTimeout(timer); server.close(); this.driveLogin = null; }
+    },
+
+    // The first sign-in fills what the student has not set yet: the name, and the picture of the Google account. Never replaces their own.
+    async DriveFillProfile(who) {
+      let changed = false;
+      if (who.name && !Str(this.settings, 'displayName').trim()) { this.settings.displayName = who.name.trim().slice(0, 40); changed = true; }
+      if (who.picture && /^https:\/\//.test(who.picture) && !fileExists(this.ProfileImageFile)) {
+        try {
+          const res = await fetch(who.picture.replace(/=s\d+(-c)?$/, '=s256-c'));
+          if (res.ok) { this.SetProfileImageBytes(Buffer.from(await res.arrayBuffer())); changed = true; }
+        } catch { }
+      }
+      if (changed && typeof this.SendSettings === 'function') { try { this.SendSettings(); } catch { } }
+      return changed;
     },
 
     async DriveTokenRequest(form) {
@@ -314,6 +343,8 @@ module.exports = {
 
     // The settings that travel: written into the synced folder when they changed here, taken from it when another computer changed them.
     DriveSettingsOut(root) {
+      const photo = fileExists(this.ProfileImageFile) ? md5(fs.readFileSync(this.ProfileImageFile)) : '';
+      if (Str(this.settings, 'photo') !== photo) this.settings.photo = photo;
       const file = path.join(root, SettingsRel), mine = SyncableSettings(this.settings), d = this.settings.drive;
       const sig = JSON.stringify(mine);
       if (d.settingsSig === sig && fileExists(file)) return;
@@ -322,6 +353,8 @@ module.exports = {
       if (cur && d.settingsSig && cur.updated > (d.settingsApplied || '')) return;   // another computer's newer settings wait to be taken in
       const updated = new Date().toISOString();
       mkdirp(path.dirname(file)); writeText(file, JSON.stringify({ updated, settings: mine }, null, 1));
+      const photoFile = path.join(root, PhotoRel);
+      try { if (photo) fs.copyFileSync(this.ProfileImageFile, photoFile); else if (fileExists(photoFile)) fs.unlinkSync(photoFile); } catch { }
       d.settingsSig = sig; d.settingsApplied = updated;   // our own, not something to take in
     },
     DriveSettingsIn(root) {
@@ -329,6 +362,16 @@ module.exports = {
       let cur = null; try { cur = JSON.parse(readText(file)); } catch { return false; }
       if (!cur || !cur.settings || !cur.updated || cur.updated <= (d.settingsApplied || '')) return false;
       for (const [k, v] of Object.entries(SyncableSettings(cur.settings))) this.settings[k] = v;
+      // The picture: the one in the folder when its md5 is the one the settings name, none when they name none.
+      if ('photo' in cur.settings) {
+        const want = Str(cur.settings, 'photo'), photoFile = path.join(root, PhotoRel);
+        const have = fileExists(this.ProfileImageFile) ? md5(fs.readFileSync(this.ProfileImageFile)) : '';
+        try {
+          if (want && want !== have && fileExists(photoFile) && md5(fs.readFileSync(photoFile)) === want) { mkdirp(path.dirname(this.ProfileImageFile)); fs.copyFileSync(photoFile, this.ProfileImageFile); }
+          else if (!want && have) fs.unlinkSync(this.ProfileImageFile);
+        } catch { }
+      }
+      if (Array.isArray(this.settings.tasks) && typeof this.CleanTasks === 'function') this.settings.tasks = this.CleanTasks(this.settings.tasks);
       d.settingsApplied = cur.updated; d.settingsSig = JSON.stringify(SyncableSettings(this.settings));
       return true;
     },

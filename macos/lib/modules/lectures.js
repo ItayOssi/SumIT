@@ -303,12 +303,19 @@ module.exports = {
       this.SendCourseLocal(course);
     },
 
-    get ProfileImageFile() { return path.join(platform.DataRoot, 'profile.jpg'); },
+    get ProfileImageFile() { return this.profileImageFile || path.join(platform.DataRoot, 'profile.jpg'); },
     ProfileImage() { return DataUrlOf(this.ProfileImageFile); },
 
     async PickImage(title) {
       const files = await this.pickFiles(title, [{ name: 'תמונות', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'] }], false);
       return files.length > 0 ? files[0] : null;
+    },
+
+    // A picture that came as bytes (the Google account's): made a 256px square like a picked one.
+    SetProfileImageBytes(buf) {
+      const tmp = path.join(platform.TempDir, 'profile-' + Date.now() + '.img');
+      mkdirp(path.dirname(tmp)); fs.writeFileSync(tmp, buf);
+      try { ImageToJpegBytesPath(tmp, this.ProfileImageFile, 256, 256); } finally { try { fs.unlinkSync(tmp); } catch { } }
     },
 
     async SetProfileImage(clear) {
