@@ -16,9 +16,6 @@
 
   const LIST = [
     // universities
-    { id: 'hit', kind: 'uni', name: 'מכון טכנולוגי חולון', short: 'HIT', domain: 'hit.ac.il', color: '#0b5aa6',
-      moodle: 'https://md.hit.ac.il', portal: 'https://portal.hit.ac.il/', portalHosts: ['portal.hit.ac.il', 'webrashim.hit.ac.il'], verified: true,
-      logos: ['https://he.wikipedia.org/wiki/Special:FilePath/Holon_Institute_of_Technology_logo.svg?width=320'] },
     { id: 'technion', kind: 'uni', name: 'הטכניון', short: 'Technion', domain: 'technion.ac.il', color: '#0a3a7a',
       moodle: 'https://moodle26.technion.ac.il', portal: 'https://cheesefork.cf/', portalName: 'CheeseFork', portalHosts: ['cheesefork.cf', 'students.technion.ac.il'], verified: true,
       logos: ['https://he.wikipedia.org/wiki/Special:FilePath/Technion_logo.svg?width=320'] },
@@ -51,6 +48,9 @@
       logos: ['https://he.wikipedia.org/wiki/Special:FilePath/Logo-greenkiryatshmonaUniversity.svg?width=320', 'https://he.wikipedia.org/wiki/Special:FilePath/TelHaiAcademicCollege.svg?width=320'] },
 
     // academic colleges
+    { id: 'hit', kind: 'college', name: 'מכון טכנולוגי חולון', short: 'HIT', domain: 'hit.ac.il', color: '#0b5aa6',
+      moodle: 'https://md.hit.ac.il', portal: 'https://portal.hit.ac.il/', portalHosts: ['portal.hit.ac.il', 'webrashim.hit.ac.il'], verified: true,
+      logos: ['https://he.wikipedia.org/wiki/Special:FilePath/Holon_Institute_of_Technology_logo.svg?width=320'] },
     { id: 'afeka', kind: 'college', name: 'אפקה – המכללה האקדמית להנדסה', short: 'Afeka', domain: 'afeka.ac.il', color: '#d2232a',
       moodle: 'https://moodle.afeka.ac.il', portal: 'https://yedion.afeka.ac.il/', verified: true,
       logos: ['https://he.wikipedia.org/wiki/Special:FilePath/Afeka_College_of_Engineering_logo.svg?width=320', 'https://www.afeka.ac.il/media/owsb1xq5/logo-1.svg'] },

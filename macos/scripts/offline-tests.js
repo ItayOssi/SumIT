@@ -2465,7 +2465,7 @@ async function runInstitutionTests(app, root, check) {
   check('about thirty institutions, each with its own id', I.LIST.length >= 30 && new Set(ids).size === ids.length);
   check('every institution has a name, a short name, a domain and a colour', I.LIST.every(i => i.name && i.short && /\.ac\.il$/.test(i.domain) && /^#[0-9a-f]{6}$/i.test(i.color)));
   check('every known Moodle and portal address is https', I.LIST.every(i => (i.moodle === '' || /^https:\/\/[^/]+\.[a-z]+(\/[\w-]+)*$/i.test(i.moodle)) && /^https:\/\//.test(i.portal)));
-  check('the universities come first and HIT is the default', I.LIST[0].id === 'hit' && I.DEFAULT === 'hit' && I.LIST.findIndex(i => i.kind === 'college') > I.LIST.filter(i => i.kind === 'uni').length - 1);
+  check('the universities come first, then the colleges with HIT (the default) first among them', I.DEFAULT === 'hit' && I.byId('hit').kind === 'college' && I.LIST.findIndex(i => i.kind === 'college') === I.LIST.filter(i => i.kind === 'uni').length && I.LIST.find(i => i.kind === 'college').id === 'hit');
   check('every institution has the address of its real logo', I.LIST.every(i => Array.isArray(i.logos) && i.logos.length > 0 && i.logos.every(u => /^https:\/\/[^/]+\.[a-z]+\//.test(u))));
   check('the institutions the student named are all there', ['technion', 'tau', 'biu', 'bgu', 'afeka', 'mta'].every(id => I.byId(id)));
 
