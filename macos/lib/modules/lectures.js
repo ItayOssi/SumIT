@@ -8,14 +8,11 @@ const { nativeImage } = require('electron');
 const { Str, Int, SafeName, IsInside, sha256B64, fileExists, dirExists, listFiles, mkdirp, nativeRel } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
+const Inst = require('../institution');
 const { WebView } = require('../webview');
 
-function IsPortalPage(url) {
-  try {
-    const u = new URL(url || '');
-    return u.hostname.toLowerCase() === 'portal.hit.ac.il' || u.hostname.toLowerCase() === 'webrashim.hit.ac.il';
-  } catch { return false; }
-}
+// A page of the student's institution's personal portal (institution.js).
+function IsPortalPage(url) { return Inst.isPortalUrl(url); }
 
 function UniquePathIn(dir, name) {
   let p = path.join(dir, name);

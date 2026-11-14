@@ -137,15 +137,16 @@
     importantDates: [{ date: '2026-12-10', what: 'בוחן אמצע' }, { date: '2027-02-01', what: 'מועד א' }], tips: ['המרצה אוהב לשאול על התכנסות אינטגרלים מוכללים', 'בתרגילים - חובה לנמק כל מעבר'] };
 
   window.DemoEmit = emit;
+  let demoSettings = null;
   window.DemoHost = {
     addEventListener: (t, fn) => listeners.push(fn),
     postMessage: (m) => {
       switch (m.type) {
         case 'ready':
-          emit({ type: 'settings', studyRoot: 'D:\\HIT\\Courses', recordingsDir: 'D:\\HIT\\Zoom Recordings', notabilityDir: '', aiProvider: 'claude', hasGeminiKey: false, onboarded: !location.search.includes('wizard'), userName: 'נועה לוי', version: '2.0.0' });
+          emit(demoSettings = { type: 'settings', institute: 'hit', moodleUrl: '', portalUrl: '', studyRoot: 'D:\\HIT\\Courses', recordingsDir: 'D:\\HIT\\Zoom Recordings', notabilityDir: '', aiProvider: 'claude', hasGeminiKey: false, onboarded: !location.search.includes('wizard'), userName: 'נועה לוי', version: '2.0.0' });
           emit({ type: 'aiStatus', status: ai }, 500);
           emit({ type: 'moodle', state: 'ready' }, 700);
-          emit({ type: 'home', events, name: 'נועה לוי' }, 1100);
+          emit({ type: 'home', events: location.search.includes('empty') ? [] : events, name: 'נועה לוי' }, 1100);
           emit({ type: 'courses', data: courses }, 1300);
           emit({ type: 'job', id: 1, name: 'שיעור 2', state: 'running', status: 'מוריד וידאו · 46% מתוך 273MiB · נשארו 00:14', progress: 46 }, 1400);
           emit({ type: 'job', id: 2, name: 'שיעור 1', state: 'done', status: 'הווידאו והתמלול נשמרו', progress: 100, hasVideo: true, hasTranscript: true }, 1450);
@@ -153,6 +154,10 @@
         case 'loadCourses': emit({ type: 'courses', data: courses }, 600); break;
         case 'coachPing': emit({ type: 'coachReady' }, 300); break;
         case 'ticketPing': emit({ type: 'ticketReady' }, 300); break;
+        // The institution: the choice is kept for the session; logos are not fetched in the demo (the badges stay).
+        case 'setInstitute':
+          demoSettings = Object.assign({}, demoSettings, { institute: m.institute, moodleUrl: m.moodleUrl || '', portalUrl: m.portalUrl || '' });
+          emit(demoSettings, 120); break;
         case 'trackPing': emit({ type: 'trackReady' }, 300); break;
         // The Drive sync card: in the demo nothing reaches Google; "connect" pretends the browser said yes.
         case 'driveSync': {

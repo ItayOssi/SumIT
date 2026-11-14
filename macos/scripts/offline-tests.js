@@ -33,6 +33,7 @@ async function run() {
   const app = new Host(['--demo']);
   app.SaveSettings = () => { }; // Do not overwrite the user's real settings.json during offline tests
   app.LoadSettings();
+  app.settings.institute = 'hit'; delete app.settings.moodleUrl; delete app.settings.portalUrl; app.EnsureInstitute();   // the tests start at HIT, whatever this Mac chose
   const root = path.join(platform.TempDir, 'sumit-regression-' + guidN());
   mkdirp(root);
   app.settings.studyRoot = root;
@@ -254,6 +255,9 @@ async function run() {
 
     // 7. Brain CLI & Second Opinion tests
     await runBrainTests(app, root, check);
+
+    // 7b. Every institution in Israel: the list, the routing, switching, and the logos
+    await runInstitutionTests(app, root, check);
 
     // 8. Summary Share and Study Policy port verification
     const { buildSummaryShare } = require('../lib/modules/summary-share');
@@ -2449,3 +2453,101 @@ async function runCoachTests(app, root, check) {
   app.settings.studyRoot = saved.root;
 }
 
+
+
+async function runInstitutionTests(app, root, check) {
+  const I = require('../../src/web/institutions.js');
+  const Inst = require('../lib/institution');
+  const LogoMod = require('../lib/modules/inst-logos');
+
+  // The list
+  const ids = I.LIST.map(i => i.id);
+  check('about thirty institutions, each with its own id', I.LIST.length >= 30 && new Set(ids).size === ids.length);
+  check('every institution has a name, a short name, a domain and a colour', I.LIST.every(i => i.name && i.short && /\.ac\.il$/.test(i.domain) && /^#[0-9a-f]{6}$/i.test(i.color)));
+  check('every known Moodle and portal address is https', I.LIST.every(i => (i.moodle === '' || /^https:\/\/[^/]+\.[a-z]+(\/[\w-]+)*$/i.test(i.moodle)) && /^https:\/\//.test(i.portal)));
+  check('the universities come first and HIT is the default', I.LIST[0].id === 'hit' && I.DEFAULT === 'hit' && I.LIST.findIndex(i => i.kind === 'college') > I.LIST.filter(i => i.kind === 'uni').length - 1);
+  check('the institutions the student named are all there', ['technion', 'tau', 'biu', 'bgu', 'afeka', 'mta'].every(id => I.byId(id)));
+
+  // A Moodle address the student typed comes back to the root
+  check('a typed Moodle page comes back to its root', I.normalizeMoodle('moodle.example.ac.il/my/') === 'https://moodle.example.ac.il'
+    && I.normalizeMoodle('https://moodle.tau.ac.il/2027/course/view.php?id=4') === 'https://moodle.tau.ac.il/2027'
+    && I.normalizeMoodle('https://x.ac.il/login/index.php') === 'https://x.ac.il');
+  check('a Moodle address that is not https or not a host is refused', I.normalizeMoodle('http://moodle.example.ac.il') === '' && I.normalizeMoodle('javascript:alert(1)') === '' && I.normalizeMoodle('localhost') === '');
+
+  // Which pages are the Moodle and the portal
+  const hit = I.resolve({ institute: 'hit' }), tau = I.resolve({ institute: 'tau' }), huji = I.resolve({ institute: 'huji' });
+  check('HIT\'s Moodle is recognised and a look-alike host is not', I.isMoodleUrl(hit, 'https://md.hit.ac.il/mod/resource/view.php?id=1') && !I.isMoodleUrl(hit, 'https://md.hit.ac.il.evil.com/x') && !I.isMoodleUrl(hit, 'http://md.hit.ac.il/x'));
+  check('a Moodle under a yearly path is only that year', I.isMoodleUrl(tau, 'https://moodle.tau.ac.il/2026/course/view.php?id=1') && !I.isMoodleUrl(tau, 'https://moodle.tau.ac.il/2025/course/view.php?id=1') && !I.isMoodleUrl(tau, 'https://moodle.tau.ac.il/20260/x'));
+  check('an address that redirects to the Moodle counts as the same Moodle', I.isMoodleUrl(huji, 'https://moodle.huji.ac.il/') && I.isMoodleUrl(huji, 'https://moodle4.cs.huji.ac.il/hu26/my/'));
+  check('the portal of each institution is its own', I.isPortalUrl(hit, 'https://webrashim.hit.ac.il/Portals/student/schedule') && I.isPortalUrl(I.resolve({ institute: 'technion' }), 'https://cheesefork.cf/') && !I.isPortalUrl(tau, 'https://portal.hit.ac.il/'));
+  check('an unknown institution falls back to HIT', I.resolve({ institute: 'nope' }).id === 'hit');
+  check('the student\'s own addresses come before the list\'s', (() => {
+    const r = I.resolve({ institute: 'tau', moodleUrl: 'https://moodle.tau.ac.il/2027/my/', portalUrl: 'http://bad' });
+    return r.moodle === 'https://moodle.tau.ac.il/2027' && r.portal === 'https://my.tau.ac.il/' && I.isMoodleUrl(r, 'https://moodle.tau.ac.il/2027/x') && !I.isMoodleUrl(r, 'https://moodle.tau.ac.il/2026/x');
+  })());
+  check('the name reads right after the Hebrew ב', I.resolve({ institute: 'technion' }).inName === 'טכניון' && I.resolve({ institute: 'huji' }).inName === 'אוניברסיטה העברית' && hit.inName === '-HIT' && tau.inName === 'אוניברסיטת תל אביב');
+  check('search finds a name written with a space instead of a hyphen, and English names', I.search('בר אילן').some(i => i.id === 'biu') && I.search('afeka')[0].id === 'afeka' && I.search('zzz').length === 0);
+  check('the initials badge has up to four letters', I.initials(I.byId('technion')) === 'TEC' && I.initials(I.byId('tau')) === 'TAU');
+
+  // The host follows the institution
+  const saved = { settings: JSON.parse(JSON.stringify(app.settings)), Toast: app.Toast, SendSettings: app.SendSettings, DefaultStudyRoot: app.DefaultStudyRoot, moodle: app.moodle, lastCourses: app.lastCourses };
+  const toasts = []; app.Toast = (t) => toasts.push(t); app.SendSettings = () => { };
+  app.moodle = { navigate: () => { } };
+  delete app.settings.institute; app.EnsureInstitute();
+  check('a student from before this version stays at HIT', app.settings.institute === 'hit' && Inst.current.id === 'hit' && app.IsMoodleUrl('https://md.hit.ac.il/my/'));
+
+  // The default folder: a fresh one moves with the institution, one with work in it stays.
+  const docs = path.join(root, 'docs-inst');
+  const { Host } = require('../lib/host');
+  app.DefaultStudyRoot = (hasD, _d, inst) => Host.prototype.DefaultStudyRoot.call(Object.assign(Object.create(app), { HitOneDrive: () => '' }), hasD, docs, inst);
+  app.settings.studyRoot = path.join(docs, 'HIT', 'קורסים');
+  app.settings.recordingsDir = path.join(docs, 'HIT', 'הקלטות');
+  app.lastCourses = [{ id: 1 }];
+  app.SetInstitute({ institute: 'tau' });
+  check('switching moves an empty default folder to the new institution\'s name', app.settings.institute === 'tau' && app.StudyRoot === path.join(docs, 'TAU', 'קורסים') && app.RecordingsDir === path.join(docs, 'TAU', 'הקלטות'));
+  check('switching Moodle forgets the old courses and follows the new Moodle', app.lastCourses === null && !app.IsMoodleUrl('https://md.hit.ac.il/my/') && app.IsMoodleUrl('https://moodle.tau.ac.il/2026/my/'));
+  mkdirp(path.join(docs, 'TAU', 'קורסים', 'חדו"א'));
+  app.SetInstitute({ institute: 'technion' });
+  check('a folder with courses in it stays where it is', app.settings.institute === 'technion' && app.StudyRoot === path.join(docs, 'TAU', 'קורסים'));
+  app.SetInstitute({ institute: 'technion', moodleUrl: 'not a url at all' });
+  check('a bad Moodle address is refused with a message and changes nothing', toasts.length === 1 && Inst.current.moodle === 'https://moodle26.technion.ac.il');
+  app.SetInstitute({ institute: 'technion', moodleUrl: 'https://moodle27.technion.ac.il/my/' });
+  check('the student can move to next year\'s Moodle', app.settings.moodleUrl === 'https://moodle27.technion.ac.il' && app.IsMoodleUrl('https://moodle27.technion.ac.il/course/view.php?id=2'));
+  app.SetInstitute({ institute: 'technion', moodleUrl: 'https://moodle26.technion.ac.il' });
+  check('typing the list\'s own address keeps no override', app.settings.moodleUrl === '');
+  app.SetInstitute({ institute: 'atlantis' });
+  check('an unknown institution is ignored', app.settings.institute === 'technion');
+  app.SetInstitute({ institute: 'ono' });
+  let moodleError = '';
+  const realReady = app.MoodleReady; app.MoodleReady = async () => false; app.SendMoodle = app.SendMoodle || (() => { });
+  try { await app.EnsureMoodle(false); } catch (e) { moodleError = e.message; }
+  app.MoodleReady = realReady;
+  check('an institution without a known Moodle asks for its address instead of opening a page', /כתובת ה-Moodle/.test(moodleError) && /אונו/.test(moodleError));
+  check('the login text names the institution', /הקריה האקדמית אונו/.test(app.LoginHints().moodle));
+
+  // Logos: the icons a page offers, best first; the type is checked; a logo is kept and read back.
+  const cands = LogoMod.IconCandidates('<link rel="icon" href="/f16.png" sizes="16x16"><link rel="apple-touch-icon" href="/apple.png"><link rel="icon" href="http://x/insecure.png"><link rel="mask-icon" href="/m.svg"><link rel="icon" href="/logo.svg" type="image/svg+xml">', 'https://www.example.ac.il/');
+  check('the apple-touch-icon comes first, then SVG, then small icons and /favicon.ico; no http or mask icons', JSON.stringify(cands) === JSON.stringify(['https://www.example.ac.il/apple.png', 'https://www.example.ac.il/logo.svg', 'https://www.example.ac.il/f16.png', 'https://www.example.ac.il/favicon.ico']));
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(120)]);
+  check('an image type is sniffed when the server does not say it, and HTML is refused', LogoMod.MimeOf('application/octet-stream', png, 'x') === 'image/png' && LogoMod.MimeOf('text/html', Buffer.from('<html>hello</html>'), 'x') === '');
+  app.instLogoDir = path.join(root, 'inst-logos');
+  const asked = [];
+  const fakeFetch = async (url) => {
+    asked.push(url);
+    if (/apple\.png$/.test(url)) return { url, ok: true, headers: { get: () => 'image/png' }, arrayBuffer: async () => png, text: async () => '' };
+    if (/www\.tau\.ac\.il\/$/.test(url)) return { url, ok: true, headers: { get: () => 'text/html' }, text: async () => '<link rel="apple-touch-icon" href="/apple.png">' };
+    throw new Error('offline');
+  };
+  const src = await app.InstLogoFetch(I.byId('tau'), fakeFetch);
+  check('a logo is read from the institution\'s own site and kept', src.startsWith('data:image/png;base64,') && asked[0] === 'https://www.tau.ac.il/' && app.InstLogoCached('tau').src === src);
+  const none = await app.InstLogoFetch(I.byId('bgu'), async () => { throw new Error('offline'); });
+  check('without a network there is no logo, and the site is not asked again for a day', none === '' && app.InstLogoCached('bgu').none === true && app.InstLogoCached('bgu', Date.now() + 2 * 86400000) === null);
+  const sent = []; const realSend = app.Send; app.Send = (m) => sent.push(m);
+  app.SendInstLogos({ ids: ['tau', 'evil/../x', 'bgu'] });
+  app.Send = realSend;
+  check('the page gets the kept logos at once, and unknown ids are ignored', sent.length === 1 && sent[0].type === 'instLogo' && sent[0].id === 'tau');
+
+  // Back to how the other tests expect it.
+  app.settings = saved.settings; app.Toast = saved.Toast; app.SendSettings = saved.SendSettings; app.DefaultStudyRoot = saved.DefaultStudyRoot; app.moodle = saved.moodle; app.lastCourses = saved.lastCourses;
+  app.settings.institute = 'hit'; delete app.settings.moodleUrl; app.EnsureInstitute();
+}

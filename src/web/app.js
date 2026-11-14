@@ -259,7 +259,7 @@ function renderStatus() {
   renderWizardMoodle();
 }
 $('moodlePill').onclick = () => { if (S.moodle === 'ready') toast('Moodle מחובר ✓'); else connectMoodle(); };
-$('aiPill').onclick = () => { if (S.ai && S.ai.ready) toast(aiName() + ' מחובר ✓'); else openWizard(1); };
+$('aiPill').onclick = () => { if (S.ai && S.ai.ready) toast(aiName() + ' מחובר ✓'); else openWizard(WIZ_AI); };
 $('moodleConnect').onclick = connectMoodle;
 function connectMoodle() { S.moodle = 'connecting'; renderStatus(); send({ type: 'connectMoodle' }); }
 
@@ -272,7 +272,7 @@ function renderBanners() {
     const notice = bannerEl(`גרסה חדשה זמינה: ${esc(S.update.version)}`, S.update.canAuto ? 'הורד והתקן בסגירה' : 'להורדה', () => S.update.canAuto ? send({ type: 'installUpdate' }) : send({ type: 'openLink', url: S.update.url }));
     const later = h('<button class="small ghost">לא עכשיו</button>'); later.onclick = () => { S.dismissedUpdate = S.update.version; renderBanners(); }; notice.append(later); b.append(notice);
   }
-  if (S.ai && !S.ai.ready && !S.ai.setup) b.append(bannerEl('חבר את המנוע החכם כדי לסכם שיעורים ולשאול שאלות', 'חבר עכשיו', () => openWizard(1), 'warn'));
+  if (S.ai && !S.ai.ready && !S.ai.setup) b.append(bannerEl('חבר את המנוע החכם כדי לסכם שיעורים ולשאול שאלות', 'חבר עכשיו', () => openWizard(WIZ_AI), 'warn'));
   if (S.moodle === 'login' && !(S.courses && S.courses.length)) b.append(bannerEl('צריך להתחבר ל-Moodle כדי לראות את הקורסים', 'התחבר', connectMoodle, 'warn'));
   else if (S.moodle === 'login') b.append(bannerEl('אין חיבור ל-Moodle כרגע. הקורסים והחומר שכבר הורדת פתוחים כרגיל', 'נסה שוב', () => send({ type: 'loadCourses' })));
 }
@@ -705,7 +705,7 @@ function renderHome() {
   if (S.events == null && !ev.length) {
     for (let i = 0; i < 4; i++) box.append(h('<div class="deadline"><div class="cal skeleton"></div><div class="info"><div class="skeleton" style="height:12px;width:60%"></div><div class="skeleton" style="height:10px;width:40%;margin-top:8px"></div></div></div>'));
   } else if (!ev.length) {
-    box.append(h(`<div class="empty" style="border:none;padding:16px">${ART.calendar().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>אין מטלות פתוחות בשבועות הקרובים.</div>`));
+    box.append(h(`<div class="empty all-clear-box" style="border:none;padding:16px">${ART.allClear().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>אין מטלות פתוחות בשבועות הקרובים.</div>`));
   } else {
     ev.slice(0, 7).forEach((e, i) => {
       const d = new Date(e.when * 1000);
@@ -1796,7 +1796,8 @@ function renderSettings() {
   $('wizStudy').textContent = st.studyRoot;
   // First run: the best place for the files is the OneDrive of HIT (up to 1TB for every student), so everything is also saved in the cloud.
   const od = $('wizOneDrive');
-  if (od) {
+  if (od && typeof instCurrent === 'function' && !instCurrent().isHit) od.innerHTML = '';   // HIT's OneDrive is for HIT students
+  else if (od) {
     od.innerHTML = '';
     if (st.hitOneDrive && st.studyInHitOneDrive) od.append(h('<div class="check-row ok"><div class="ci" data-ic="check"></div><div class="grow"><b>OneDrive של HIT <span class="chip ok">מומלץ</span></b><small>מצאתי אותו, והחומר יישמר שם. יש לך שם עד 1TB, הכל מגובה בענן וזמין מכל מחשב.</small></div></div>'));
     else if (st.hitOneDrive) {
@@ -1843,11 +1844,12 @@ $('themeToggle').onclick = () => {
 
 // ---------- First-run setup ----------
 let wizStep = 0, wizPoll = null;
-// Order: welcome -> Moodle -> pick this semester's courses -> AI -> folders -> Google (macOS) -> done (downloads start in the background).
-const wizArt = ['welcome', 'campus', 'folders', 'ai', 'folders', 'welcome', 'done'];
-const wizNext = ['בוא נתחיל', 'המשך', 'המשך', 'המשך', 'המשך', 'המשך', 'לאפליקציה'];
+// Order: welcome -> institution -> Moodle -> pick this semester's courses -> AI -> folders -> Google (macOS) -> done (downloads start in the background).
+const wizArt = ['welcome', 'campus', 'campus', 'folders', 'ai', 'folders', 'welcome', 'done'];
+const wizNext = ['בוא נתחיל', 'המשך', 'המשך', 'המשך', 'המשך', 'המשך', 'המשך', 'לאפליקציה'];
+const WIZ_INST = 1, WIZ_MOODLE = 2, WIZ_COURSES = 3, WIZ_AI = 4;
 // The Google step is shown only where the host can sync (macOS) and the sign-in is set up in this version.
-const WIZ_GOOGLE = 5;
+const WIZ_GOOGLE = 6;
 const wizGoogleOk = () => typeof driveState !== 'undefined' && !!driveState && driveState.configured !== false;
 const LAST = wizNext.length - 1;
 function renderWizardCourses() {
@@ -1881,13 +1883,15 @@ function goStep(n) {
   $('wizBack').hidden = n === 0 || n === LAST;
   $('wizSkip').hidden = n === LAST;
   clearInterval(wizPoll);
-  if (n === 1 || n === 3) wizPoll = setInterval(() => send({ type: 'checkStatus' }), 5000);
-  if (n === 2 && S.moodle === 'ready' && !S.courses) send({ type: 'loadCourses' });
+  if (n === WIZ_MOODLE || n === WIZ_AI) wizPoll = setInterval(() => send({ type: 'checkStatus' }), 5000);
+  if (n === WIZ_COURSES && S.moodle === 'ready' && !S.courses) send({ type: 'loadCourses' });
   renderProviders(); renderWizardMoodle(); renderWizardCourses(); if (n === WIZ_GOOGLE) renderDrive();
+  if (n === WIZ_INST && typeof renderWizardInstitute === 'function') renderWizardInstitute();
 }
 $('wizNext').onclick = () => {
-  if (wizStep === 1 && S.moodle !== 'ready') { toast('קודם מתחברים ל-Moodle, ואז ממשיכים'); return; }
-  if (wizStep === 3 && !(S.ai && S.ai.ready)) toast('אפשר לחבר את המנוע החכם גם אחר כך, מהסטטוס בצד', { ms: 3500 });
+  if (wizStep === WIZ_INST && typeof instCurrent === 'function' && !instCurrent().moodle) { toast('קודם הוסף את כתובת ה-Moodle של המוסד, ואז ממשיכים'); return; }
+  if (wizStep === WIZ_MOODLE && S.moodle !== 'ready') { toast('קודם מתחברים ל-Moodle, ואז ממשיכים'); return; }
+  if (wizStep === WIZ_AI && !(S.ai && S.ai.ready)) toast('אפשר לחבר את המנוע החכם גם אחר כך, מהסטטוס בצד', { ms: 3500 });
   if (wizStep >= LAST) {
     // Start downloading the chosen courses in the background.
     const picked = (S.courses || []).filter(c => S.wizPick && S.wizPick.has(c.id)).map(c => ({ id: c.id, name: c.name }));
@@ -1903,7 +1907,7 @@ function renderWizardMoodle() {
   const ok = S.moodle === 'ready';
   $('wizMoodle').classList.toggle('ok', ok);
   $('wizMoodleTitle').textContent = ok ? `מחובר${S.userName ? ' · ' + S.userName : ''}` : S.moodle === 'connecting' ? 'מתחבר...' : 'עוד לא מחובר';
-  $('wizMoodleSub').textContent = ok ? 'ההתחברות ל-Moodle הושלמה, ואפשר להמשיך.' : 'לחץ על "התחבר". חלון ההתחברות של HIT ייפתח כאן באפליקציה.';
+  $('wizMoodleSub').textContent = ok ? 'ההתחברות ל-Moodle הושלמה, ואפשר להמשיך.' : 'לחץ על "התחבר". חלון ההתחברות של ' + (typeof instShortName === 'function' ? instShortName() : 'HIT') + ' ייפתח כאן באפליקציה.';
   $('wizMoodleBtn').hidden = ok;
 }
 
@@ -1944,6 +1948,7 @@ function onMessage(m) {
       if (S.view === 'tasks') renderTasks($('tasksPage'), false); renderHome();
       if (m.userName) S.userName = m.userName;
       renderSettings(); renderStatus();
+      if (typeof applyInstitute === 'function') applyInstitute();
       if (!m.onboarded && $('wizard').hidden) openWizard(0);
       maybeHideSplash();
       break;
@@ -1955,7 +1960,7 @@ function onMessage(m) {
       // Moodle is unreachable or signed out: the courses saved on this computer still open (offline).
       else if (m.state !== 'ready' && m.state !== 'connecting' && !S.courses && !S.askedSavedCourses) { S.askedSavedCourses = true; send({ type: 'loadCourses', cachedOnly: true }); }
       if (!$('wizard').hidden) renderWizardCourses();
-      if (m.state === 'login' && S.view === 'courses' && !S.courses) { $('courses').innerHTML = ''; $('coursesState').innerHTML = ''; $('coursesState').append(h(`<div class="empty">${ART.campus().replace('<svg', '<svg class="art" style="width:220px;height:130px"')}<b>צריך להתחבר ל-Moodle</b>מתחברים פעם אחת עם המשתמש של HIT.<div class="row"><button class="primary" id="cm">התחבר</button></div></div>`)); $('cm').onclick = connectMoodle; }
+      if (m.state === 'login' && S.view === 'courses' && !S.courses) { $('courses').innerHTML = ''; $('coursesState').innerHTML = ''; $('coursesState').append(h(`<div class="empty">${ART.campus().replace('<svg', '<svg class="art" style="width:220px;height:130px"')}<b>צריך להתחבר ל-Moodle</b>מתחברים פעם אחת עם המשתמש של ${esc(typeof instShortName === 'function' ? instShortName() : 'HIT')}.<div class="row"><button class="primary" id="cm">התחבר</button></div></div>`)); $('cm').onclick = connectMoodle; }
       if (S.view === 'home') renderHome();
       break;
     case 'home': S.events = m.events || []; if (m.name) S.userName = m.name; renderHome(); renderWizardMoodle(); renderProfile(S.settings); break;
@@ -2136,6 +2141,7 @@ function onMessage(m) {
     case 'driveSync': if (typeof driveEvent === 'function') driveEvent(m); break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'ticketReady': case 'ticketOpen': ticketEvent(m); break;
+    case 'instLogo': if (typeof instLogoArrived === 'function') instLogoArrived(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
@@ -2244,7 +2250,7 @@ else start();
 function lectureSource(num, siteName, kind) {
   const base = `הרצאות\\הרצאה ${num}`;
   setSaveTarget(S.course.name, kind === 'homework' ? base + '\\תרגילים' : base);
-  openSite(siteName, siteName === 'moodle' ? `https://md.hit.ac.il/course/view.php?id=${S.course.id}` : undefined);
+  openSite(siteName, siteName === 'moodle' ? `${instCurrent().moodle}/course/view.php?id=${S.course.id}` : undefined);
   toast(kind === 'homework' ? `קבצים שתשמור כאן ייכנסו לשיעורי הבית של הרצאה ${num}. חשוב לשמור גם את הפתרונות` : `קבצים שתשמור כאן ייכנסו להרצאה ${num}`, { ms: 5000 });
 }
 function lectureSourceOld(num, siteName) {
@@ -2252,7 +2258,7 @@ function lectureSourceOld(num, siteName) {
   const folder = `הרצאות\\הרצאה ${num}`;
   if (![...$('dlFolder').options].some(o => o.value === folder)) $('dlFolder').add(new Option(`הרצאה ${num}`, folder));
   $('dlFolder').value = folder; syncDownloadTarget();
-  openSite(siteName, siteName === 'moodle' ? `https://md.hit.ac.il/course/view.php?id=${S.course.id}` : undefined);
+  openSite(siteName, siteName === 'moodle' ? `${instCurrent().moodle}/course/view.php?id=${S.course.id}` : undefined);
 }
 function lectureEditor(existing) {
   const form = h(`<form class="card pad-lg lecture-editor"><h3>${existing ? 'פרטי הרצאה' : 'צור הרצאה'}</h3><p class="muted">בחר חומר להרצאה אחת. לסיכום יצורף הידע הרלוונטי מההרצאות הקודמות. תאריך הגשה מזינים רק לפי הנחיית המרצה.</p><div class="row wrap"><label>מספר <input name="num" type="number" min="1" max="200" required></label><label>כותרת <input name="title" placeholder="נושא ההרצאה"></label><label>תאריך הרצאה <input name="date" type="date"></label><label>מועד הגשה (אם ידוע) <input name="due" type="date"></label><button class="primary">${existing ? 'שמור' : 'צור תיקיית הרצאה'}</button></div></form>`);
@@ -2340,6 +2346,8 @@ function lectureCalendarEditor() {
       <div class="chips" data-hlist style="margin-top:8px"></div></div>
     <button class="soft">שמור</button></form></details>`);
   const form = box.querySelector('form');
+  // The semester dates are read from HIT's own calendar page; other institutions type them.
+  if (typeof instCurrent === 'function' && !instCurrent().isHit) form.querySelector('[data-readcal]').parentElement.hidden = true;
   // Dates read from HIT's calendar page fill in what the student didn't enter yet.
   const ac = S.academic && S.academic.semesterStart ? S.academic : null;
   const expand = (list) => { const out = []; (list || []).forEach(x => { const d = new Date(x.from + 'T12:00:00'), e = new Date((x.to || x.from) + 'T12:00:00'); for (let n = 0; d <= e && n < 60; n++, d.setDate(d.getDate() + 1)) out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); }); return out; };

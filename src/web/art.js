@@ -137,6 +137,25 @@ const ART = {
     <g class="float"><circle cx="96" cy="62" r="20" fill="var(--surface)" stroke="var(--accent)" stroke-width="6"/><path d="M110 77l16 16" stroke="var(--accent)" stroke-width="8" stroke-linecap="round"/></g>
   </svg>`,
 
+  // Nothing waiting: a clipboard whose three rows tick themselves off, one after another, next to a steaming mug.
+  allClear: () => `<svg viewBox="0 0 170 120" fill="none" role="img" aria-label="אין מטלות פתוחות"><g class="all-clear">
+    <ellipse cx="85" cy="112" rx="58" ry="5" fill="rgba(0,0,0,.12)"/>
+    <g class="float">
+      <rect x="40" y="16" width="72" height="90" rx="11" fill="var(--surface)" stroke="var(--border)" stroke-width="3"/>
+      <rect x="61" y="9" width="30" height="13" rx="6" fill="var(--accent)"/>
+      ${[38, 60, 82].map((y, i) => `<rect x="52" y="${y}" width="13" height="13" rx="3.5" stroke="var(--accent)" stroke-width="2.5"/>
+      <path class="ac-chk d${i + 1}" d="M54.5 ${y + 6.5}l3.5 3.5 7-8" stroke="var(--ok)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect class="ac-line d${i + 1}" x="71" y="${y + 3.5}" width="${[30, 24, 28][i]}" height="6" rx="3" fill="var(--border)"/>`).join('')}
+    </g>
+    <g transform="translate(120 74)">
+      <path d="M0 4h26v18a8 8 0 0 1-8 8h-10a8 8 0 0 1-8-8z" fill="var(--surface)" stroke="var(--border)" stroke-width="3"/>
+      <path d="M26 9h3a5.5 5.5 0 0 1 0 11h-3" stroke="var(--border)" stroke-width="3"/>
+      <g class="steam" stroke="var(--muted)" stroke-width="2.4" stroke-linecap="round" opacity=".7"><path d="M8-4c-3-4 3-6 0-10"/><path d="M17-4c-3-4 3-6 0-10"/></g>
+    </g>
+    <path class="twinkle" d="M24 30l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="var(--accent-2)"/>
+    <path class="twinkle d2" d="M146 34l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="var(--warn, #f5b84b)"/>
+  </g></svg>`,
+
   calendar: () => `<svg viewBox="0 0 150 110" fill="none">
     <g class="float"><rect x="35" y="20" width="80" height="74" rx="12" fill="var(--surface)" stroke="var(--border)" stroke-width="3"/><path d="M35 40h80" stroke="var(--accent)" stroke-width="12"/>
       <path d="M58 64l10 10 20-20" stroke="var(--ok)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></g>

@@ -11,6 +11,7 @@ const {
 } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
+const Inst = require('../institution');
 
 const TimetableExt = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.html', '.htm', '.txt']);
 
@@ -432,7 +433,7 @@ module.exports = {
         }
         if (!this.AiReadyOrSay(t => { this.Toast(t, true); this.Send({ type: 'timetableStatus', busy: false, text: '' }); })) return;
         await this.EnsurePython(() => { });
-        const prompt = 'בתיקייה הזו יש קבצים שנשמרו מפורטל HIT: מערכת שעות (תצוגת יומן עם תאריכים - ייתכנו בה חגים וימי חופשה) ו/או לוח בחינות. קרא את כולם (PDF או תמונה; אפשר להמיר PDF לתמונה עם Python ו-pymupdf). התאריך היום: ' + formatDate(new Date(), 'yyyy-MM-dd') + '.\n'
+        const prompt = 'בתיקייה הזו יש קבצים שנשמרו מהפורטל של ' + Inst.current.name + ': מערכת שעות (תצוגת יומן עם תאריכים - ייתכנו בה חגים וימי חופשה) ו/או לוח בחינות. קרא את כולם (PDF או תמונה; אפשר להמיר PDF לתמונה עם Python ו-pymupdf). התאריך היום: ' + formatDate(new Date(), 'yyyy-MM-dd') + '.\n'
           + 'כתוב את הקובץ timetable.json בתיקייה הזו, JSON תקין במבנה:\n'
           + '{"semester":"","classes":[{"day":"ראשון|שני|שלישי|רביעי|חמישי|שישי","start":"HH:MM","end":"HH:MM","course":"","kind":"הרצאה|תרגול|מעבדה","lecturer":"","room":""}],'
           + '"exams":[{"course":"","moed":"א|ב|ג","date":"YYYY-MM-DD","time":"HH:MM","room":""}]}\n'
@@ -1089,7 +1090,7 @@ module.exports = {
         focus = '\nזה אימון למבחן. השתמש במבחנים ובפתרונות ב-"' + C.Exams + '" וב-"' + C.LecturerProfile + '". תן שאלה אחת בכל פעם בסגנון של המרצה, חכה לתשובה של הסטודנט, בדוק אותה כמו שהמרצה היה בודק, והסבר את הטעויות.';
       }
 
-      const system = 'אתה עוזר לימוד אישי של סטודנט ב-HIT. ' + this.CourseContext(course) + focus
+      const system = 'אתה עוזר לימוד אישי של סטודנט ב' + Inst.current.inName + '. ' + this.CourseContext(course) + focus
         + '\nכתוב נוסחאות ב-LaTeX בתוך $ או $$, קוד בתוך backticks. אל תהפוך סדר אותיות בעברית או מספרים. התחל מדף הלימוד הקיים וקרא מקורות נוספים רק לשאלה הנוכחית. ענה בעברית, קצר וברור, בסגנון של המרצה.'
         + ' אם חסר לך חומר (למשל הקלטה, מבחנים קודמים או דף תרגיל), אמור לסטודנט בדיוק מה חסר ומאיפה להביא אותו (Moodle, CS24, כפתור הוסף הקלטה בשיעור).'
         + ' בשיעורי בית: תן קודם רמז וכיוון והסבר את השיטה; פתרון מלא רק אם הסטודנט מבקש.'

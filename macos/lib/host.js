@@ -10,6 +10,7 @@ const util = require('./util');
 const { Str, Bool, Int, Dict, Arr, Trunc, IsInside, SafeName, delay, killTree, mkdirp, fileExists, dirExists, sha256Hex } = util;
 const platform = require('./platform');
 const C = require('./constants');
+const Inst = require('./institution');
 const { WebView } = require('./webview');
 
 const UI_ORIGIN = 'https://app.local/';
@@ -118,8 +119,9 @@ class Host {
     const fill = (w, h) => ({ x: 0, y: 0, width: w, height: h });
     // Detached from the window while hidden, so the dashboard underneath gets every click.
     this.addPanel('site', [[this.site, (w, h) => this.siteRect(w, h)]], false, true);
-    this.addPanel('moodle', this.loginPanel(this.moodle, 'התחבר עם שם המשתמש והסיסמה של HIT. זה קורה פעם אחת בלבד.', () => { this.moodleCancelled = true; this.bringToFront('ui'); }));
-    this.addPanel('zoom', this.loginPanel(this.zoom, 'התחבר ל-Zoom עם המשתמש של HIT. זה קורה פעם אחת, וההורדה תמשיך לבד.', () => { if (this.working) this.zoomCancelled = true; this.bringToFront('ui'); }));
+    const hints = this.LoginHints();
+    this.addPanel('moodle', this.loginPanel(this.moodle, hints.moodle, () => { this.moodleCancelled = true; this.bringToFront('ui'); }));
+    this.addPanel('zoom', this.loginPanel(this.zoom, hints.zoom, () => { if (this.working) this.zoomCancelled = true; this.bringToFront('ui'); }));
     this.addPanel('cs24', [[this.cs24View, fill]]);
     this.addPanel('print', [[this.printView, fill]]);
     this.addPanel('ui', [[this.ui, fill]]);
@@ -133,6 +135,8 @@ class Host {
   loginPanel(view, hint, back) {
     const bar = new WebView(view.name + '-bar', { session: this.uiSession, preload: path.join(__dirname, '..', 'preload-bar.js'), background: '#1F64D8' });
     bar.wc.loadFile(path.join(platform.PagesDir, 'loginbar.html'), { query: { hint } });
+    this.loginBars = this.loginBars || new Map();
+    this.loginBars.set(view.name, bar);
     this.barHandlers = this.barHandlers || new Map();
     this.barHandlers.set(bar.wc.id, back);
     if (!this._barIpc) {
@@ -323,6 +327,7 @@ class Host {
       if (fileExists(platform.SettingsFile))
         Object.assign(this.settings, JSON.parse(util.readText(platform.SettingsFile)));
     } catch { }
+    this.EnsureInstitute();
     const docs = platform.Documents;
     if (Str(this.settings, 'studyRoot').length === 0) this.settings.studyRoot = this.DefaultStudyRoot(platform.hasSecondDisk(), docs);
     if (Str(this.settings, 'recordingsDir').length === 0)
@@ -336,9 +341,64 @@ class Host {
   }
 
   // "HIT/קורסים" inside the student's HIT OneDrive when there is one, so the courses are backed up and follow them; otherwise in Documents.
-  DefaultStudyRoot(hasD, docs) {
+  // Other institutions: "<short name>/קורסים" in Documents (TAU/קורסים, Technion/קורסים).
+  DefaultStudyRoot(hasD, docs, inst = Inst.current) {
+    if (!inst.isHit) return path.join(docs, inst.short, 'קורסים');
     const od = this.HitOneDrive();
     return od.length > 0 ? path.join(od, 'HIT', 'קורסים') : path.join(docs, 'HIT', 'קורסים');
+  }
+
+  // Changes the institution (and the student's own Moodle / portal address, '' = the institution's).
+  // A study folder that is still the old institution's empty default moves to the new one's; folders with work in them stay.
+  SetInstitute(m) {
+    const id = Str(m, 'institute');
+    if (!Inst.I.byId(id)) return;
+    const before = Inst.current;
+    const rawMoodle = Str(m, 'moodleUrl').trim();
+    const moodleUrl = rawMoodle ? Inst.I.normalizeMoodle(rawMoodle) : '';
+    if (rawMoodle && !moodleUrl) { this.Toast('כתובת ה-Moodle לא נראית תקינה. היא צריכה להתחיל ב-https://', true); return; }
+    const rawPortal = Str(m, 'portalUrl').trim();
+    if (rawPortal && !/^https:\/\/[^\s/]+\.[^\s]+$/i.test(rawPortal)) { this.Toast('כתובת הפורטל לא נראית תקינה. היא צריכה להתחיל ב-https://', true); return; }
+    const oldDefault = this.DefaultStudyRoot(platform.hasSecondDisk(), platform.Documents, before);
+    this.settings.institute = id;
+    this.settings.moodleUrl = moodleUrl && moodleUrl !== Inst.I.byId(id).moodle ? moodleUrl : '';
+    this.settings.portalUrl = rawPortal && rawPortal !== Inst.I.byId(id).portal ? rawPortal : '';
+    const now = Inst.set(this.settings);
+    const emptyDir = d => { try { return !fs.existsSync(d) || fs.readdirSync(d).filter(n => !n.startsWith('.')).length === 0; } catch { return false; } };
+    if (now.id !== before.id && this.StudyRoot === oldDefault && emptyDir(oldDefault)) {
+      this.settings.studyRoot = this.DefaultStudyRoot(platform.hasSecondDisk(), platform.Documents, now);
+      const oldRec = path.join(path.dirname(oldDefault), 'הקלטות');
+      if (this.RecordingsDir === oldRec && emptyDir(oldRec)) this.settings.recordingsDir = path.join(path.dirname(this.settings.studyRoot), 'הקלטות');
+    }
+    this.SaveSettings();
+    if (now.moodle !== before.moodle) {
+      // Another Moodle: the courses of the old one are not this student's courses there.
+      this.lastCourses = null; this.coursesFresh = false;
+      try { this.moodle.navigate('about:blank'); } catch { }
+    }
+    this.RefreshLoginHints();
+    this.SendSettings();
+  }
+
+  // Before 1.0.50 the app was for HIT only: anyone without a saved institution stays at HIT.
+  EnsureInstitute() {
+    if (!Inst.I.byId(Str(this.settings, 'institute'))) this.settings.institute = Inst.I.DEFAULT;
+    return Inst.set(this.settings);
+  }
+
+  LoginHints() {
+    const n = Inst.current.isHit ? 'HIT' : Inst.current.name;
+    return {
+      moodle: 'התחבר ל-Moodle עם שם המשתמש והסיסמה של ' + n + '. זה קורה פעם אחת בלבד.',
+      zoom: 'התחבר ל-Zoom עם המשתמש של ' + n + '. זה קורה פעם אחת, וההורדה תמשיך לבד.',
+    };
+  }
+
+  RefreshLoginHints() {
+    const hints = this.LoginHints();
+    for (const [name, bar] of (this.loginBars || new Map())) {
+      try { bar.wc.loadFile(path.join(platform.PagesDir, 'loginbar.html'), { query: { hint: hints[name] } }); } catch { }
+    }
   }
 
   // The OneDrive of HIT on this Mac (~/Library/CloudStorage/OneDrive-HolonInstituteofTechnology), or "" when it is not set up.
@@ -446,6 +506,8 @@ class Host {
       profileImage: this.ProfileImage(),
       theme: Str(this.settings, 'theme').length > 0 ? Str(this.settings, 'theme') : 'system', systemLight: this.SystemUsesLightTheme(),
       discordUrl: Str(this.settings, 'discordUrl') || C.DiscordInvite,
+      institute: Inst.current.id, moodleUrl: Str(this.settings, 'moodleUrl'), portalUrl: Str(this.settings, 'portalUrl'),
+      instMoodle: Inst.current.moodle, instPortal: Inst.current.portal,
       platform: 'mac',
     });
   }
@@ -489,6 +551,8 @@ class Host {
         this.SendSettings();
         break;
       case 'checkStatus': this.PollStatus(true); break;
+      case 'setInstitute': this.SetInstitute(m); break;
+      case 'instLogos': this.SendInstLogos(m); break;
       case 'setOption': {
         const opt = Str(m, 'name');
         if (['autoSync', 'autoRecordings', 'autoUpdate', 'autoFallback', 'pdfDark'].includes(opt)) { this.settings[opt] = Bool(m, 'value'); this.SaveSettings(); this.SendSettings(); }
@@ -1006,7 +1070,10 @@ class Host {
 
   ShowSite(m) {
     const key = Str(m, 'site');
-    const url = C.Sites[key];
+    const inst = Inst.current;
+    if (!inst.isHit && (key === 'calendar' || key === 'onedrive')) return;   // HIT's own pages
+    if (key === 'moodle' && !inst.moodle) { this.Toast('עוד לא הוגדרה כתובת ה-Moodle של ' + inst.name + '. אפשר להוסיף אותה בהגדרות, תחת "המוסד".', true); return; }
+    const url = key === 'moodle' ? inst.moodle + '/my/' : key === 'portal' ? inst.portal : C.Sites[key];
     if (!url) return;
     this.PlaceSite(m);
     if (key !== 'portal') this.CloseSitePopup();
@@ -1118,7 +1185,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support', 'task-reminders'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support', 'task-reminders', 'inst-logos'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

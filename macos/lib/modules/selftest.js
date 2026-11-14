@@ -9,6 +9,7 @@ const {
   delay, guidN, fileExists, dirExists, listFiles, mkdirp, readText, writeText,
 } = require('../util');
 const platform = require('../platform');
+const Inst = require('../institution');
 const C = require('../constants');
 
 module.exports = {
@@ -35,8 +36,9 @@ module.exports = {
         );
         check(
           'Moodle URL check',
-          this.IsMoodleUrl('https://md.hit.ac.il/mod/resource/view.php?id=1')
-            && !this.IsMoodleUrl('https://md.hit.ac.il.evil.com/x'),
+          // The student's institution's Moodle (HIT unless they chose another); a look-alike host is refused.
+          (!Inst.moodleBase() || (this.IsMoodleUrl(Inst.moodleBase() + '/mod/resource/view.php?id=1')
+            && !this.IsMoodleUrl('https://' + new URL(Inst.moodleBase()).host + '.evil.com/x'))),
           null
         );
         check(

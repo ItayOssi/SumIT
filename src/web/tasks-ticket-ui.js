@@ -64,7 +64,7 @@ function ticketListRender() {
   const box = document.querySelector('#ticketDlg .ticket-list'); if (!box) return;
   const list = ticketList();
   box.innerHTML = '';
-  if (!list.length) { box.append(h('<div class="empty" style="border:none;padding:16px"><b>הכל בשליטה</b>אין מטלות פתוחות.</div>')); return; }
+  if (!list.length) { box.append(h(`<div class="empty all-clear-box" style="border:none;padding:16px">${ART.allClear().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>אין מטלות פתוחות. זמן טוב לחזור על החומר.</div>`)); return; }
   for (const [g, title] of TasksTicket.GROUPS) {
     const rows = list.filter(i => i.group === g); if (!rows.length) continue;
     const sec = h(`<div class="ticket-group" data-g="${g}"><h3>${title}<span class="chip">${rows.length}</span></h3></div>`);

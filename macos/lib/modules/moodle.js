@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { Str, Bool, Int, SafeName, Trunc, Mutex, deferred, delay, fileExists, dirExists, listFiles, listDirs, mkdirp, readText, writeText } = require('../util');
 const C = require('../constants');
+const Inst = require('../institution');
 
 const ExerciseName = /(תרגיל|תרגול|פתרון|פתרונות|שיעורי בית|מטלה|ש"ב|targ|tirgul|solut|homework|\bhw|exercise|assignment|\bsol)/i;
 const ExamName = /(מבחן|מבחנ|בחינ|מועד [אבג]|שנים קודמות|\bexam|midterm|\bfinal)/i;
@@ -154,12 +155,8 @@ function LectureSubdir(lectureDir, kind, fileName) {
   return path.join(lectureDir, C.LecturerNotes);
 }
 
-function IsMoodleUrl(url) {
-  try {
-    const u = new URL(url || '');
-    return u.protocol === 'https:' && u.hostname.toLowerCase() === 'md.hit.ac.il';
-  } catch { return false; }
-}
+// A page of the student's institution's Moodle (institution.js).
+function IsMoodleUrl(url) { return Inst.isMoodleUrl(url); }
 
 function IsZoomUrl(url) {
   try {
@@ -235,9 +232,13 @@ module.exports = {
 
     async EnsureMoodle(interactive) {
       if (await this.MoodleReady()) return;
+      if (!Inst.moodleBase()) {
+        this.SendMoodle('login', '');
+        throw new Error('עוד לא הוגדרה כתובת ה-Moodle של ' + Inst.current.name + '. אפשר להוסיף אותה בהגדרות, תחת "המוסד".');
+      }
       this.SendMoodle('connecting', '');
       this.moodleCancelled = false;
-      this.moodle.navigate(C.MoodleBase + '/my/');
+      this.moodle.navigate(Inst.moodleBase() + '/my/');
       const started = Date.now();
       let shown = false;
       while (true) {
@@ -266,7 +267,7 @@ module.exports = {
 
     async MoodleReady() {
       const src = this.moodle.source || '';
-      if (!src.toLowerCase().startsWith(C.MoodleBase.toLowerCase()) || src.toLowerCase().includes('/login/')) return false;
+      if (!Inst.moodleBase() || !IsMoodleUrl(src) || src.toLowerCase().includes('/login/')) return false;
       try {
         const v = await this.EvalAsync(
           this.moodle,
@@ -725,7 +726,7 @@ module.exports = {
       try { await this.EnsureMoodle(true); }
       finally { this.moodleLock.release(); }
 
-      const cookies = await this.moodle.cookies(C.MoodleBase);
+      const cookies = await this.moodle.cookies(Inst.moodleBase());
       const cookieHeader = cookies.map(c => c.name + '=' + c.value).join('; ');
       const ua = this.moodle.userAgent;
       const headers = {
@@ -802,7 +803,7 @@ module.exports = {
     async ResolveMoodleUrl(viewUrl) {
       const tcs = deferred();
       const onWillNav = (e, url) => {
-        if (!url.toLowerCase().startsWith(C.MoodleBase.toLowerCase()) && url.startsWith('http')) {
+        if (!IsMoodleUrl(url) && url.startsWith('http')) {
           e.preventDefault();
           tcs.resolve(url);
         }
@@ -815,7 +816,7 @@ module.exports = {
         if (raced) return raced;
         const v = await this.EvalAsync(
           this.moodle,
-          'const a=document.querySelector(\'.urlworkaround a, [role=main] a[href^="http"]:not([href*="md.hit.ac.il"])\');return a?a.href:"";',
+          'const a=document.querySelector(\'.urlworkaround a, [role=main] a[href^="http"]:not([href*=' + JSON.stringify(new URL(Inst.moodleBase()).host) + '])\');return a?a.href:"";',
           5000
         );
         return JSON.parse(v);

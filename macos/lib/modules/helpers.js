@@ -6,6 +6,7 @@ const path = require('path');
 const { Str, Dict, Arr, Trunc, Protect, Unprotect, Exec, guidN, formatDate, fileExists, dirExists, listFiles, mkdirp, readText, writeText } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
+const Inst = require('../institution');
 
 const ExtractScript = `import sys, pymupdf
 for p in sys.argv[1:]:
@@ -362,7 +363,7 @@ module.exports = {
       const lecturer = Str(meta, 'lecturer');
 
       // Structured pedagogical prompt: direct, 0 fluff, concise, concept explanations
-      const system = 'אתה עוזר לימוד אישי וחונך אקדמי של סטודנט ב-HIT בקורס "' + course + '"' + (lecturer.length > 0 ? ' של ' + lecturer : '') + '. '
+      const system = 'אתה עוזר לימוד אישי וחונך אקדמי של סטודנט ב' + Inst.current.inName + ' בקורס "' + course + '"' + (lecturer.length > 0 ? ' של ' + lecturer : '') + '. '
         + (scope === 'exam'
           ? 'זה אימון ממוקד למבחן. שאל שאלה אחת בלבד בכל פעם בסגנון שאלות המרצה, חכה לתשובת הסטודנט, בדוק באופן מעמיק, והסבר את הטעויות בשלבים קצרים.'
           : 'השיחה היא על ההרצאה והחומר הנלמד. השב ישירות, ללא גינונים, ללא הקדמות ("שלום", "בשמחה") וללא פתיחים מיותרים.')
@@ -471,7 +472,7 @@ module.exports = {
 
     async HelperReadSchedule(pageText) {
       if (this.HelperOrder().length === 0) return false;
-      const system = 'אתה קורא טקסט של דף מאתר HIT: מערכת שעות של שבוע (ייתכנו בה חגים וימי חופשה), לוח בחינות או לוח שנה אקדמי. החזר JSON תקין בלבד, בלי טקסט נוסף, במבנה: '
+      const system = 'אתה קורא טקסט של דף מהאתר של ' + Inst.current.name + ': מערכת שעות של שבוע (ייתכנו בה חגים וימי חופשה), לוח בחינות או לוח שנה אקדמי. החזר JSON תקין בלבד, בלי טקסט נוסף, במבנה: '
         + '{"classes":[{"day":"ראשון|שני|שלישי|רביעי|חמישי|שישי","start":"HH:MM","end":"HH:MM","course":"","kind":"הרצאה|תרגול|מעבדה","lecturer":"","room":""}],'
         + '"exams":[{"course":"","moed":"א|ב|ג","date":"YYYY-MM-DD","time":"HH:MM","room":""}],'
         + '"semesterStart":"YYYY-MM-DD","semesterEnd":"YYYY-MM-DD","holidays":[{"name":"","from":"YYYY-MM-DD","to":"YYYY-MM-DD"}]}. '
