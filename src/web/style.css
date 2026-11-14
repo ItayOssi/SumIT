@@ -1495,17 +1495,18 @@ body:not(.inst-hit) [data-site-link="onedrive"], body:not(.inst-hit) [data-site=
 .inst-search { width: 100%; height: 40px; padding: 0 14px; border-radius: 12px; font-size: 14px; }
 .inst-groups { display: flex; flex-direction: column; gap: 14px; max-height: 46vh; overflow-y: auto; padding: 2px 2px 4px; }
 .inst-group-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 0 2px 8px; }
-.inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.inst-card { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; padding: 14px 10px 12px; border-radius: 14px; height: auto; min-height: 118px; white-space: normal; font: inherit;
+.inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.inst-card { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; padding: 14px 10px 12px; border-radius: 14px; height: auto; min-height: 128px; white-space: normal; font: inherit;
   background: var(--surface); border: 1.5px solid var(--border); text-align: center; cursor: pointer; transition: border-color .2s, transform .2s, box-shadow .2s; }
 .inst-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .inst-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .inst-card.on::after { content: "✓"; position: absolute; top: 8px; left: 10px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
 .inst-name { font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--text); }
 .inst-exp { font-size: 10.5px; padding: 1px 7px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); }
-.inst-logo { width: 48px; height: 48px; border-radius: 12px; background: #fff; display: grid; place-items: center; overflow: hidden; flex: none; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
-.inst-logo.big { width: 56px; height: 56px; border-radius: 14px; }
-.inst-logo img { width: 82%; height: 82%; object-fit: contain; }
+.inst-logo { width: 100%; max-width: 150px; height: 62px; border-radius: 12px; background: #fff; display: grid; place-items: center; overflow: hidden; flex: none; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.inst-logo.big { width: 120px; max-width: none; height: 64px; border-radius: 14px; }
+.inst-logo img { max-width: 88%; max-height: 50px; width: auto; height: auto; object-fit: contain; display: block; }
+.inst-logo.big img { max-height: 52px; }
 .inst-badge { width: 100%; height: 100%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .02em; }
 .inst-need input { width: 100%; }
 .inst-adv { margin-top: 6px; } .inst-adv summary { cursor: pointer; color: var(--muted); font-size: 13.5px; padding: 6px 0; }

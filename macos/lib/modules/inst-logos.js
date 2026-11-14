@@ -1,6 +1,7 @@
 'use strict';
 // The institutions' logos for the picker (macOS only). No logo ships inside the app: the first time the picker needs
-// one, it is read from the institution's own website (its apple-touch-icon / icon links, or /favicon.ico) and kept in
+// one, it is read from where the list says the real logo is (the institution's page on the Hebrew Wikipedia, or its own
+// site), and only when that fails, from the site's icons (apple-touch-icon / icon links, or /favicon.ico). It is kept in
 // DataRoot/inst-logos. The page gets it as a data: URL, so its security policy (img-src 'self' data:) stays as is.
 // Without a network, or when the site has no usable icon, the page keeps the initials badge.
 
@@ -11,6 +12,8 @@ const Inst = require('../institution');
 const { Str } = require('../util');
 
 const MaxBytes = 400 * 1024;
+const CacheVer = 2;                         // 2: the real logos (1.0.50); older caches held the site icons
+const UA = 'SumIT/' + require('../constants').Version + ' (https://github.com/ItayOssi/SumIT; institution logos)';
 const FreshMs = 30 * 24 * 3600 * 1000;      // a logo is read again after a month
 const RetryMs = 24 * 3600 * 1000;           // a site that had none is asked again after a day
 const Types = { 'image/png': 1, 'image/svg+xml': 1, 'image/jpeg': 1, 'image/webp': 1, 'image/x-icon': 1, 'image/vnd.microsoft.icon': 1, 'image/gif': 1 };
@@ -54,7 +57,7 @@ function MimeOf(contentType, buf, url) {
 }
 
 async function Get(url, ms) {
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(ms), headers: { 'User-Agent': 'Mozilla/5.0 SumIT' } });
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(ms), headers: { 'User-Agent': UA } });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res;
 }
@@ -64,11 +67,12 @@ module.exports = {
   MimeOf,
   methods: {
     InstLogoDir() { return this.instLogoDir || path.join(platform.DataRoot, 'inst-logos'); },
+    InstLogoFile(id) { return path.join(this.InstLogoDir(), id + '.v' + CacheVer + '.json'); },
 
     // The cached logo of one institution: { src } (a data: URL), { none: true } when the site had none lately, or null.
     InstLogoCached(id, now = Date.now()) {
       try {
-        const o = JSON.parse(fs.readFileSync(path.join(this.InstLogoDir(), id + '.json'), 'utf8'));
+        const o = JSON.parse(fs.readFileSync(this.InstLogoFile(id), 'utf8'));
         if (o && o.mime && o.b64 && now - Number(o.at) < FreshMs) return { src: 'data:' + o.mime + ';base64,' + o.b64 };
         if (o && o.none && now - Number(o.at) < RetryMs) return { none: true };
         if (o && o.mime && o.b64) return { src: 'data:' + o.mime + ';base64,' + o.b64, stale: true };
@@ -78,27 +82,35 @@ module.exports = {
 
     // Reads the logo from the institution's site and keeps it. fetcher is injectable for the tests.
     async InstLogoFetch(inst, fetcher = Get) {
+      const keep = (url, buf, mime) => {
+        const rec = { mime, b64: buf.toString('base64'), at: Date.now(), from: url };
+        fs.mkdirSync(this.InstLogoDir(), { recursive: true });
+        fs.writeFileSync(this.InstLogoFile(inst.id), JSON.stringify(rec));
+        return 'data:' + mime + ';base64,' + rec.b64;
+      };
+      const tryImage = async (url) => {
+        const r = await fetcher(url, 10000);
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length < 64 || buf.length > MaxBytes) return '';
+        const mime = MimeOf(r.headers && r.headers.get ? r.headers.get('content-type') : '', buf, url);
+        return mime ? keep(url, buf, mime) : '';
+      };
+      // 1. The real logo, where the list says it is.
+      for (const url of (Array.isArray(inst.logos) ? inst.logos : []).filter(u => /^https:\/\//.test(u)).slice(0, 3)) {
+        try { const src = await tryImage(url); if (src) return src; } catch { }
+      }
+      // 2. The site's own icons.
       const pages = ['https://www.' + inst.domain + '/', 'https://' + inst.domain + '/'];
       let html = '', pageUrl = pages[0];
       for (const p of pages) {
         try { const r = await fetcher(p, 8000); html = await r.text(); pageUrl = r.url || p; break; } catch { }
       }
       for (const url of IconCandidates(html, pageUrl).slice(0, 5)) {
-        try {
-          const r = await fetcher(url, 8000);
-          const buf = Buffer.from(await r.arrayBuffer());
-          if (buf.length < 64 || buf.length > MaxBytes) continue;
-          const mime = MimeOf(r.headers && r.headers.get ? r.headers.get('content-type') : '', buf, url);
-          if (!mime) continue;
-          const rec = { mime, b64: buf.toString('base64'), at: Date.now(), from: url };
-          fs.mkdirSync(this.InstLogoDir(), { recursive: true });
-          fs.writeFileSync(path.join(this.InstLogoDir(), inst.id + '.json'), JSON.stringify(rec));
-          return 'data:' + mime + ';base64,' + rec.b64;
-        } catch { }
+        try { const src = await tryImage(url); if (src) return src; } catch { }
       }
       try {
         fs.mkdirSync(this.InstLogoDir(), { recursive: true });
-        fs.writeFileSync(path.join(this.InstLogoDir(), inst.id + '.json'), JSON.stringify({ none: true, at: Date.now() }));
+        fs.writeFileSync(this.InstLogoFile(inst.id), JSON.stringify({ none: true, at: Date.now() }));
       } catch { }
       return '';
     },

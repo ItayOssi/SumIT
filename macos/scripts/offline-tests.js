@@ -2466,6 +2466,7 @@ async function runInstitutionTests(app, root, check) {
   check('every institution has a name, a short name, a domain and a colour', I.LIST.every(i => i.name && i.short && /\.ac\.il$/.test(i.domain) && /^#[0-9a-f]{6}$/i.test(i.color)));
   check('every known Moodle and portal address is https', I.LIST.every(i => (i.moodle === '' || /^https:\/\/[^/]+\.[a-z]+(\/[\w-]+)*$/i.test(i.moodle)) && /^https:\/\//.test(i.portal)));
   check('the universities come first and HIT is the default', I.LIST[0].id === 'hit' && I.DEFAULT === 'hit' && I.LIST.findIndex(i => i.kind === 'college') > I.LIST.filter(i => i.kind === 'uni').length - 1);
+  check('every institution has the address of its real logo', I.LIST.every(i => Array.isArray(i.logos) && i.logos.length > 0 && i.logos.every(u => /^https:\/\/[^/]+\.[a-z]+\//.test(u))));
   check('the institutions the student named are all there', ['technion', 'tau', 'biu', 'bgu', 'afeka', 'mta'].every(id => I.byId(id)));
 
   // A Moodle address the student typed comes back to the root
@@ -2539,7 +2540,11 @@ async function runInstitutionTests(app, root, check) {
     throw new Error('offline');
   };
   const src = await app.InstLogoFetch(I.byId('tau'), fakeFetch);
-  check('a logo is read from the institution\'s own site and kept', src.startsWith('data:image/png;base64,') && asked[0] === 'https://www.tau.ac.il/' && app.InstLogoCached('tau').src === src);
+  check('when the real logo cannot be read, the site\'s icon is read and kept', src.startsWith('data:image/png;base64,') && asked[0] === I.byId('tau').logos[0] && asked.includes('https://www.tau.ac.il/') && app.InstLogoCached('tau').src === src);
+  const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#0a3a7a"/></svg>' + ' '.repeat(40));
+  const asked2 = [];
+  const real = await app.InstLogoFetch(I.byId('technion'), async (url) => { asked2.push(url); return { url, ok: true, headers: { get: () => 'image/svg+xml' }, arrayBuffer: async () => svg, text: async () => '' }; });
+  check('the real logo comes first, and the site is not asked at all', real.startsWith('data:image/svg+xml;base64,') && asked2.length === 1 && asked2[0] === I.byId('technion').logos[0]);
   const none = await app.InstLogoFetch(I.byId('bgu'), async () => { throw new Error('offline'); });
   check('without a network there is no logo, and the site is not asked again for a day', none === '' && app.InstLogoCached('bgu').none === true && app.InstLogoCached('bgu', Date.now() + 2 * 86400000) === null);
   const sent = []; const realSend = app.Send; app.Send = (m) => sent.push(m);
