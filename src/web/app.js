@@ -261,6 +261,8 @@ function renderStatus() {
 $('moodlePill').onclick = () => { if (S.moodle === 'ready') toast('Moodle מחובר ✓'); else connectMoodle(); };
 $('aiPill').onclick = () => { if (S.ai && S.ai.ready) toast(aiName() + ' מחובר ✓'); else openWizard(WIZ_AI); };
 $('moodleConnect').onclick = connectMoodle;
+// CS24, HIT's timetable and HIT's OneDrive are for HIT students only (institutions-ui.js knows the institution).
+function isHitStudent() { return typeof instCurrent !== 'function' || instCurrent().isHit; }
 function connectMoodle() { S.moodle = 'connecting'; renderStatus(); send({ type: 'connectMoodle' }); }
 
 function renderBanners() {
@@ -483,6 +485,8 @@ function renderNextUp() {
     box.append(r);
   });
   if (!box.children.length) box.append(h('<div class="muted" style="padding:8px">אין שיעורים או מבחנים קרובים במערכת.</div>'));
+  // A long title ends with "…" (style.css); the whole text is in the tooltip.
+  box.querySelectorAll('.next-row').forEach(r => { r.title = [...r.querySelectorAll('.grow b, .grow .muted')].map(x => x.textContent).filter(Boolean).join('\n'); });
   icons(box);
 }
 
@@ -696,16 +700,27 @@ function renderHome() {
   $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
   const ev = homeEvents().filter(e => e.manual || !e.overdue || Date.now() / 1000 - e.when < 3 * 86400);
   const week = ev.filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000);
-  $('heroLine').textContent = S.events == null && !ev.length ? (S.moodle === 'login' ? 'התחבר ל-Moodle כדי לראות מה מחכה לך.' : 'טוען את מה שמחכה לך השבוע...')
+  // Moodle's week is still on its way only while Moodle is connecting or answering, and for 25 seconds at most:
+  // without a sign-in, after an error, or past that, the card shows its empty state instead of loading forever.
+  if (S.events == null && !S.homeWaitFrom) S.homeWaitFrom = Date.now();
+  const homeLoading = S.events == null && !ev.length && !['login', 'error'].includes(S.moodle) && Date.now() - S.homeWaitFrom < 25000;
+  if (homeLoading) { clearTimeout(S.homeWaitTimer); S.homeWaitTimer = setTimeout(() => { if (S.view === 'home') renderHome(); }, 25500 - (Date.now() - S.homeWaitFrom)); }
+  const noMoodleWeek = S.events == null && !ev.length && !homeLoading;
+  $('heroLine').textContent = homeLoading ? 'טוען את מה שמחכה לך השבוע...'
+    : noMoodleWeek && S.moodle === 'login' ? 'התחבר ל-Moodle כדי לראות מה מחכה לך.'
     : week.length ? `יש לך ${week.length} ${week.length === 1 ? 'משימה' : 'משימות'} בשבוע הקרוב. אפשר להתחיל ממה שהכי דחוף.`
     : 'אין מטלות בשבוע הקרוב. זמן מצוין לחזור על החומר.';
   $('deadlineCount').textContent = ev.length + ' מטלות';
 
   const box = $('deadlines'); box.innerHTML = '';
-  if (S.events == null && !ev.length) {
+  if (homeLoading) {
     for (let i = 0; i < 4; i++) box.append(h('<div class="deadline"><div class="cal skeleton"></div><div class="info"><div class="skeleton" style="height:12px;width:60%"></div><div class="skeleton" style="height:10px;width:40%;margin-top:8px"></div></div></div>'));
+  } else if (noMoodleWeek && S.moodle === 'login') {
+    const e = h(`<div class="empty all-clear-box" style="border:none;padding:16px">${ART.allClear().replace('<svg', '<svg class="art"')}<b>אין כאן עדיין מטלות</b>התחבר ל-Moodle, והמטלות של השבוע יופיעו כאן.<div class="row" style="justify-content:center;margin-top:10px"><button class="primary small" data-c>התחבר ל-Moodle</button></div></div>`);
+    e.querySelector('[data-c]').onclick = connectMoodle;
+    box.append(e);
   } else if (!ev.length) {
-    box.append(h(`<div class="empty all-clear-box" style="border:none;padding:16px">${ART.allClear().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>אין מטלות פתוחות בשבועות הקרובים.</div>`));
+    box.append(h(`<div class="empty all-clear-box" style="border:none;padding:16px">${ART.allClear().replace('<svg', '<svg class="art"')}<b>הכל בשליטה</b>${noMoodleWeek ? 'אין מטלות שהוספת, ו-Moodle לא ענה כרגע. ננסה שוב בכניסה הבאה.' : 'אין מטלות פתוחות בשבועות הקרובים.'}</div>`));
   } else {
     ev.slice(0, 7).forEach((e, i) => {
       const d = new Date(e.when * 1000);
@@ -1044,14 +1059,16 @@ const SETUP_Q = [
   },
   {
     key: 'exams',
-    ask: () => 'להוריד בשבילך את כל החומר של הקורס מ-CS24?',
-    hint: () => 'אני אמצא את הקורס ב-CS24 ואוריד את כל מה שיש שם: מבחנים ופתרונות משנים קודמות, בחנים, סיכומים, מחברות של סטודנטים ותרגולים. זה חומר עזר, ו-Moodle נשאר המקור העיקרי.',
+    // CS24 is HIT's: other institutions are asked only for their own past exams.
+    ask: () => isHitStudent() ? 'להוריד בשבילך את כל החומר של הקורס מ-CS24?' : 'יש לך מבחנים קודמים של הקורס?',
+    hint: () => !isHitStudent() ? 'אם יש לך מבחנים משנים קודמות, עדיף עם הפתרונות, הוסף אותם מהמחשב. כך אראה אילו נושאים המרצה אוהב לשאול.' : 'אני אמצא את הקורס ב-CS24 ואוריד את כל מה שיש שם: מבחנים ופתרונות משנים קודמות, בחנים, סיכומים, מחברות של סטודנטים ותרגולים. זה חומר עזר, ו-Moodle נשאר המקור העיקרי.',
     body: (done) => {
       const box = h('<div class="row wrap"></div>');
       const yes = h('<button class="primary">כן, תוריד הכל</button>'); yes.onclick = () => { setupAnswers().cs24Auto = true; done('כן, הכל מ-CS24'); };
       const pc = h('<button class="ghost">יש לי מבחנים במחשב</button>'); pc.onclick = () => send({ type: 'addFiles', course: S.course.name, folder: 'מבחנים' });
-      const no = h('<button class="ghost">לא צריך</button>'); no.onclick = () => { setupAnswers().cs24Auto = false; done('בלי CS24'); };
-      box.append(yes, pc, no);
+      const no = h('<button class="ghost">לא צריך</button>'); no.onclick = () => { setupAnswers().cs24Auto = false; done(isHitStudent() ? 'בלי CS24' : 'בלי מבחנים עכשיו'); };
+      if (isHitStudent()) box.append(yes);
+      box.append(pc, no);
       return box;
     }
   },
@@ -1128,7 +1145,7 @@ function renderSetup() {
     go.onclick = () => {
       // One request does it all, in order: Moodle, then CS24, then the study material.
       S.setupRunning = S.setupRunning || {}; S.setupRunning[S.course.name] = true;
-      send({ type: 'setupRun', course: S.course.name, sections: plainSections(), cs24: !!ans.cs24Auto });
+      send({ type: 'setupRun', course: S.course.name, sections: plainSections(), cs24: !!ans.cs24Auto && isHitStudent() });
       renderSetup();
       toast('מוריד את כל החומר. אפשר בינתיים להגדיר קורס אחר.', { ms: 5000 });
     };
@@ -1297,7 +1314,7 @@ function fillLecture(el, s) {
 
   btn('book', 'מצגות וחומר מה-Moodle', hasMaterial ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'slides'));
   btn('exam', 'שיעורי בית ופתרונות מה-Moodle', hasHomework ? 'done' : 'soft', () => lectureSource(s.num, 'moodle', 'homework'));
-  btn('book', 'חומר מ-CS24', 'ghost', () => lectureSource(s.num, 'cs24', 'slides'));
+  if (isHitStudent()) btn('book', 'חומר מ-CS24', 'ghost', () => lectureSource(s.num, 'cs24', 'slides'));
   btn('plus', 'קבצים מהמחשב', 'ghost', () => send({ type: 'addFiles', course: course.name, folder: String(s.num), kind: '' }));
   btn('plus', 'סיכום של חבר (ZIP / OneDrive)', 'soft', () => showSummaryImport(course.name, s.num));
   (L.sharedSummaries || []).forEach(item => btn('book', 'סיכום חבר: ' + item.title, 'soft', () => openViewer(item.path, item.title, '', s.num)));
@@ -1458,7 +1475,7 @@ function renderExams() {
   const acts = card.querySelector('#examActs');
   const add = (ic, t, cls, fn, dis) => { const b = h(`<button class="${cls}"><span data-ic="${ic}"></span>${t}</button>`); b.onclick = fn; b.disabled = !!dis; acts.append(b); };
   add('download', 'הורד את כל המבחנים מה-Moodle', 'primary', () => downloadMoodle('exams'), runtimeFor(S.course.name).operations.get('exams'));
-  add('exam', 'מבחנים מ-CS24', 'soft', () => { setSaveTarget(S.course.name, 'מבחנים'); openSite('cs24'); toast('כל קובץ שתוריד מ-CS24 יישמר בתיקיית המבחנים של הקורס'); });
+  if (isHitStudent()) add('exam', 'מבחנים מ-CS24', 'soft', () => { setSaveTarget(S.course.name, 'מבחנים'); openSite('cs24'); toast('כל קובץ שתוריד מ-CS24 יישמר בתיקיית המבחנים של הקורס'); });
   add('plus', 'הוסף מבחנים מהמחשב', 'ghost', () => send({ type: 'addFiles', course: S.course.name, folder: 'מבחנים' }));
   if (L.exams) add('folder', 'תיקיית המבחנים', 'ghost', () => send({ type: 'openPath', path: L.dir + '\\מבחנים' }));
   add('sparkles', busy ? 'עובד על זה...' : (L.examPrep ? 'בנה מחדש את דף ההכנה' : 'בנה דף הכנה למבחן'), 'primary', () => { S.examBusy = true; send({ type: 'examPrep', course: S.course.name }); renderExams(); }, busy || !L.exams);
@@ -1818,16 +1835,16 @@ function renderSettings() {
   $('aboutVersion').textContent = `גרסה ${st.version || ''}`;
   $('aboutDetails').textContent = `SumIT ל-${/Macintosh|Mac OS X/.test(navigator.userAgent) ? 'macOS' : 'Windows'}. כשמבקשים עזרה או שולחים דוח למפתח, כדאי לציין את מספר הגרסה.`;
   applyTheme(st.theme || 'system');
-  if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/f8Duw6RBMr';
+  if ($('discordUrl') && document.activeElement !== $('discordUrl')) $('discordUrl').value = st.discordUrl || 'https://discord.gg/9XNk3XrsWJ';
 }
 if ($('aboutCheckUpdate')) $('aboutCheckUpdate').onclick = () => send({ type: 'checkUpdate' });
 if ($('discordUrl')) $('discordUrl').onchange = () => send({ type: 'setOption', name: 'discordUrl', value: $('discordUrl').value });
 if ($('openDiscordBtn')) $('openDiscordBtn').onclick = () => {
-  const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/f8Duw6RBMr').trim();
+  const url = ($('discordUrl')?.value || S.settings?.discordUrl || 'https://discord.gg/9XNk3XrsWJ').trim();
   send({ type: 'openLink', url });
 };
 if ($('navDiscord')) $('navDiscord').onclick = () => {
-  const url = (S.settings?.discordUrl || $('discordUrl')?.value || 'https://discord.gg/f8Duw6RBMr').trim();
+  const url = (S.settings?.discordUrl || $('discordUrl')?.value || 'https://discord.gg/9XNk3XrsWJ').trim();
   send({ type: 'openLink', url });
 };
 $('changeStudy').onclick = $('wizStudyBtn').onclick = () => send({ type: 'chooseFolder', which: 'study' });
@@ -1956,6 +1973,9 @@ function onMessage(m) {
     case 'moodle':
       S.moodle = m.state; renderStatus();
       if (m.state === 'error' && m.message) toast(m.message, { error: true });
+      // A new attempt gets its own 25 seconds; the home card follows the state (loading, sign in, or empty).
+      if ((m.state === 'connecting' || m.state === 'ready') && S.events == null) S.homeWaitFrom = Date.now();
+      if (S.view === 'home') renderHome();
       if (m.state === 'ready' && !S.courses) send({ type: 'loadCourses' });
       // Moodle is unreachable or signed out: the courses saved on this computer still open (offline).
       else if (m.state !== 'ready' && m.state !== 'connecting' && !S.courses && !S.askedSavedCourses) { S.askedSavedCourses = true; send({ type: 'loadCourses', cachedOnly: true }); }
@@ -2293,7 +2313,7 @@ function examsIntroCard() {
   const row = c.querySelector('[data-b]');
   const add = (ic, t, cls, fn) => { const b = h(`<button class="${cls}"><span data-ic="${ic}"></span>${t}</button>`); b.onclick = fn; row.append(b); };
   add('download', 'הורד את כל המבחנים מה-Moodle', 'primary', () => downloadMoodle('exams'));
-  add('exam', 'מבחנים מ-CS24', 'soft', () => { setSaveTarget(S.course.name, 'מבחנים'); openSite('cs24'); });
+  if (isHitStudent()) add('exam', 'מבחנים מ-CS24', 'soft', () => { setSaveTarget(S.course.name, 'מבחנים'); openSite('cs24'); });
   add('plus', 'מהמחשב', 'ghost', () => send({ type: 'addFiles', course: S.course.name, folder: 'מבחנים' }));
   add('x', 'אין לי עכשיו - דלג', 'ghost', () => send({ type: 'skipExams', course: S.course.name }));
   return c;

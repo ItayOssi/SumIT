@@ -337,7 +337,8 @@ class Host {
       if (!(opt in this.settings)) this.settings[opt] = opt === 'autoFallback';   // pdfDark: off
     this.settings.autoRecordings = false; this.settings.autoUpdate = false; this.settings.autoSync = false;
     // 1.0.18 shipped an invite that expires in November 2026; move anyone who saved it to the permanent one.
-    if (/discord\.gg\/5uTFvmyRP\/?$/i.test(Str(this.settings, 'discordUrl'))) { this.settings.discordUrl = C.DiscordInvite; this.SaveSettings(); }
+    // Earlier invites (the degree's server, and an expiring one from 1.0.18) move to SumIT's support and community server.
+    if (/discord\.gg\/(5uTFvmyRP|f8Duw6RBMr)\/?$/i.test(Str(this.settings, 'discordUrl'))) { this.settings.discordUrl = C.DiscordInvite; this.SaveSettings(); }
   }
 
   // "HIT/קורסים" inside the student's HIT OneDrive when there is one, so the courses are backed up and follow them; otherwise in Documents.
@@ -780,8 +781,8 @@ class Host {
         this.ImportTimetable([clipboardPath]);
         break;
       }
-      case 'cs24Sync': this.Cs24Sync(course); break;
-      case 'setupRun': this.SetupRun(course, Arr(m, 'sections'), Bool(m, 'cs24')); break;
+      case 'cs24Sync': if (Inst.current.isHit) this.Cs24Sync(course); break;
+      case 'setupRun': this.SetupRun(course, Arr(m, 'sections'), Bool(m, 'cs24') && Inst.current.isHit); break;
       case 'prepareCourses': this.PrepareCourses(Arr(m, 'courses')); break;
 
       // Sites inside the app
@@ -1071,7 +1072,7 @@ class Host {
   ShowSite(m) {
     const key = Str(m, 'site');
     const inst = Inst.current;
-    if (!inst.isHit && (key === 'calendar' || key === 'onedrive')) return;   // HIT's own pages
+    if (!inst.isHit && (key === 'calendar' || key === 'onedrive' || key === 'cs24')) return;   // HIT's own pages (CS24 is HIT's too)
     if (key === 'moodle' && !inst.moodle) { this.Toast('עוד לא הוגדרה כתובת ה-Moodle של ' + inst.name + '. אפשר להוסיף אותה בהגדרות, תחת "המוסד".', true); return; }
     const url = key === 'moodle' ? inst.moodle + '/my/' : key === 'portal' ? inst.portal : C.Sites[key];
     if (!url) return;

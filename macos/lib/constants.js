@@ -6,13 +6,13 @@
 const path = require('path');
 
 module.exports = {
-  Version: '1.0.50',
+  Version: '1.0.51',
   Repo: 'Pinkel-Kinkel/SumIT',
   RepoNames: ['Pinkel-Kinkel/SumIT'],
   MacRepo: 'ItayOssi/SumIT',   // the macOS releases (tags v<version>-mac)
   // Google sign-in for the Drive sync (a desktop OAuth client; its id is public, its secret comes from the build).
   GoogleClientId: '801092395708-ebfqk3dpnvv2p2gokob4fjk03ll4fnk4.apps.googleusercontent.com',
-  DiscordInvite: 'https://discord.gg/f8Duw6RBMr',   // the degree's server; the student can change it in settings
+  DiscordInvite: 'https://discord.gg/9XNk3XrsWJ',   // SumIT's server: support and the community; the student can change it in settings
 
   Sites: {
     moodle: 'https://md.hit.ac.il/my/',
