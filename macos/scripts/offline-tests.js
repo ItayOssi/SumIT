@@ -2079,6 +2079,9 @@ async function runDriveTests(app, root, check) {
     try { fs.rmSync(pdir, { recursive: true, force: true }); } catch { }
   }
 
+  const okPage = D.DonePage(true, '', 'data:image/png;base64,AAA'), noPage = D.DonePage(false, 'access_denied', ''), badPage = D.DonePage(false, '<script>', '');
+  check('the page after Google\'s answer: connected, with the logo inside it, in light and dark', /SumIT מחובר לחשבון Google/.test(okPage) && okPage.includes('src="data:image/png;base64,AAA"') && /prefers-color-scheme:dark/.test(okPage) && /dir="rtl"/.test(okPage));
+  check('a cancelled approval says so, and without the logo there is a letter in its place', /האישור בוטל/.test(noPage) && /class="ph"/.test(noPage) && !/<img/.test(noPage) && !/<script>/.test(badPage));
   const downloaded = JSON.stringify({ installed: { client_id: 'id.apps.googleusercontent.com', client_secret: 'GOCSPX-abc', redirect_uris: ['http://localhost'] } });
   check('the client secret is sent bare, also when the whole downloaded client JSON was stored', D.ClientSecret(downloaded) === 'GOCSPX-abc' && D.ClientSecret(' GOCSPX-abc\n') === 'GOCSPX-abc' && D.ClientSecret('{oops') === '' && D.ClientSecret('') === '');
 

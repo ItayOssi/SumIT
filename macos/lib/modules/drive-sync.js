@@ -70,6 +70,38 @@ function ConflictName(rel, when) {
   return stem + ' (מ-Drive ' + two(d.getDate()) + '.' + two(d.getMonth() + 1) + ' ' + two(d.getHours()) + '-' + two(d.getMinutes()) + ')' + ext;
 }
 
+// The page the browser shows after Google's answer, in the colors of the app (light or dark, as the system). logo is a data: URL.
+function DonePage(ok, error, logo) {
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const title = ok ? 'SumIT מחובר לחשבון Google' : 'ההתחברות לא הושלמה';
+  const text = ok ? 'הפרופיל, הסיכומים והמטלות שלך יישמרו עכשיו ב-Google\u00a0Drive, ויחזרו בכל מחשב שתתחבר ממנו.'
+    : error === 'access_denied' ? 'האישור בוטל, ולכן SumIT לא קיבל גישה. אפשר לנסות שוב מתי שתרצה.' : 'Google לא אישר את ההתחברות. חזור ל-SumIT ונסה שוב.';
+  const hint = ok ? 'אפשר לסגור את הכרטיסייה הזו ולחזור ל-SumIT. הסנכרון הראשון כבר התחיל.' : 'אפשר לסגור את הכרטיסייה הזו. ב-SumIT לוחצים על התמונה שלך, ואז "התחבר עם Google".';
+  const mark = ok ? '<path d="M7 12.5l3.2 3.2L17 9"/>' : '<path d="M12 7.5v5.5M12 16.5v.2"/>';
+  return '<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + '</title><style>'
+    + ':root{--bg:#f1f5fc;--bg2:#dfe9fb;--card:#fff;--text:#14213d;--muted:#5b6b86;--line:#d3dff0;--accent:#1f64d8;--accent2:#2f8fe8;--state:' + (ok ? '#16a34a' : '#dc2626') + ';color-scheme:light dark}'
+    + '@media (prefers-color-scheme:dark){:root{--bg:#0a1830;--bg2:#13305e;--card:#11274c;--text:#eaf1ff;--muted:#9fb1d0;--line:#24467c;--state:' + (ok ? '#22c55e' : '#f87171') + '}}'
+    + '*{box-sizing:border-box}html,body{height:100%;margin:0}'
+    + 'body{font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Hebrew","Segoe UI",Arial,sans-serif;color:var(--text);background:radial-gradient(900px 520px at 85% -10%,var(--bg2),transparent 70%),radial-gradient(700px 480px at 0% 110%,var(--bg2),transparent 70%),var(--bg);display:grid;place-items:center;padding:24px}'
+    + '.card{width:min(460px,100%);background:var(--card);border:1px solid var(--line);border-radius:28px;padding:40px 32px 30px;text-align:center;box-shadow:0 24px 60px -24px rgba(16,40,90,.35);animation:rise .55s cubic-bezier(.2,.8,.2,1) both}'
+    + '.logo{position:relative;width:112px;height:112px;margin:0 auto 22px}'
+    + '.logo img,.logo .ph{width:112px;height:112px;border-radius:50%;display:block;box-shadow:0 0 0 5px var(--card),0 0 0 8px var(--accent2)}'
+    + '.logo .ph{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font:800 34px/112px inherit}'
+    + '.badge{position:absolute;bottom:-4px;left:-4px;width:40px;height:40px;border-radius:50%;background:var(--state);border:4px solid var(--card);display:grid;place-items:center;animation:pop .45s .35s cubic-bezier(.3,1.6,.5,1) both}'
+    + '.badge svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}'
+    + '.badge path{stroke-dasharray:24;stroke-dashoffset:24;animation:draw .4s .65s ease-out forwards}'
+    + 'h1{font-size:23px;line-height:1.3;margin:0 0 10px}p{margin:0 0 6px;color:var(--muted)}'
+    + '.hint{margin-top:22px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--text);font-size:14px}'
+    + '.brand{margin-top:22px;font-size:12px;color:var(--muted);letter-spacing:.02em}'
+    + '@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}}@keyframes pop{from{transform:scale(0)}}@keyframes draw{to{stroke-dashoffset:0}}'
+    + '@media (prefers-reduced-motion:reduce){*{animation:none!important}.badge path{stroke-dashoffset:0}}'
+    + '</style></head><body><main class="card" role="main">'
+    + '<div class="logo">' + (logo ? '<img src="' + esc(logo) + '" alt="SumIT">' : '<div class="ph" aria-hidden="true">S</div>')
+    + '<span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24">' + mark + '</svg></span></div>'
+    + '<h1>' + esc(title) + '</h1><p>' + esc(text) + '</p><div class="hint">' + esc(hint) + '</div><div class="brand">SumIT · כל הלימודים במקום אחד</div>'
+    + '</main></body></html>';
+}
+
 // The name and the picture in Google's id_token (no check of the signature: it came straight from Google's token endpoint over TLS).
 function IdTokenProfile(idToken) {
   try {
@@ -100,7 +132,7 @@ function SyncableSettings(settings) {
 }
 
 module.exports = {
-  SyncPlan, ConflictName, SyncableSettings, ClientSecret, IdTokenProfile,
+  SyncPlan, ConflictName, SyncableSettings, ClientSecret, IdTokenProfile, DonePage,
   methods: {
     DrivePlan(local, remote, base) { return SyncPlan(local, remote, base); },
     DriveConflictName(rel, when) { return ConflictName(rel, when); },
@@ -140,10 +172,8 @@ module.exports = {
         const u = new URL(req.url, 'http://127.0.0.1');
         if (u.pathname !== '/') { res.writeHead(404); res.end(); return; }
         const ok = u.searchParams.get('state') === state && u.searchParams.get('code');
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end('<!doctype html><html dir="rtl" lang="he"><meta charset="utf-8"><title>SumIT</title><body style="font:16px -apple-system,sans-serif;display:grid;place-items:center;height:90vh;margin:0">'
-          + (ok ? '<div style="text-align:center"><div style="font-size:42px">✓</div><h2>SumIT מחובר ל-Google Drive</h2><p>אפשר לסגור את החלון ולחזור לאפליקציה.</p></div>'
-            : '<div style="text-align:center"><h2>ההתחברות לא הושלמה</h2><p>חזור ל-SumIT ונסה שוב.</p></div>') + '</body></html>');
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(DonePage(!!ok, u.searchParams.get('error') || '', this.DriveLogo()));
         if (u.searchParams.get('state') !== state) return;   // not our request: keep waiting
         if (ok) finish.resolve(u.searchParams.get('code')); else finish.reject(new Error(u.searchParams.get('error') === 'access_denied' ? 'ההתחברות בוטלה.' : 'Google לא אישר את ההתחברות.'));
       });
@@ -168,6 +198,21 @@ module.exports = {
         if (before && before !== tok.refresh_token) { try { await fetch(this.DriveRevokeUrl + '?token=' + enc(before), { method: 'POST' }); } catch { } }
         return who.email;
       } finally { clearTimeout(timer); server.close(); this.driveLogin = null; }
+    },
+
+    // The app's icon for the page after the answer, made small (as a data: URL inside the page: the server closes right after it).
+    DriveLogo() {
+      if (this.driveLogo !== undefined) return this.driveLogo;
+      const file = path.join(platform.WebDir, 'images', 'icon.png');
+      let url = '';
+      try {
+        const { nativeImage } = require('electron');
+        const img = nativeImage && nativeImage.createFromPath(file);
+        if (img && !img.isEmpty()) url = img.resize({ width: 224, height: 224, quality: 'best' }).toDataURL();
+      } catch { }
+      if (!url) { try { url = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64'); } catch { } }
+      this.driveLogo = url;
+      return url;
     },
 
     // The first sign-in fills what the student has not set yet: the name, and the picture of the Google account. Their own is replaced
