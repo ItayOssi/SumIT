@@ -113,3 +113,71 @@ html body :is(b,strong){font-weight:700}
   .book-controls,.book-question-pin { display:none!important; }
   .bookreading { display:block!important; }
 }
+
+/* ===== SumIT 2.0 ===== (SumIT 2.0/mockups/summary). The same page and structure in the colors of SumIT: navy in the dark
+   theme, round cards with a thin colored edge, the course in gold, a gold "next page" button, and Fluent emojis
+   (Microsoft, MIT) in the menu and the titles, drawn from .sumit-math/emoji by the classes below (study-book.js). */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a1830;--surface:#11274c;--surface2:#0e2142;--text:#eef4ff;--muted:#a9bde0;--line:rgba(120,160,230,.2);--accent:#7dd3fc;--accent-soft:rgba(34,184,240,.12);
+  --must:#6ee7b7;--must-soft:rgba(52,211,153,.12);--skip:#8ea6cf;--skip-soft:rgba(255,255,255,.05);--warn:#fcd34d;--warn-soft:rgba(251,191,36,.1);--err:#fda4af;--err-soft:rgba(244,63,94,.12);--exam:#d8b4fe;--exam-soft:rgba(168,85,247,.13)}
+  :root:not([data-theme="light"]) body{background:radial-gradient(900px 500px at 85% -10%,rgba(59,130,246,.18),transparent 70%),var(--bg) fixed}}
+:root[data-theme="dark"]{--bg:#0a1830;--surface:#11274c;--surface2:#0e2142;--text:#eef4ff;--muted:#a9bde0;--line:rgba(120,160,230,.2);--accent:#7dd3fc;--accent-soft:rgba(34,184,240,.12);
+  --must:#6ee7b7;--must-soft:rgba(52,211,153,.12);--skip:#8ea6cf;--skip-soft:rgba(255,255,255,.05);--warn:#fcd34d;--warn-soft:rgba(251,191,36,.1);--err:#fda4af;--err-soft:rgba(244,63,94,.12);--exam:#d8b4fe;--exam-soft:rgba(168,85,247,.13)}
+:root[data-theme="light"]{--bg:#f4f7fc;--surface:#ffffff;--surface2:#eef3fb;--line:#dbe4f3;--accent:#1f64d8;--accent-soft:#e6efff}
+:root[data-theme="dark"] body{background:radial-gradient(900px 500px at 85% -10%,rgba(59,130,246,.18),transparent 70%),var(--bg) fixed}
+
+/* the top: the course in gold, a big title, a progress bar in a gradient */
+header.top{padding:34px 0 14px}
+.kicker{color:#f2b632!important;font-weight:700;letter-spacing:.02em}
+:root[data-theme="light"] .kicker{color:#b7791f!important}
+header.top h1{font-size:46px;letter-spacing:-.02em;margin:8px 0 10px}
+.lede{font-size:19px;line-height:1.6;max-width:720px}
+.progress .bar{height:8px;max-width:360px;background:rgba(127,127,127,.18)}
+.progress .bar>i{background:linear-gradient(90deg,#22b8f0,#34d399)}
+
+/* the pages menu */
+.booktabs{border-radius:22px;padding:14px;gap:6px;box-shadow:0 14px 34px rgba(0,0,0,.12)}
+.booktabs button{border-radius:14px;padding:11px 12px}
+.booktabs button.on{background:linear-gradient(135deg,#3b82f6,#22b8f0);box-shadow:0 8px 20px rgba(34,184,240,.3)}
+.booktabs .bn{background:none;width:26px;height:26px}
+.booktabs .bn img{width:22px;height:22px}
+.booktheme{border-radius:999px;justify-content:center}
+.pagenav button{border-radius:999px;border:0;background:linear-gradient(135deg,#ffd166,#f2b632);color:#1b1300;padding:12px 26px;box-shadow:0 8px 22px rgba(242,182,50,.3)}
+.pagenav button:hover{background:linear-gradient(135deg,#ffd166,#f2b632);color:#1b1300;filter:brightness(1.05)}
+
+/* sections and cards */
+.bookpage h2{font-size:27px;letter-spacing:-.01em;display:flex;align-items:center;gap:12px}
+.bookpage h2::after{content:"";flex:1;height:1px;background:linear-gradient(270deg,var(--line),transparent)}
+.card{border-radius:22px;padding:20px 22px;box-shadow:inset 0 3px 0 rgba(34,184,240,.55)}
+.grid2 .card{box-shadow:none}
+.grid2 .card:first-child{box-shadow:inset 0 3px 0 rgba(52,211,153,.6)}
+.big-idea{font-size:19px;color:var(--text)!important;padding:10px 14px;border-radius:14px;background:linear-gradient(90deg,rgba(242,182,50,.14),transparent);border-inline-start:4px solid #f2b632}
+.fx{border-radius:16px;border-inline-start:0!important;background:var(--surface2);box-shadow:inset -4px 0 0 #22b8f0}
+[dir="rtl"] .fx{box-shadow:inset -4px 0 0 #22b8f0}
+.tag{padding:3px 11px}
+.callout{border-radius:16px;border-inline-start-width:4px}
+.from-lecture{background:linear-gradient(135deg,#7c3aed,#a855f7)!important;color:#fff!important;border:0!important;padding:1px 10px}
+
+/* the homework */
+details.q{border-radius:20px;transition:box-shadow .2s,border-color .2s}
+details.q[open]{border-color:rgba(242,182,50,.45);box-shadow:inset 0 3px 0 rgba(242,182,50,.7)}
+details.q>summary{font-weight:600}
+.pattern{border-radius:999px;padding:1px 9px;font-weight:700}
+.question-statement{border-radius:16px;background:var(--surface2)}
+.reveal>summary{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;background:var(--accent-soft)}
+.done input{accent-color:#34d399}
+nav.toc a{border-radius:999px}
+.sb-emo{display:inline-block;width:1.15em;height:1.15em;vertical-align:-.2em;background:center/contain no-repeat;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.booktabs .sb-emo{width:22px;height:22px;vertical-align:-5px}
+.bookpage h2 .sb-emo{width:1.1em;height:1.1em}
+.sb-emo-target{background-image:url("emoji/target.svg")}
+.sb-emo-book{background-image:url("emoji/book.svg")}
+.sb-emo-pencil{background-image:url("emoji/pencil.svg")}
+.sb-emo-bulb{background-image:url("emoji/bulb.svg")}
+.sb-emo-cap{background-image:url("emoji/cap.svg")}
+.sb-emo-warning{background-image:url("emoji/warning.svg")}
+.sb-emo-compass{background-image:url("emoji/compass.svg")}
+.sb-emo-zap{background-image:url("emoji/zap.svg")}
+.sb-emo-memo{background-image:url("emoji/memo.svg")}
+.sb-emo-sparkles{background-image:url("emoji/sparkles.svg")}
+.sb-emo-sun{background-image:url("emoji/sun.svg")}
+.sb-emo-moon{background-image:url("emoji/moon.svg")}

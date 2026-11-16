@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -9,6 +10,8 @@ partial class HitStudent
 {
     // The folders in web\vendor\fonts that study-book.css uses.
     internal static readonly string[] SummaryFonts = { "assistant", "rubik" };
+    // The Fluent emojis that study-book.css draws (web/vendor/emoji/flat), and their license.
+    internal static readonly string[] SummaryEmoji = { "target", "book", "pencil", "bulb", "cap", "warning", "compass", "zap", "memo", "sparkles", "sun", "moon" };
 
     internal void AddBookLayout(string page)
     {
@@ -29,6 +32,14 @@ partial class HitStudent
                     string dest = Path.Combine(to, Path.GetFileName(src));
                     try { if (!File.Exists(dest) || new FileInfo(dest).Length != new FileInfo(src).Length) File.Copy(src, dest, true); } catch { }
                 }
+            }
+            // The emojis of the menu and the titles (SumIT 2.0), next to the style that names them.
+            string emojiDir = Path.Combine(dir, "emoji");
+            Directory.CreateDirectory(emojiDir);
+            foreach (string f in SummaryEmoji.Select(n => Path.Combine("flat", n + ".svg")).Concat(new[] { "LICENSE.txt" }))
+            {
+                string src = Path.Combine(WebDir, "vendor", "emoji", f), dest = Path.Combine(emojiDir, Path.GetFileName(f));
+                try { if (File.Exists(src) && (!File.Exists(dest) || new FileInfo(dest).Length != new FileInfo(src).Length)) File.Copy(src, dest, true); } catch { }
             }
             string html = File.ReadAllText(page, Encoding.UTF8), orig = html;
             // The first version of the book was written into the page itself.

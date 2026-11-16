@@ -1723,3 +1723,316 @@ html[data-theme=dark] #view-home .hero { background: radial-gradient(closest-sid
 #wizard .wizard .content > .step.active { min-height: 0; overflow-y: auto; padding-inline-end: 6px; }
 #wizard .inst-search { background: color-mix(in srgb, var(--text) 6%, var(--surface)); border: 1px solid var(--border); color: var(--text); }
 #wizard .wizard .foot { flex-wrap: wrap; gap: 8px; }
+
+/* ===== SumIT 2.0: home panes ===== The parts of the home page side by side, one on screen at a time (RTL: the next pane
+   is to the left). Tabs with an underline, arrows, and a sideways swipe; each pane keeps its own layout. */
+.home-nav { display: flex; align-items: center; gap: 8px; margin: 22px 0 14px; border-bottom: 1px solid var(--border); }
+.home-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.home-tabs::-webkit-scrollbar { display: none; }
+.home-tabs button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 12px 18px 14px; font-weight: 700; font-size: 14.5px; color: var(--muted); white-space: nowrap; border-radius: 10px 10px 0 0; transition: color .2s, box-shadow .2s; }
+.home-tabs button svg { width: 18px; height: 18px; }
+.home-tabs button:hover { color: var(--text); }
+.home-tabs button[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -3px 0 #f2b632; }
+.home-tabs button:focus-visible { outline: 2px solid var(--accent); }
+.home-arrow { width: 38px; height: 38px; padding: 0; border-radius: 50%; font-size: 22px; line-height: 1; display: grid; place-items: center; flex: none; margin-bottom: 6px; }
+.home-track { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; transition: height .3s var(--ease); align-items: flex-start; }
+.home-track::-webkit-scrollbar { display: none; }
+.home-pane { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; padding-bottom: 6px; }
+.home-pane > .stats, .home-pane > #todayCard, .home-pane > .card.exam-board, .home-pane > .home-quick { grid-column: 1 / -1; }
+.home-pane[data-pane="2"] > .card, .home-pane[data-pane="3"] > .card { grid-column: 1 / -1; }
+.home-pane > .stats { margin-top: 0; }
+@media (max-width: 900px) { .home-pane { grid-template-columns: 1fr; } }
+
+/* ===== SumIT 2.0: the sidebar as a slim rail ===== (SumIT 2.0/mockups/home-v2-mascot). The same items and order: an icon
+   with a short label under it, a thin line between the groups, and the tools at the bottom as compact icons. */
+nav.side { width: 92px; padding: 12px 8px; align-items: center; }
+nav.side .brand { padding: 4px 0 14px; justify-content: center; }
+nav.side .brand > div { display: none; }
+nav.side .nav-label { display: block; font-size: 0; height: 1px; padding: 0; margin: 8px 16px; align-self: stretch; background: var(--border); }
+nav.side .nav-label:empty { margin-top: 4px; }
+nav.side .nav-item { flex-direction: column; justify-content: center; gap: 5px; width: 74px; height: auto; min-height: 60px; padding: 8px 4px; margin: 0 0 4px; border-radius: 16px; }
+nav.side .nav-item .nav-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 10.5px; font-weight: 600; line-height: 1.2; text-align: center; color: var(--muted); white-space: normal; max-width: 68px; overflow-wrap: anywhere; }
+nav.side .nav-item svg { width: 22px; height: 22px; }
+nav.side .nav-item:hover svg { transform: none; }
+nav.side .nav-item.active { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 32%, transparent), color-mix(in srgb, var(--accent-2) 18%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+nav.side .nav-item.active .nav-text { color: var(--text); }
+nav.side .nav-item.active::before { display: none; }
+nav.side .nav-item .count { display: block; position: absolute; top: 4px; inset-inline-start: 6px; margin: 0; font-size: 9.5px; padding: 1px 6px; }
+nav.side .nav-user .nav-text { display: none; }
+nav.side .theme-toggle { flex-direction: column; justify-content: center; gap: 4px; width: 74px; height: auto; min-height: 50px; padding: 6px 4px; border-radius: 14px; position: relative; }
+nav.side .theme-toggle .nav-text { display: block; font-size: 10px; line-height: 1.2; text-align: center; white-space: normal; }
+nav.side .ticket .ticket-text, nav.side .pomo .pomo-preset { display: none; }
+nav.side .ticket .ticket-count { position: absolute; top: 2px; inset-inline-start: 10px; }
+nav.side .ticket-btn::after { content: "מטלות"; font-size: 10px; }
+nav.side .status-pill { width: 74px; height: 30px; padding: 0; justify-content: center; gap: 6px; }
+nav.side .status-pill > span:last-child { display: block; font-size: 10px; }
+nav.side .status-pill small { display: none; }
+nav.side #collapseSidebar { align-self: center; }
+/* The sites under one rail button: the list opens beside the rail. The button is lit while one of the sites is open. */
+.nav-sites { display: contents; }
+nav.side #navSitesBtn[aria-expanded="true"], nav.side .nav-sites:has(.nav-sites-menu .nav-item.active) > #navSitesBtn { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+nav.side .nav-sites:has(.nav-sites-menu .nav-item.active) > #navSitesBtn .nav-text { color: var(--text); }
+/* It opens inside the rail, under the button: a site or a summary on screen is a native view drawn over the page, so a
+   list beside the rail would be hidden under it. */
+.nav-sites-menu { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; margin: 0 0 4px; border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent); animation: pop .22s var(--ease) both; }
+.nav-sites-menu[hidden] { display: none; }
+
+/* SumIT 2.0: Fluent Emoji (emoji.js). As big as the text around them, sitting on its line. */
+img.emo { display: inline-block; width: 1.2em; height: 1.2em; vertical-align: -0.24em; object-fit: contain; user-select: none; }
+.streak-flame img.emo, .hb-ic img.emo { width: 1em; height: 1em; vertical-align: middle; }
+
+/* ===== SumIT 2.0: course page ===== (SumIT 2.0/mockups/course-v2-spice). A big title, one line in a gradient with the
+   exam or how much is summarized, two round buttons and the rest under "⋯", "the most important thing now", and the
+   lectures as cards; an open lecture takes the whole row and shows everything it showed before. In the light theme
+   the top is a dark card (the course background shows in it); in the dark theme it has no frame. */
+.course-hero { min-height: 0; padding: 30px 36px 30px; border-radius: 28px; display: block; color: #eef4ff; overflow: visible; isolation: isolate; position: relative; z-index: 3;
+  background: linear-gradient(160deg, #0b1d3d, #0f2a5c 60%, #123a7a); box-shadow: 0 24px 60px rgba(6,16,38,.3); }
+.course-glow { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; z-index: -1; opacity: .55;
+  -webkit-mask-image: linear-gradient(270deg, transparent 30%, #000 85%); mask-image: linear-gradient(270deg, transparent 30%, #000 85%); }
+.course-glow > svg.bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.course-glow.has-bg > svg.bg { opacity: 0; }
+.course-hero > svg.bg { display: none; }
+.course-copy { position: relative; max-width: calc(100% - 300px); }
+.course-hero .back { position: static; display: inline-flex; color: #cfe0ff; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; }
+.course-hero h1 { font-size: clamp(32px, 3.8vw, 50px); font-weight: 800; line-height: 1.05; letter-spacing: -.02em; margin: 16px 0 6px; color: #fff; text-shadow: none; }
+.course-grad { margin: 0; font-size: clamp(19px, 2vw, 25px); font-weight: 800; line-height: 1.2; min-height: 1.2em;
+  background: linear-gradient(90deg, #22b8f0, #7dd3fc 45%, #f2b632); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.course-grad img.emo { width: 1.15em; height: 1.15em; vertical-align: -.22em; }
+.course-meter { display: flex; align-items: center; gap: 12px; margin-top: 12px; max-width: 460px; }
+.course-meter .bar { flex: 1; height: 8px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; }
+.course-meter .bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #22b8f0, #34d399); transition: width .6s var(--ease); }
+.course-meter small { font-size: 12.5px; color: #a9bde0; font-weight: 600; white-space: nowrap; }
+.course-hero .sub { margin-top: 12px; gap: 6px; color: #a9bde0; font-size: 14px; }
+.course-hero .sub .sep { opacity: .5; }
+.course-hero .lecturer { background: none; padding: 0; color: #dbe7ff; }
+.course-hero .lecturer input { width: 150px; height: 28px; background: transparent; color: #dbe7ff; font-weight: 600; font-size: 14px; padding: 0 6px; border-radius: 8px; }
+.course-hero .lecturer input:hover { background: rgba(255,255,255,.06); }
+.course-hero .lecturer input:focus { background: rgba(255,255,255,.1); box-shadow: 0 0 0 2px rgba(125,211,252,.4); }
+.course-hero .lecturer input::placeholder { color: #8ea6cf; }
+.course-hero .course-actions { margin: 22px 0 0; gap: 10px; align-items: center; }
+.course-actions .hero-gold, .course-actions .hero-ghost { height: 48px; padding: 0 26px; border-radius: 999px; font-size: 15px; font-weight: 700; }
+.course-actions .hero-gold { background: linear-gradient(135deg, #ffd166, #f2b632); border: 0; color: #1b1300; box-shadow: 0 10px 28px rgba(242,182,50,.35); }
+.course-actions .hero-gold:hover { filter: brightness(1.05); background: linear-gradient(135deg, #ffd166, #f2b632); }
+.course-actions .hero-ghost { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.2); color: #fff; }
+.course-actions .hero-ghost:hover { background: rgba(255,255,255,.12); }
+.course-more { position: relative; }
+.course-actions .hero-round { width: 46px; height: 46px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 20px; line-height: 1;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); color: #cfe0ff; }
+.course-more-menu { position: absolute; top: calc(100% + 8px); inset-inline-start: 0; z-index: 40; min-width: 210px; padding: 6px; border-radius: 16px;
+  display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg, 0 20px 50px rgba(0,0,0,.35)); animation: pop .2s var(--ease) both; }
+.course-more-menu[hidden] { display: none; }
+.course-more-menu button { justify-content: flex-start; height: 38px; border: 0; background: none; border-radius: 10px; color: var(--text); font-weight: 600; gap: 9px; }
+.course-more-menu button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.course-more-menu button[hidden] { display: none; }
+.course-deco { position: absolute; inset-inline-end: 40px; top: 50%; transform: translateY(-58%); width: 260px; height: 220px; pointer-events: none; }
+.course-deco .halo { position: absolute; inset: 0 20px 0 20px; border-radius: 50%; background: radial-gradient(circle, rgba(34,184,240,.3), rgba(59,130,246,.08) 55%, transparent 70%); }
+.course-deco .cap { position: absolute; left: 62px; top: 26px; width: 136px; height: 136px; transform: rotate(-8deg); filter: drop-shadow(0 18px 30px rgba(0,0,0,.45)); }
+.course-deco .sp { position: absolute; width: 32px; height: 32px; }
+.course-deco .s1 { left: 16px; top: 30px; transform: rotate(-14deg); } .course-deco .s2 { right: 18px; top: 14px; width: 24px; height: 24px; }
+.course-badge { position: absolute; inset-inline-end: 96px; bottom: 26px; cursor: pointer; font: inherit; text-align: start; height: auto; }
+.course-badge:hover { border-color: rgba(125,211,252,.5); background: rgba(17,39,76,.95); }
+.course-badge .hb-ic img.emo { width: 28px; height: 28px; }
+html[data-theme=dark] .course-hero { background: none; box-shadow: none; border-radius: 0; padding-inline: 8px; }
+html[data-theme=dark] .course-glow { opacity: .35; -webkit-mask-image: radial-gradient(60% 90% at 20% 40%, #000, transparent 75%); mask-image: radial-gradient(60% 90% at 20% 40%, #000, transparent 75%); }
+html[data-theme=dark] .course-glow:not(.has-bg) { opacity: 0; }
+
+/* The most important thing now in the course. */
+.course-now { position: relative; display: flex; align-items: center; gap: 16px; margin-top: 22px; padding: 18px 22px; border-radius: 22px; border: 2px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(135deg, #f2b632, #22b8f0) border-box; box-shadow: 0 0 0 6px rgba(242,182,50,.07), var(--shadow); animation: pop .4s var(--ease) both; }
+.course-now[hidden] { display: none; }
+.course-now .flag { position: absolute; top: -12px; inset-inline-start: 20px; padding: 4px 12px; border-radius: 999px; background: linear-gradient(135deg, #ffd166, #f2b632); color: #1b1300; font-size: 12px; font-weight: 800; }
+.course-now .n { width: 50px; height: 50px; flex: none; border-radius: 16px; display: grid; place-items: center; font-size: 22px; font-weight: 900; color: #fff;
+  background: linear-gradient(135deg, #1f64d8, #22b8f0); box-shadow: 0 10px 24px rgba(34,184,240,.35); }
+.course-now h3 { margin: 0; font-size: 18px; font-weight: 700; }
+.course-now p { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+.course-now .em img.emo { width: 42px; height: 42px; vertical-align: middle; }
+.course-now button { height: 44px; padding: 0 22px; border-radius: 999px; font-weight: 700; }
+
+/* Tabs with icons and a gold line. */
+#courseTabs { margin-top: 26px; }
+#courseTabs button { display: inline-flex; align-items: center; gap: 7px; height: 46px; padding: 0 16px; font-size: 14.5px; }
+#courseTabs button svg { width: 17px; height: 17px; opacity: .85; }
+#courseTabs button.active { color: var(--text); }
+#courseTabs button.active::after { background: #f2b632; }
+#courseTabs button.active .badge { background: #f2b632; color: #1b1300; }
+
+/* The lectures as cards. */
+.lec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+.lec-grid .lecture { margin: 0; border-radius: 22px; box-shadow: inset 0 3px 0 var(--edge, transparent), var(--shadow-sm); transition: transform .2s var(--ease), box-shadow .25s, border-color .25s; }
+.lec-grid .lecture:not(.open):hover { transform: translateY(-2px); box-shadow: inset 0 3px 0 var(--edge, transparent), var(--shadow); }
+.lec-grid .lecture[data-state=ok] { --edge: rgba(52,211,153,.6); }
+.lec-grid .lecture[data-state=run] { --edge: rgba(34,184,240,.75); }
+.lec-grid .lecture[data-state=todo] { --edge: rgba(251,191,36,.65); }
+.lec-grid .lecture.open { grid-column: 1 / -1; }
+.lec-grid .lecture-head { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "num st chev" "main main main" "go go go" "prog prog prog"; align-items: center; gap: 0 10px; padding: 18px 18px 16px; }
+.lec-grid .lecture-head .num { grid-area: num; width: 38px; height: 38px; border-radius: 12px; font-size: 15px; }
+.lec-grid .lec-st { grid-area: st; justify-self: start; }
+.lec-grid .chevron { grid-area: chev; }
+.lec-grid .lecture-main { grid-area: main; margin-top: 12px; }
+.lec-grid .lecture-title { font-size: 17.5px; font-weight: 700; white-space: normal; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.lec-grid .lec-line { font-size: 13px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lec-grid .lecture:not(.open) .chips { display: none; }
+.lec-grid .lecture.open .lec-line { display: none; }
+.lec-grid .lec-go { grid-area: go; display: flex; gap: 8px; }
+.lec-grid .lec-go:not(:empty) { margin-top: 14px; }
+.lec-grid .lec-go button { border-radius: 999px; height: 34px; padding: 0 16px; font-weight: 700; }
+.lec-grid .lec-prog { grid-area: prog; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; margin-top: 14px; }
+.lec-grid .lec-prog[hidden] { display: none; }
+.lec-grid .lec-prog i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #3b82f6, #22b8f0); transition: width .5s var(--ease); }
+.lec-st { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.lec-st[hidden] { display: none; }
+.lec-st img.emo { width: 14px; height: 14px; vertical-align: middle; }
+.lec-st.ok { background: color-mix(in srgb, #34d399 16%, transparent); color: var(--ok); }
+.lec-st.todo { background: color-mix(in srgb, #fbbf24 18%, transparent); color: #b7791f; }
+html[data-theme=dark] .lec-st.todo { color: #fcd34d; }
+.lec-st.run { background: color-mix(in srgb, #22b8f0 16%, transparent); color: var(--accent-text); }
+.lec-st.wait { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--muted); }
+@media (max-width: 980px) { .course-deco, .course-badge { display: none; } .course-copy { max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .lec-grid .lecture:not(.open):hover { transform: none; } }
+
+/* ===== SumIT 2.0: the quiz ===== Calm, like the course page: rounder, a colored edge on the card, the progress as
+   segments across the width, gold for the main button, and a Fluent emoji in the feedback and at the end. */
+#quizDots { gap: 4px; flex-wrap: nowrap; }
+#quizDots i { flex: 1; width: auto; height: 7px; transition: background .25s; }
+#quizDots i.now { background: linear-gradient(90deg, #f2b632, #22b8f0); }
+#quizCard { border-radius: 22px; padding: 18px 18px 16px; gap: 14px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: inset 0 3px 0 rgba(34,184,240,.7), var(--shadow-sm); }
+.qz-head { font-size: 12.5px; }
+.qz-kind { padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+.qz-q { font-size: 18px; line-height: 1.6; }
+.qz-opts { gap: 9px; }
+.qz-opt { padding: 12px 14px; border-radius: 16px; border: 1.5px solid var(--border); background: color-mix(in srgb, var(--text) 2%, var(--surface)); transition: border-color .15s, background .15s, transform .15s; }
+.qz-opt:hover:not([disabled]) { transform: translateY(-1px); }
+.qz-opt .qz-letter { width: 28px; height: 28px; font-size: 13px; }
+.qz-opt.picked { border-color: transparent; background: linear-gradient(color-mix(in srgb, var(--accent) 9%, var(--surface)), color-mix(in srgb, var(--accent) 9%, var(--surface))) padding-box, linear-gradient(135deg, #3b82f6, #22b8f0) border-box; }
+.qz-opt.picked .qz-letter { background: linear-gradient(135deg, #3b82f6, #22b8f0); }
+.qz-tf .qz-opt { min-height: 52px; align-items: center; font-size: 15.5px; }
+.qz-sure { gap: 6px; }
+.qz-sure button { padding: 5px 13px; border-radius: 999px; transition: background .15s, border-color .15s; }
+.qz-sure button[aria-pressed="true"] { border-color: transparent; background: linear-gradient(135deg, #ffd166, #f2b632); color: #1b1300; }
+.qz-feedback { border-radius: 16px; padding: 12px 14px; }
+.qz-feedback b img.emo { width: 1.25em; height: 1.25em; }
+.qz-actions button.primary, .qz-end-actions button.primary { height: 44px; padding: 0 24px; border-radius: 999px; font-weight: 700; font-size: 14.5px; border: 0;
+  background: linear-gradient(135deg, #ffd166, #f2b632); color: #1b1300; box-shadow: 0 8px 22px rgba(242,182,50,.3); }
+.qz-actions button.primary:hover:not(:disabled), .qz-end-actions button.primary:hover { filter: brightness(1.05); background: linear-gradient(135deg, #ffd166, #f2b632); }
+.qz-actions button.primary:disabled { box-shadow: none; opacity: .45; }
+.qz-end-actions button.soft { height: 40px; padding: 0 18px; border-radius: 999px; }
+#quizEnd { border-radius: 22px; padding: 22px 18px 20px; gap: 14px; background: var(--surface); box-shadow: inset 0 3px 0 rgba(52,211,153,.6), var(--shadow-sm); }
+.qz-medal { height: 64px; margin-bottom: -10px; animation: pop .5s var(--ease) both; }
+.qz-medal img.emo { width: 64px; height: 64px; filter: drop-shadow(0 10px 18px rgba(0,0,0,.3)); }
+.qz-ring { width: 140px; height: 140px; background: radial-gradient(closest-side, var(--surface) 83%, transparent 84% 100%),
+  conic-gradient(#22b8f0 0, #34d399 calc(var(--p) * 1%), color-mix(in srgb, var(--text) 9%, transparent) 0); }
+
+/* ===== SumIT 2.0: the tasks, the study track and the settings ===== The same calm language as the course page: a big
+   title (and, for the tasks, one line in a gradient with the nearest one), round cards, round buttons, gold for the one
+   main action, the stats of the track in one quiet strip, and the tabs of the track with a gold line. */
+:is(#view-tasks, #view-track, #view-settings, #view-courses) .page > .head h1 { font-size: clamp(30px, 3.4vw, 42px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+:is(#view-tasks, #view-track, #view-settings, #view-courses) .page > .head p { font-size: 15px; max-width: 680px; line-height: 1.55; }
+.page-grad { margin: 8px 0 0 !important; font-size: clamp(18px, 1.9vw, 23px) !important; font-weight: 800; line-height: 1.25 !important; color: transparent !important;
+  background: linear-gradient(90deg, #22b8f0, #7dd3fc 45%, #f2b632); -webkit-background-clip: text; background-clip: text; }
+.page-grad[hidden] { display: none; }
+:is(#view-tasks, #view-track, #view-settings) .card { border-radius: 22px; }
+:is(#view-tasks, #view-track, #view-settings) :is(button.primary, button.soft, .head > button) { border-radius: 999px; }
+:is(#view-tasks, #view-track, #view-settings) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]), select) { border-radius: 14px; }
+.gold-cta, #view-tasks .task-add button.primary, #view-track .track-hero button.primary {
+  background: linear-gradient(135deg, #ffd166, #f2b632); border-color: transparent; color: #1b1300; font-weight: 700; box-shadow: 0 8px 22px rgba(242,182,50,.3); }
+:is(#view-tasks .task-add, #view-track .track-hero) button.primary:hover:not(:disabled) { filter: brightness(1.05); background: linear-gradient(135deg, #ffd166, #f2b632); }
+
+/* tasks */
+#view-tasks .page > .card { box-shadow: inset 0 3px 0 rgba(34,184,240,.6), var(--shadow); }
+#view-tasks .task-add { border-radius: 18px; }
+#view-tasks .task { border-radius: 16px; }
+#view-tasks .task-group h3 { font-size: 15px; font-weight: 800; }
+#view-tasks .task-group.late h3 { color: var(--bad); }
+
+/* study track */
+#view-track .track-hero { border-radius: 26px; border: 1px solid rgba(120,180,255,.22); color: #eef4ff;
+  background: radial-gradient(420px 260px at 12% 30%, rgba(34,184,240,.28), transparent 70%), linear-gradient(160deg, #0b1d3d, #0f2a5c 60%, #123a7a); box-shadow: 0 20px 50px rgba(6,16,38,.3); }
+#view-track .track-hero h2 { font-size: 26px; font-weight: 800; color: #fff; }
+#view-track .track-hero p, #view-track .track-hero .muted { color: #b9cbea; }
+#view-track .track-hero button:not(.primary) { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.2); color: #fff; }
+html[data-theme=dark] #view-track .track-hero { background: radial-gradient(closest-side at 90% 50%, rgba(34,184,240,.18), transparent); border: 0; box-shadow: none; padding-inline: 8px; }
+.track-tabs button { display: inline-flex; align-items: center; gap: 7px; height: 46px; font-size: 14.5px; }
+.track-tabs button.active { color: var(--text); }
+.track-tabs button.active::after { background: #f2b632; }
+.track-tabs button.active .badge { background: #f2b632; color: #1b1300; }
+.track-pane .track-stats { gap: 0; border-radius: 22px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+.track-pane .track-stat { background: none; border: 0; box-shadow: none; border-radius: 0; padding: 16px 20px; }
+.track-pane .track-stat + .track-stat { border-inline-start: 1px solid var(--border); }
+#view-track .track-card { box-shadow: var(--shadow-sm); }
+
+/* settings: the title first, the two report buttons quiet */
+#view-settings .page > .head .grow { order: -1; }
+#view-settings .page > .head > button { height: 38px; padding: 0 16px; font-size: 13px; background: transparent; border: 1px solid var(--border); color: var(--muted); box-shadow: none; }
+#view-settings .page > .head > button:hover { color: var(--text); border-color: var(--accent); }
+#view-settings .card > .card-head h2 { font-size: 21px; font-weight: 800; }
+#view-settings .provider { border-radius: 20px; border-width: 1.5px; }
+#view-settings .provider.selected { border-color: transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(135deg, #3b82f6, #22b8f0) border-box; box-shadow: 0 0 0 5px rgba(34,184,240,.1); }
+
+/* ===== SumIT 2.0: my courses and the downloads ===== Round cards that lift a little, a taller band with a big letter,
+   one quiet line instead of the chips (a chip only for "not downloaded" or an exam soon), round search and filter,
+   and the downloads as round cards with a bar in a gradient. */
+#view-courses .courses-toolbar :is(select, input) { height: 42px !important; border-radius: 999px !important; padding: 0 16px !important; font-size: 13.5px !important; }
+#view-courses #refreshCourses { height: 42px; border-radius: 999px; }
+#view-courses h2.semester { font-size: 17px; font-weight: 800; }
+.course-card { border-radius: 24px; box-shadow: var(--shadow-sm); }
+.course-card:hover { transform: translateY(-3px); }
+.course-card .band { height: 104px; }
+.course-card .band .letter { font-size: 38px; bottom: 12px; inset-inline-start: 18px; }
+.course-card .body { padding: 16px 18px 16px; gap: 4px; }
+.course-card .name { font-size: 16.5px; font-weight: 700; }
+.course-card .cc-line { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.course-card .cc-line:empty { display: none; }
+.course-card .meta:empty { display: none; }
+.course-card .meta { padding-top: 8px; }
+.chip.cc-exam { background: color-mix(in srgb, #f2b632 18%, transparent); color: #b7791f; font-weight: 700; }
+html[data-theme=dark] .chip.cc-exam { color: #fcd34d; }
+.chip.cc-exam img.emo { width: 14px; height: 14px; vertical-align: -2px; }
+.job { border-radius: 20px; padding: 16px 18px; }
+.job .badge-ic { border-radius: 14px; }
+.job .bar { height: 7px; border-radius: 99px; }
+.job .bar i { background: linear-gradient(90deg, #3b82f6, #22b8f0); border-radius: 99px; }
+.job-buttons button { border-radius: 999px; }
+.job.done { box-shadow: inset 0 3px 0 rgba(52,211,153,.55), var(--shadow-sm); }
+.job.running { box-shadow: inset 0 3px 0 rgba(34,184,240,.65), var(--shadow-sm); }
+.job.failed { box-shadow: inset 0 3px 0 rgba(244,63,94,.6), var(--shadow-sm); }
+#view-recordings .page > .head h1 { font-size: clamp(30px, 3.4vw, 42px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+#view-recordings .page > .head p { font-size: 15px; line-height: 1.55; }
+#view-courses .courses-toolbar select { width: auto !important; min-width: 190px; }
+#view-courses .courses-toolbar { align-self: flex-end; }
+
+/* ===== SumIT 2.0: transitions ===== The new screen comes from the direction of the change (app.js viewDirection), the
+   highlight of the side menu glides between items (moveNavGlow), and tabs slide in from their side. Off when the system
+   asks for less motion. */
+#main[data-enter=up] > .view.active { animation: viewUp .48s var(--ease) both; }
+#main[data-enter=down] > .view.active { animation: viewDown .48s var(--ease) both; }
+#main[data-enter=fwd] > .view.active { animation: viewFwd .5s var(--ease) both; }
+#main[data-enter=back] > .view.active { animation: viewBack .5s var(--ease) both; }
+@keyframes viewUp { from { opacity: 0; transform: translateY(26px) scale(.99); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes viewDown { from { opacity: 0; transform: translateY(-22px) scale(.99); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes viewFwd { from { opacity: 0; transform: translateX(-56px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes viewBack { from { opacity: 0; transform: translateX(56px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+.tab-pane.active, .track-pane.pane-in { animation: paneIn .38s var(--ease) both; }
+@keyframes paneIn { from { opacity: 0; transform: translateX(var(--pane-dx, 0px)) translateY(6px); } to { opacity: 1; transform: none; } }
+.nav-glow { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; border-radius: 16px; opacity: 0;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 32%, transparent), color-mix(in srgb, var(--accent-2) 18%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 8px 22px color-mix(in srgb, var(--accent) 22%, transparent);
+  transition: transform .5s cubic-bezier(.22, 1.25, .36, 1), width .3s var(--ease), height .3s var(--ease), opacity .2s; }
+nav.side.has-glow .nav-item { z-index: 1; }
+nav.side.has-glow .nav-item.active { background: transparent; box-shadow: none; }
+nav.side .nav-item.active svg { animation: navIconPop .45s var(--ease) both; }
+@keyframes navIconPop { 0% { transform: scale(.82); } 60% { transform: scale(1.12); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  #main > .view.active, .tab-pane.active, .track-pane.pane-in, nav.side .nav-item.active svg { animation: none !important; }
+  .nav-glow { transition: none; }
+}
+
+/* ===== SumIT 2.0: the loading screen ===== The name with "2.0" in the gradient of the new look, a soft glow behind the
+   mascot, and the bar in gold and cyan. */
+.splash { background: radial-gradient(520px 380px at 50% 42%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%), var(--bg); }
+.splash b { font: 800 34px/1.1 var(--font-display); letter-spacing: -.02em; margin-top: 4px; }
+.splash .splash-ver { background: linear-gradient(90deg, #22b8f0, #7dd3fc 45%, #f2b632); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.splash small { font-size: 14px; margin-top: 10px; }
+.splash .track { width: 200px; height: 5px; margin-top: 22px; }
+.splash .track i { background: linear-gradient(90deg, #f2b632, #22b8f0); }

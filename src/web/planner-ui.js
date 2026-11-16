@@ -136,7 +136,7 @@ function openReviewDialog(cards) {
     $d('[data-card]').hidden = true; $d('[data-rate]').hidden = true; $d('[data-bar]').style.width = '100%';
     $d('[data-count]').textContent = '';
     const end = $d('[data-end]'); end.hidden = false;
-    end.innerHTML = `<div class="empty" style="border:none"><b>סיימת את החזרה 🎉</b>${reviewRun.done} כרטיסים. הכרטיסים שלא ידעת יחזרו מחר, והשאר בהפרש גדל.</div><div class="row"><div class="grow"></div><button class="primary" data-ok>סגור</button></div>`;
+    end.innerHTML = `<div class="empty" style="border:none"><b>סיימת את החזרה ${emo('🎉', true)}</b>${reviewRun.done} כרטיסים. הכרטיסים שלא ידעת יחזרו מחר, והשאר בהפרש גדל.</div><div class="row"><div class="grow"></div><button class="primary" data-ok>סגור</button></div>`;
     end.querySelector('[data-ok]').onclick = () => dialog.close();
     refreshReview();
   };

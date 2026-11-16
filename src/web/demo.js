@@ -126,8 +126,8 @@
   const sections = [
     lec(0, 'מידע כללי', [{ mod: 'resource', name: 'סילבוס הקורס תשפ"ו' }, { mod: 'forum', name: 'הודעות' }]),
     lec(1, 'אינטגרל רימן', [{ mod: 'resource', name: 'הרצאה 1 - אינטגרל רימן' }, { mod: 'assign', name: 'תרגיל בית 1', dates: 'הגשה: 12 בנובמבר' }, { mod: 'zoom', name: 'הקלטת ההרצאה' }], { exists: true, files: 4, videos: 1, transcripts: 1, studyPage: 'x', lecturePdf: 'x' }),
-    lec(2, 'המשפט היסודי', [{ mod: 'resource', name: 'הרצאה 2 - המשפט היסודי' }, { mod: 'resource', name: 'תרגול 2' }, { mod: 'zoom', name: 'הקלטה' }], { exists: true, files: 3 }),
-    lec(3, 'שיטות אינטגרציה', [{ mod: 'resource', name: 'הרצאה 3' }, { mod: 'assign', name: 'תרגיל בית 3' }]),
+    lec(2, 'המשפט היסודי', [{ mod: 'resource', name: 'הרצאה 2 - המשפט היסודי' }, { mod: 'resource', name: 'תרגול 2' }, { mod: 'zoom', name: 'הקלטה' }], { exists: true, files: 3, studyPage: 'x' }),
+    lec(3, 'שיטות אינטגרציה', [{ mod: 'resource', name: 'הרצאה 3' }, { mod: 'assign', name: 'תרגיל בית 3' }], { exists: true, files: 2 }),
     lec(4, 'אינטגרלים מוכללים', [{ mod: 'resource', name: 'הרצאה 4' }, { mod: 'url', name: 'קישור להקלטה' }])
   ];
   const ai = { provider: 'claude', ready: true, setup: '', claude: { installed: true, loggedIn: true, email: 'student@example.com', plan: 'pro' }, gemini: { installed: false, hasKey: false } };
@@ -148,6 +148,16 @@
           emit({ type: 'moodle', state: 'ready' }, 700);
           emit({ type: 'home', events: location.search.includes('empty') ? [] : events, name: 'נועה לוי' }, 1100);
           emit({ type: 'courses', data: courses }, 1300);
+          {
+            const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+            const cls = (d, start, end, course, kind, room) => ({ day: d, start, end, course, kind, room, lecturer: '' });
+            emit({ type: 'timetable', data: {
+              classes: [cls('ראשון', '10:00', '12:00', 'חשבון אינפיניטסימלי 2', 'הרצאה', 'בניין 8, 204'), cls('ראשון', '14:00', '16:00', 'מבני נתונים', 'הרצאה', 'בניין 2, 101'),
+                cls('שני', '09:00', '11:00', 'אלגברה לינארית 2', 'הרצאה', 'בניין 8, 310'), cls('שלישי', '12:00', '14:00', 'פיזיקה 1', 'הרצאה', 'בניין 3, 015'),
+                cls('רביעי', '10:00', '12:00', 'חשבון אינפיניטסימלי 2', 'תרגול', 'בניין 8, 112'), cls('חמישי', '14:00', '16:00', 'מבני נתונים', 'תרגול', 'בניין 2, 008')],
+              exams: [{ course: 'חשבון אינפיניטסימלי 2', date: day(12), moed: 'א', time: '09:00', room: '' }, { course: 'מבני נתונים', date: day(19), moed: 'א', time: '13:00', room: '' },
+                { course: 'אלגברה לינארית 2', date: day(26), moed: 'א', time: '09:00', room: '' }] } }, 1350);
+          }
           emit({ type: 'job', id: 1, name: 'שיעור 2', state: 'running', status: 'מוריד וידאו · 46% מתוך 273MiB · נשארו 00:14', progress: 46 }, 1400);
           emit({ type: 'job', id: 2, name: 'שיעור 1', state: 'done', status: 'הווידאו והתמלול נשמרו', progress: 100, hasVideo: true, hasTranscript: true }, 1450);
           break;
@@ -218,11 +228,19 @@
           ] }, 2200);
           break;
         }
-        case 'quizAttempt': case 'flashcards': break;
+        case 'quizAttempt': break;
+        case 'flashcards': {
+          ['מחלץ נוסחאות והגדרות', 'כותב שאלות', 'בודק מול הסיכום'].forEach((text, i) => emit({ type: 'flashcardsProgress', requestId: m.requestId, step: i + 1, steps: 3, text }, 200 + i * 400));
+          emit({ type: 'flashcardsResult', requestId: m.requestId, cards: [
+            { front: 'מה קורה לסכום העליון $U(f,P)$ כשמעדנים את החלוקה $P$?', back: 'הוא **קטן או נשאר**: בכל תת-קטע ה-sup יכול רק לרדת. הסכום התחתון, להפך, רק עולה.', tag: 'סכומי רימן', key: 'd1' },
+            { front: 'מה התנאי של רימן לאינטגרביליות?', back: 'לכל $\\varepsilon>0$ יש חלוקה $P$ שבה $U(f,P)-L(f,P)<\\varepsilon$.', tag: 'אינטגרביליות', key: 'd2' },
+            { front: 'למה פונקציית דיריכלה אינה אינטגרבילית ב-$[0,1]$?', back: 'בכל תת-קטע יש רציונלי ואי-רציונלי, אז $M_i=1$, $m_i=0$, וההפרש תמיד 1.', tag: 'דוגמה נגדית', key: 'd3' }] }, 1500);
+          break;
+        }
         case 'openCourse': {
           const c = courses.find(x => x.id === m.id);
           emit({ type: 'course', id: m.id, name: c.name, folder: 'D:\\HIT\\Courses\\' + c.name, sections, lecturer: 'ד"ר כהן', lecturerGuess: [],
-            local: { dir: 'x', exists: true, exams: 8, notes: 12, studyPages: 6, info, examPrep: 'x', lecturerProfile: 'x', courseInfoMd: 'x' },
+            local: { dir: 'x', exists: true, exams: 8, notes: 12, studyPages: 6, lectures: sections, info, examPrep: 'x', lecturerProfile: 'x', courseInfoMd: 'x' },
             notability: { configured: true, linked: 'אינפי 2', subjects: ['אינפי 2', 'מבני נתונים', 'פיזיקה'], notes: 12 } }, 900);
           emit({ type: 'newMaterial', course: c.name, items: [{ num: 4, title: 'אינטגרלים מוכללים', name: 'תרגיל בית 4', mod: 'assign' }, { num: 4, title: 'אינטגרלים מוכללים', name: 'פתרון תרגיל 3', mod: 'resource' }] }, 1300);
           break;

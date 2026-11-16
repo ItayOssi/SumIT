@@ -172,7 +172,7 @@ function showLimit(m) {
   if ($('limitCard')) return;
   const card = h(`<div class="overlay" id="limitCard"><div class="wizard" style="width:min(460px,100%)">
     <div class="art-top" style="height:150px">${ART.ai().replace('<svg', '<svg style="width:230px;height:140px"')}</div>
-    <div class="content"><h1 style="font-size:21px">Claude צריך הפסקה קטנה ☕</h1>
+    <div class="content"><h1 style="font-size:21px">Claude צריך הפסקה קטנה ${emo('☕', true)}</h1>
     <p class="lead">הגעת למגבלת השימוש לעכשיו${m.reset ? ' (מתאפס ב-' + esc(m.reset) + ')' : ''}. כל מה שכבר ירד נשמר, ואחרי האיפוס לוחצים שוב על "צור סיכום PDF" וממשיכים מאותה נקודה.</p>
     <div class="foot"><div class="grow"></div><button class="primary big" data-x>הבנתי</button></div></div></div></div>`);
   card.querySelector('[data-x]').onclick = () => card.remove();
@@ -195,12 +195,23 @@ function confetti() {
 }
 
 // ---------- Navigation ----------
+// SumIT 2.0: screens move in the direction of the change - down the side menu the new screen comes from below, up the
+// menu from above, into a course it slides in like a page forward (to the left, in Hebrew), and back the other way.
+const VIEW_ORDER = ['home', 'courses', 'course', 'tasks', 'track', 'recordings', 'sites', 'settings'];
+function viewDirection(from, to) {
+  if (!from || from === to) return 'same';
+  if (from === 'courses' && to === 'course') return 'fwd';
+  if (from === 'course' && to === 'courses') return 'back';
+  return VIEW_ORDER.indexOf(to) > VIEW_ORDER.indexOf(from) ? 'up' : 'down';
+}
 function show(view) {
   if (S.view === 'sites' && view !== 'sites') send({ type: 'hideSite' });
+  $('main').dataset.enter = viewDirection(S.view, view);
   S.view = view;
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   const nav = view === 'course' ? 'courses' : view;
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === nav || (view === 'sites' && n.dataset.siteLink === S.site)));
+  moveNavGlow();
   $('main').scrollTop = 0;
   if (view === 'sites') {
     $('siteBarMain').hidden = !!S.viewer; $('viewerBar').hidden = !S.viewer;
@@ -224,6 +235,45 @@ document.querySelectorAll('.nav-item[data-site-link]').forEach(n => n.onclick = 
   setSaveTarget(S.course && site !== 'portal' ? S.course.name : '', S.course && site !== 'portal' ? 'מידע על הקורס' : '');
   openSite(site);
 });
+// SumIT 2.0: the highlight of the side menu glides to the item that was chosen instead of jumping. It is one layer under
+// the items, moved to the active one; it follows the menu when items show or hide, the window resizes or the menu folds.
+function moveNavGlow(instant) {
+  const nav = document.querySelector('nav.side'); if (!nav) return;
+  let g = document.getElementById('navGlow');
+  if (!g) { g = document.createElement('div'); g.id = 'navGlow'; g.className = 'nav-glow'; g.setAttribute('aria-hidden', 'true'); nav.prepend(g); nav.classList.add('has-glow'); instant = true; }
+  const a = [...nav.querySelectorAll('.nav-item.active')].find(x => x.offsetParent);
+  if (!a) { g.style.opacity = '0'; return; }
+  // Measured from where the layer really starts (in RTL the menu's scrollbar sits on its left), not from the menu's box.
+  const r = a.getBoundingClientRect(), n = nav.getBoundingClientRect(), cs = getComputedStyle(nav);
+  const bl = parseFloat(cs.borderLeftWidth) || 0, br = parseFloat(cs.borderRightWidth) || 0;
+  const bar = nav.offsetWidth - nav.clientWidth - bl - br;
+  const x0 = n.left + bl + (cs.direction === 'rtl' ? bar : 0) - nav.scrollLeft, y0 = n.top + (parseFloat(cs.borderTopWidth) || 0) - nav.scrollTop;
+  const x = r.left - x0, y = r.top - y0;
+  if (instant) g.style.transition = 'none';
+  g.style.width = r.width + 'px'; g.style.height = r.height + 'px';
+  g.style.transform = `translate(${x}px, ${y}px)`;
+  g.style.opacity = '1';
+  if (instant) { void g.offsetWidth; g.style.transition = ''; }
+}
+(function navGlowFollow() {
+  const nav = document.querySelector('nav.side'); if (!nav) return;
+  let t = 0; const later = () => { clearTimeout(t); t = setTimeout(() => moveNavGlow(true), 30); };
+  new MutationObserver(later).observe(nav, { subtree: true, attributes: true, attributeFilter: ['hidden'], childList: true });
+  addEventListener('resize', later);
+  nav.addEventListener('transitionend', (e) => { if (e.target === nav) moveNavGlow(true); });
+  requestAnimationFrame(() => moveNavGlow(true));
+})();
+// SumIT 2.0: the sites (Moodle, the portal, CS24, Outlook, OneDrive) under one button in the rail; the list opens in the
+// rail under it and closes after a choice, on Escape or on a click elsewhere.
+(function navSites() {
+  const btn = $('navSitesBtn'), menu = $('navSitesMenu'); if (!btn || !menu) return;
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  const open = () => { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); };
+  btn.onclick = (e) => { e.stopPropagation(); menu.hidden ? open() : close(); };
+  menu.addEventListener('click', (e) => { if (e.target.closest('.nav-item')) close(); });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
+})();
 // "My notebook": the Notability app on this PC if it's installed, otherwise Notability on the web inside the app.
 document.querySelector('.nav-item[data-notes]').onclick = () => { if (S.course) setTab('notes'); else toast('פתח קורס והוסף דפי מחברת להרצאה המתאימה. אפשר לייצא PDF מכל אפליקציית כתיבה.'); };
 $('brand').onclick = () => show('home');
@@ -698,7 +748,7 @@ function renderHome() {
   renderStats(); renderNextUp(); if (typeof renderToday === 'function') renderToday();
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
-  $('greeting').textContent = greeting() + (name ? `, ${name}` : '') + ' 👋';
+  $('greeting').innerHTML = esc(greeting() + (name ? `, ${name}` : '')) + ' ' + emo('👋', true);
   const ev = homeEvents().filter(e => e.manual || !e.overdue || Date.now() / 1000 - e.when < 3 * 86400);
   const week = ev.filter(e => e.when && !e.overdue && e.when * 1000 - Date.now() < 7 * 86400000);
   // Moodle's week is still on its way only while Moodle is connecting or answering, and for 25 seconds at most:
@@ -757,9 +807,36 @@ function renderHeroBadges() {
   const si = S.track && S.track.stats && S.track.stats.streakInfo;
   const rv = S.review;
   const badge = (cls, ic, big, small) => `<div class="hero-badge ${cls}"><span class="hb-ic">${ic}</span><div><b>${big}</b><small>${small}</small></div></div>`;
-  box.innerHTML = (si && si.current > 0 ? badge('hb-streak', '🔥', si.current === 1 ? 'יום אחד' : si.current + ' ימים', 'רצף לימוד') : '')
-    + (rv && rv.count > 0 ? badge('hb-review', '✨', rv.count + ' כרטיסים', 'מחכים לחזרה') : '');
+  box.innerHTML = (si && si.current > 0 ? badge('hb-streak', emo('🔥', true), si.current === 1 ? 'יום אחד' : si.current + ' ימים', 'רצף לימוד') : '')
+    + (rv && rv.count > 0 ? badge('hb-review', emo('✨', true), rv.count + ' כרטיסים', 'מחכים לחזרה') : '');
 }
+// SumIT 2.0: the home panes. The tabs, the arrows and a sideways swipe move between them; the track is as tall as the
+// pane on screen, and the pane is remembered for the next time.
+(function homePanes() {
+  const track = $('homeTrack'); if (!track) return;
+  const panes = [...track.querySelectorAll('.home-pane')], tabs = [...document.querySelectorAll('#homeTabs [data-pane]')];
+  let cur = 0;
+  try { cur = Math.min(panes.length - 1, Math.max(0, +localStorage.getItem('homePane') || 0)); } catch { }
+  const fit = () => { track.style.height = panes[cur].offsetHeight + 'px'; };
+  const mark = (i) => {
+    cur = i;
+    tabs.forEach(t => t.setAttribute('aria-selected', String(+t.dataset.pane === i)));
+    $('homePrev').disabled = i === 0; $('homeNext').disabled = i === panes.length - 1;
+    panes.forEach((p, k) => p.inert = k !== i);
+    fit();
+    try { localStorage.setItem('homePane', String(i)); } catch { }
+  };
+  const go = (i, smooth = true) => { i = Math.min(panes.length - 1, Math.max(0, i)); track.scrollTo({ left: -i * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' }); mark(i); };
+  tabs.forEach(t => t.onclick = () => go(+t.dataset.pane));
+  $('homePrev').onclick = () => go(cur - 1);
+  $('homeNext').onclick = () => go(cur + 1);
+  let t = 0;
+  track.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => { const i = Math.round(Math.abs(track.scrollLeft) / track.clientWidth); if (i !== cur) mark(i); }, 90); });
+  new ResizeObserver(fit).observe(track);
+  panes.forEach(p => new ResizeObserver(() => { if (panes[cur] === p) fit(); }).observe(p));
+  window.addEventListener('resize', () => go(cur, false));
+  requestAnimationFrame(() => go(cur, false));
+})();
 $('heroCourses').innerHTML = IC.book + 'לקורסים שלי';
 $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
@@ -827,10 +904,20 @@ function courseCard(c, i) {
   const el = h(`<button class="course-card" style="--i:${i}" data-name="${esc(c.name)}">
     <div class="band">${ART.band(c.id)}<span class="letter">${esc((c.name || '?').trim().charAt(0))}</span>${pages ? `<div class="ring" style="--p:${pct}" data-label="${pages}"></div>` : ''}</div>
     <div class="body"><div class="name" dir="auto">${esc(c.name)}</div><div class="muted" style="font-size:12px" dir="auto">${esc(c.category || '')}</div>
-    <div class="meta">${L.exists ? '<span class="chip ok">במחשב</span>' : '<span class="chip">עוד לא הורד</span>'}${pages ? `<span class="chip accent">${pages} ${L.lecturePdfs ? 'סיכומים' : 'דפי לימוד'}</span>` : ''}${L.exams ? `<span class="chip warn">${L.exams} מבחנים</span>` : ''}</div></div></button>`);
+    <div class="cc-line" dir="auto"></div><div class="meta"></div></div></button>`);
+  // SumIT 2.0: one quiet line with what is ready, and a chip only when it matters (not downloaded yet, an exam soon).
+  el.querySelector('.cc-line').textContent = L.exists ? [pages ? pages + ' ' + (L.lecturePdfs ? 'סיכומים' : 'דפי לימוד') : 'עוד אין סיכומים', L.exams ? L.exams + ' מבחנים קודמים' : ''].filter(Boolean).join(' · ') : '';
+  const exam = courseExamDays(c.name);
+  el.querySelector('.meta').innerHTML = (L.exists ? '' : '<span class="chip">עוד לא הורד</span>')
+    + (exam != null && exam <= 30 ? `<span class="chip cc-exam">${emo('🎯')} ${exam === 0 ? 'מבחן היום' : exam === 1 ? 'מבחן מחר' : 'מבחן בעוד ' + exam + ' ימים'}</span>` : '');
   applyBg(el.querySelector('.band'), L.background);
   el.onclick = () => openCourse(c);
   return el;
+}
+// Days until the nearest exam of a course on the exam board, or null.
+function courseExamDays(name) {
+  const d = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && x.course && sameCourse(x.course, name)).map(x => daysFromToday(x.date)).filter(n => n >= 0).sort((a, b) => a - b)[0];
+  return d == null ? null : d;
 }
 function loadCourses() {
   $('coursesState').innerHTML = '';
@@ -885,6 +972,14 @@ function renderCourses() {
     return;
   }
   $('coursesState').innerHTML = '';
+  // SumIT 2.0: one line in a gradient under the title - the nearest exam, or how many courses there are this semester.
+  const focus = $('coursesFocus');
+  if (focus) {
+    const cur = (S.courses || []).filter(c => c.current);
+    const near = cur.map(c => ({ c, d: courseExamDays(c.name) })).filter(x => x.d != null && x.d <= 30).sort((a, b) => a.d - b.d)[0];
+    focus.hidden = !near && !cur.length;
+    focus.textContent = near ? `המבחן ב${near.c.name} ${near.d === 0 ? 'היום' : near.d === 1 ? 'מחר' : 'בעוד ' + near.d + ' ימים'}` : (cur.length === 1 ? 'קורס אחד בסמסטר' : cur.length + ' קורסים בסמסטר');
+  }
   // One group per semester, current semester first.
   const groups = new Map();
   list.forEach(c => { const k = semesterOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); });
@@ -911,7 +1006,7 @@ function openCourse(c) {
   $('courseName').textContent = c.name;
   $('courseBand').innerHTML = ART.band(c.id);
   $('lecturer').value = ''; $('lecturer').placeholder = 'מי המרצה?';
-  $('courseCount').textContent = 'טוען...'; $('courseReady').hidden = true;
+  $('courseCount').textContent = 'טוען...'; $('courseGrad').textContent = ''; $('courseMeter').hidden = true; $('courseNow').hidden = true; $('courseBadge').hidden = true;
   $('courseStatus').hidden = true;
   $('lectures').innerHTML = '';
   for (let i = 0; i < 6; i++) $('lectures').append(h('<div class="skeleton" style="height:70px;border-radius:16px;margin-bottom:10px"></div>'));
@@ -949,6 +1044,10 @@ $('lecturer').onchange = () => S.course && send({ type: 'setLecturer', course: S
 
 document.querySelectorAll('#courseTabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 function setTab(tab) {
+  // SumIT 2.0: a tab further along comes in from the left (the reading direction), an earlier one from the right.
+  const order = [...document.querySelectorAll('#courseTabs button')].map(b => b.dataset.tab);
+  const from = order.indexOf(S.tab), to = order.indexOf(tab);
+  $('courseBody').style.setProperty('--pane-dx', from < 0 || to === from ? '0px' : to > from ? '-28px' : '28px');
   S.tab = tab;
   document.querySelectorAll('#courseTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + tab));
@@ -1232,9 +1331,38 @@ function renderCourseHeader() {
   $('tabLessons').textContent = n;
   $('tabExams').textContent = L.exams || 0;
   $('tabNotes').textContent = L.notes || 0;
-  $('courseReady').hidden = !(L.lecturePdfs || L.studyPages);
-  $('courseReady').textContent = (L.studyPages || L.lecturePdfs) ? ((L.studyPages || L.lecturePdfs) === 1 ? 'סיכום אחד מוכן' : (L.studyPages || L.lecturePdfs) + ' סיכומים מוכנים') : '';
-  applyBg($('courseHero'), L.background);
+  applyBg($('courseGlow'), L.background);
+  // SumIT 2.0: one line in a gradient with what matters most (the exam, or how much is summarized), a thin bar of the
+  // lectures that have a summary, and a badge with the past exams to practice on.
+  const lectures = S.sections.filter(s => s.num > 0);
+  const ready = lectures.filter(s => (s.local || {}).lecturePdf || (s.local || {}).studyPage).length;
+  const exam = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && x.course && S.course && sameCourse(x.course, S.course.name))
+    .map(x => daysFromToday(x.date)).filter(d => d >= 0).sort((a, b) => a - b)[0];
+  const lecturesText = (k, n) => `${k} מתוך ${n} הרצאות מסוכמות`;
+  $('courseGrad').innerHTML = exam != null ? esc(exam === 0 ? 'המבחן היום' : exam === 1 ? 'המבחן מחר' : `המבחן בעוד ${exam} ימים`) + ' ' + emo('🎯')
+    : lectures.length ? esc(ready ? lecturesText(ready, lectures.length) : (lectures.length === 1 ? 'הרצאה אחת' : lectures.length + ' הרצאות') + ' בקורס') : '';
+  const meter = $('courseMeter'); meter.hidden = !lectures.length || exam == null;
+  meter.querySelector('i').style.width = (lectures.length ? Math.round(ready / lectures.length * 100) : 0) + '%';
+  meter.querySelector('small').textContent = lecturesText(ready, lectures.length);
+  const badge = $('courseBadge'); badge.hidden = !(L.exams > 0);
+  if (L.exams > 0) badge.innerHTML = `<span class="hb-ic">${emo('📝', true)}</span><span><b>${L.exams === 1 ? 'מבחן קודם' : L.exams + ' מבחנים קודמים'}</b><small>לאימון למבחן</small></span>`;
+  renderCourseNow();
+}
+// Two course names are the same course when one contains the other (the exam board often shortens them).
+function sameCourse(a, b) { const n = (x) => String(x || '').replace(/[\s"'׳״\-–]/g, ''); a = n(a); b = n(b); return !!a && !!b && (a.includes(b) || b.includes(a)); }
+$('courseBadge').onclick = () => $('examPrepBtn').click();
+// SumIT 2.0: "the most important thing now" in the course - the first lecture whose material is here and has no
+// summary yet, with the button that makes it. Nothing to do, nothing shown.
+function renderCourseNow() {
+  const box = $('courseNow'); if (!box || !S.course) return;
+  const s = S.sections.find(x => { const L = x.local || {}; return x.num > 0 && !(L.lecturePdf || L.studyPage) && !x.aiBusy && !x.busy && (L.files || L.transcripts); });
+  box.hidden = !s; if (!s) { box.innerHTML = ''; return; }
+  box.innerHTML = `<span class="flag">הכי חשוב עכשיו</span><div class="n"></div><div class="grow"><h3 dir="auto"></h3><p></p></div><span class="em">${emo('💡', true)}</span><button class="primary"><span data-ic="sparkles"></span>צור סיכום PDF</button>`;
+  icons(box);
+  box.querySelector('.n').textContent = s.num;
+  box.querySelector('h3').textContent = 'הרצאה ' + s.num + ' · ' + s.title;
+  box.querySelector('p').textContent = 'החומר כבר כאן, חסר רק הסיכום.' + (s.due ? ' הגשת שיעורי בית: ' + s.due + '.' : '');
+  box.querySelector('button').onclick = () => requestLectureSummary(S.course, s);
 }
 
 // A summary that is being made: kept on the app's side, so it is still there when the student comes back to the course.
@@ -1255,13 +1383,14 @@ function renderLectures() {
   box.append(newLectureBar(), lectureCalendarEditor());
   const secs = S.sections;
   if (!secs.length) { box.append(h(`<div class="empty">${ART.empty().replace('<svg', '<svg class="art"')}<b>התחל מהרצאה 1</b>צור הרצאה ובחר את המצגות, שיעורי הבית ודפי המחברת שלה. חומר מגרסאות קודמות נשאר בתיקיית הקורס ואפשר לייבא אותו מכפתורי הוספת הקבצים.</div>`)); return; }
-  secs.forEach((s, i) => { const el = lectureEl(s); el.style.setProperty('--i', i); box.append(el); });
-  box.classList.add('stagger');
+  const grid = h('<div class="lec-grid stagger"></div>');
+  secs.forEach((s, i) => { const el = lectureEl(s); el.style.setProperty('--i', i); grid.append(el); });
+  box.append(grid);
 }
 
 function lectureEl(s) {
   const el = h(`<div class="lecture" data-num="${s.num}">
-    <div class="lecture-head"><div class="num"></div><div class="lecture-main"><div class="lecture-title" dir="auto"></div><div class="chips"></div></div><span class="chevron" data-ic="forward" style="transform:rotate(-90deg)"></span></div>
+    <div class="lecture-head"><div class="num"></div><span class="lec-st"></span><span class="chevron" data-ic="forward" style="transform:rotate(-90deg)"></span><div class="lecture-main"><div class="lecture-title" dir="auto"></div><div class="lec-line" dir="auto"></div><div class="chips"></div></div><div class="lec-go"></div><div class="lec-prog" hidden><i></i></div></div>
     <div class="lecture-body"><div><div class="lecture-inner"><div class="top-actions"></div><ul class="items"></ul><div class="actions"></div><div class="notebook-hint"></div><div class="status"></div><div class="ai-log"></div></div></div></div></div>`);
   el.querySelector('.chevron').style.transform = '';
   el.querySelector('.chevron').innerHTML = svgI('<path d="m6 9 6 6 6-6"/>');
@@ -1293,12 +1422,18 @@ function fillLecture(el, s) {
   if (L.lecturePdf) chips.push('<span class="chip ok">סיכום PDF מוכן ✓</span>');
   else if (L.studyPage) chips.push('<span class="chip ok">סיכום מוכן ✓</span>');
   el.querySelector('.chips').innerHTML = chips.join('');
-  el.querySelector('.quick-summary')?.remove();
+  // SumIT 2.0: the card shows one line (the date and what is here) and one button; the chips stay for the open lecture.
+  el.querySelector('.lec-line').textContent = [s.date, [hasMaterial && 'מצגות', hasHomework && 'שיעורי בית', recs.length && 'הקלטה'].filter(Boolean).join(', ') || (L.files ? (L.files === 1 ? 'קובץ אחד' : L.files + ' קבצים') : '')].filter(Boolean).join(' · ') || (s.num === 0 ? 'חומר כללי של הקורס' : 'עוד אין חומר');
+  const go = el.querySelector('.lec-go'); go.innerHTML = '';
   const quickPage = L.studyPage || (L.sharedSummaries || [])[0]?.path;
   if (quickPage) {
-    const quick = h('<button class="primary small quick-summary">פתח סיכום</button>');
+    const quick = h('<button class="soft small quick-summary">פתח סיכום</button>');
     quick.onclick = e => { e.stopPropagation(); openViewer(quickPage, 'הרצאה ' + s.num + ' · סיכום', L.lecturePdf || '', s.num); };
-    el.querySelector('.lecture-head').insertBefore(quick, el.querySelector('.chevron'));
+    go.append(quick);
+  } else if (s.num > 0 && (L.files || L.transcripts) && !s.busy && !s.aiBusy) {
+    const make = h('<button class="primary small">צור סיכום PDF</button>');
+    make.onclick = e => { e.stopPropagation(); requestLectureSummary(course, s); };
+    go.append(make);
   }
 
   const items = el.querySelector('.items');
@@ -1315,7 +1450,7 @@ function fillLecture(el, s) {
     li.querySelector('.nm').textContent = 'הקלטה\\' + r.name + (r.ext || '.mp4');
     li.querySelector('.kind').textContent = r.transcript ? 'עם תמלול' : '';
     li.querySelector('button').onclick = () => send({ type: 'openPath', path: r.path }); items.append(li);
-    if (r.short) { const w = h('<li class="muted"></li>'); w.textContent = '⚠️ ' + r.short; items.append(w); }
+    if (r.short) { const w = h('<li class="muted"></li>'); setEmo(w, '⚠️ ' + r.short); items.append(w); }
   });
   // What the recording gave the summary: whether the AI opened the transcript, and the points marked "מהשיעור".
   const src = L.sources;
@@ -1393,6 +1528,7 @@ function fillLecture(el, s) {
 // The status line of a lecture; while a summary is being made it shows a bar with a percentage and a rough time left.
 function paintStatus(el, s) {
   const L = s.local || {};
+  paintCard(el, s);
   const job = lessonJob(s.num);
   const st = el.querySelector('.status'); if (!st) return;
   const working = s.busy || s.aiBusy;
@@ -1405,6 +1541,18 @@ function paintStatus(el, s) {
   }
   if (!bar && job && job.state === 'running' && job.progress >= 0) bar = `<div class="sum-progress"><div class="row"><b>${job.progress}%</b><span class="muted">מוריד את ההקלטה</span></div><div class="bar big"><i style="width:${job.progress}%"></i></div></div>`;
   st.innerHTML = (working ? '<span class="spinner"></span>' : (job && job.state !== 'failed' ? '<span class="spinner"></span>' : '')) + `<span dir="auto">${esc(text)}</span>` + bar;
+}
+// SumIT 2.0: the state of a lecture card - a chip (ready, missing, being written, soon), a colored edge and a thin bar
+// while the summary is being written.
+function paintCard(el, s) {
+  const L = s.local || {};
+  const working = s.busy || s.aiBusy;
+  const st = working ? ['run', s.pct != null ? 'נכתב סיכום · ' + s.pct + '%' : 'עובד על זה…'] : (L.lecturePdf || L.studyPage) ? ['ok', 'סיכום מוכן']
+    : s.num === 0 ? ['', ''] : (L.files || L.transcripts) ? ['todo', 'חסר סיכום'] : ['wait', 'בקרוב'];
+  el.dataset.state = st[0];
+  const chip = el.querySelector('.lec-st'); if (chip) { chip.className = 'lec-st ' + st[0]; chip.innerHTML = st[0] === 'run' ? emo('✨') + ' ' + esc(st[1]) : esc(st[1]); chip.hidden = !st[1]; }
+  const prog = el.querySelector('.lec-prog'); if (prog) { prog.hidden = !working; prog.querySelector('i').style.width = (s.pct != null ? s.pct : 12) + '%'; }
+  if (typeof renderCourseNow === 'function') renderCourseNow();
 }
 function section(num) { return S.sections.find(s => s.num === num); }
 function refreshSection(num) {
@@ -1578,7 +1726,7 @@ function resetChat() {
   const qs = scope === 'exam' ? [['🎯', 'תן לי שאלה ראשונה בסגנון המבחנים של המרצה'], ['📊', 'מה הנושאים שהכי חוזרים במבחנים?']]
     : scope.startsWith('lesson:') ? [['📝', `תסכם לי את ${scopeTitle(scope)}`], ['💡', 'תעזור לי להתחיל את התרגיל של השיעור, רמזים בלבד'], ['❓', 'מה הכי חשוב לזכור מהשיעור הזה?']]
     : [['📝', 'מה למדנו עד עכשיו בקורס?'], ['🎯', 'מה הכי חשוב למבחן?'], ['🧭', 'מה עוד חסר לך כדי לעזור לי בקורס הזה?']];
-  for (const [em, q] of qs) { const b = h(`<button class="ghost"></button>`); b.textContent = em + '  ' + q; b.onclick = () => { $('chatText').value = q; sendChat(); }; e.querySelector('.suggest').append(b); }
+  for (const [em, q] of qs) { const b = h(`<button class="ghost"></button>`); b.innerHTML = emo(em) + ' ' + esc(q); b.onclick = () => { $('chatText').value = q; sendChat(); }; e.querySelector('.suggest').append(b); }
   $('msgs').append(e);
 }
 function addMsg(role, text, replay) {
@@ -1657,6 +1805,13 @@ function refreshJobs() {
   const e = $('jobsEmpty'); e.innerHTML = '';
   if (!S.jobs.size) e.append(h(`<div class="empty">${ART.empty().replace('<svg', '<svg class="art"')}<b>אין הורדות עכשיו</b>הקלטה של שיעור מוסיפים מתוך השיעור, בכפתור "הוסף הקלטה".</div>`));
   const active = [...S.jobs.values()].filter(j => j.state === 'running' || j.state === 'queued').length;
+  // SumIT 2.0: one line in a gradient under the title while something downloads.
+  const run = [...S.jobs.values()].filter(j => j.state === 'running' && j.progress >= 0);
+  const focus = $('jobsFocus');
+  if (focus) {
+    focus.hidden = !active;
+    focus.textContent = (active === 1 ? 'הקלטה אחת יורדת עכשיו' : active + ' הקלטות יורדות עכשיו') + (run.length === 1 ? ' · ' + run[0].progress + '%' : '');
+  }
   $('jobCount').hidden = !active; $('jobCount').textContent = active;
   $('navDownloads').hidden = true;   // recordings live inside each course now
   if (S.view === 'course' && S.tab === 'recs') renderRecs();
@@ -1799,7 +1954,7 @@ $('changeBg').onclick = (e) => {
   pop.querySelector('[data-img]').onclick = () => { send({ type: 'setCourseBackground', course: S.course.name, mode: 'image' }); pop.remove(); };
   pop.querySelector('[data-reset]').onclick = () => { send({ type: 'setCourseBackground', course: S.course.name, mode: 'reset' }); pop.remove(); };
   document.body.append(pop);
-  const br = $('changeBg').getBoundingClientRect();
+  const br = $('courseMoreBtn').getBoundingClientRect();
   Object.assign(pop.style, { position: 'fixed', insetInlineEnd: 'auto', insetBlockStart: 'auto', zIndex: 60 });
   // Always fully inside the window: below the button when there is room, otherwise above it.
   const ph = pop.offsetHeight, pw = pop.offsetWidth;
@@ -1807,6 +1962,15 @@ $('changeBg').onclick = (e) => {
   pop.style.left = Math.max(8, Math.min(br.left, innerWidth - pw - 8)) + 'px';
   setTimeout(() => document.addEventListener('click', function close(ev) { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', close); } }), 0);
 };
+// SumIT 2.0: the less used course actions sit under one "⋯" button.
+(function courseMore() {
+  const btn = $('courseMoreBtn'), menu = $('courseMoreMenu'); if (!btn || !menu) return;
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); };
+  menu.addEventListener('click', (e) => { if (e.target.closest('button')) close(); }, true);
+  document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
+})();
 $('pickProfile').onclick = () => send({ type: 'pickProfileImage' });
 $('clearProfile').onclick = () => send({ type: 'clearProfileImage' });
 function shownName(st) { return ((st && st.displayName) || S.userName || (st && st.userName) || '').trim(); }
@@ -2232,7 +2396,7 @@ function onMessage(m) {
     }
     case 'academicCalendar': S.academic = m.data; if (S.view === 'course') renderLectures(); break;
     case 'siteNav': { const onPortal = /webrashim\.hit\.ac\.il/i.test(m.url || ''); if (document.getElementById('portalHint').hidden === onPortal) { $('portalHint').hidden = !onPortal; requestAnimationFrame(() => placeSite(true)); } } $('siteUrl').textContent = m.url || ''; $('siteBack').disabled = !m.canBack; $('siteForward').disabled = !m.canForward; break;
-    case 'timetable': S.timetable = m.data; renderTimetable(); if (typeof renderToday === 'function') renderToday(); break;
+    case 'timetable': S.timetable = m.data; renderTimetable(); if (S.view === 'home') renderHome(); else if (typeof renderToday === 'function') renderToday(); if (S.view === 'courses') renderCourses(); break;
     case 'prepStatus':
       S.prep = m.busy ? m : null; renderBanners();
       if (!m.busy && m.total) toast(`הקורסים שבחרת מוכנים במחשב (${m.total})`);
@@ -2459,6 +2623,14 @@ function renderTasks(box) {
   const nav = $('taskCount'); if (nav) { nav.textContent = open.length; nav.hidden = !open.length; }
   const courses = (S.courses || []).filter(c => c.current).map(c => c.name);
   const total = S.tasks.length, pct = total ? Math.round(done.length / total * 100) : 0;
+  // SumIT 2.0: one line in a gradient with the nearest task, under the title.
+  const focusEl = $('tasksFocus');
+  if (focusEl) {
+    const next = open.filter(t => t.due && daysFromToday(t.due) >= 0).sort((a, b) => a.due.localeCompare(b.due))[0];
+    const d = next ? daysFromToday(next.due) : null;
+    focusEl.hidden = !next;
+    if (next) focusEl.textContent = next.title + ' · ' + (d === 0 ? 'היום' : d === 1 ? 'מחר' : 'בעוד ' + d + ' ימים');
+  }
   box.append(h(`<div class="task-summary"><div class="ring" style="--p:${pct}"><b>${pct}%</b></div>
     <div><b>${open.length ? open.length + (open.length === 1 ? ' מטלה פתוחה' : ' מטלות פתוחות') : 'אין מטלות פתוחות'}</b><small class="muted">${total ? done.length + ' מתוך ' + total + ' הושלמו' : 'אפשר להוסיף הגשות, הכנות למבחן וכל מה שצריך לזכור'}</small></div></div>`));
   const form = h(`<form class="task-add"><div class="task-add-main"><span class="ic assign" data-ic="plus"></span><input data-t-title placeholder="מה צריך לעשות? למשל: להגיש תרגיל 3" maxlength="200" autocomplete="off"></div>

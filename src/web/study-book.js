@@ -16,7 +16,7 @@
   try { var saved = localStorage.getItem('sumit-study-theme'); if (saved === 'dark' || saved === 'light') applyTheme(saved); } catch (e) { }
   function themeButton(parent) {
     var b = document.createElement('button'); b.type = 'button'; b.className = 'booktheme' + (parent ? '' : ' floating');
-    function label() { b.textContent = currentTheme() === 'dark' ? '☀️ מצב בהיר' : '🌙 מצב כהה'; }
+    function label() { b.textContent = currentTheme() === 'dark' ? '☀️ מצב בהיר' : '🌙 מצב כהה'; emojify(b); }
     b.onclick = function () { var n = currentTheme() === 'dark' ? 'light' : 'dark'; applyTheme(n); try { localStorage.setItem('sumit-study-theme', n); } catch (e) { } label(); };
     label(); (parent || document.body).appendChild(b); return b;
   }
@@ -215,6 +215,31 @@
     });
   }
 
-  function start() { build(); if (!document.querySelector('.booktheme') && document.body) themeButton(null); }
+  // SumIT 2.0: the emojis of the menu, the titles and the notes are Fluent Emoji (Microsoft, MIT), drawn by study-book.css
+  // from .sumit-math/emoji (copied by AddBookLayout), so they look the same everywhere and travel in a shared ZIP.
+  // The text itself is not changed: the span carries the emoji as its label, and an emoji not in the list stays as it is.
+  var EMO = { '🎯': 'target', '📖': 'book', '✏️': 'pencil', '✏': 'pencil', '💡': 'bulb', '🎓': 'cap', '⚠️': 'warning', '⚠': 'warning',
+    '🧭': 'compass', '⚡': 'zap', '📝': 'memo', '✨': 'sparkles', '☀️': 'sun', '☀': 'sun', '🌙': 'moon' };
+  var EMO_RE = new RegExp(Object.keys(EMO).sort(function (a, b) { return b.length - a.length; }).join('|'), 'g');
+  function emojify(root) {
+    if (!root || !document.createTreeWalker) return;
+    var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), list = [], n;
+    while ((n = tw.nextNode())) { EMO_RE.lastIndex = 0; if (EMO_RE.test(n.data) && !(n.parentNode && n.parentNode.closest && n.parentNode.closest('.katex,script,style,code,pre'))) list.push(n); }
+    list.forEach(function (t) {
+      var frag = document.createDocumentFragment(), last = 0, m; EMO_RE.lastIndex = 0;
+      while ((m = EMO_RE.exec(t.data))) {
+        frag.appendChild(document.createTextNode(t.data.slice(last, m.index)));
+        var s = document.createElement('span'); s.className = 'sb-emo sb-emo-' + EMO[m[0]]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', m[0]);
+        frag.appendChild(s); last = EMO_RE.lastIndex;
+      }
+      frag.appendChild(document.createTextNode(t.data.slice(last)));
+      t.parentNode.replaceChild(frag, t);
+    });
+  }
+  function emojifyPage() {
+    Array.prototype.forEach.call(document.querySelectorAll('.booktabs, .pagenav, .bookpage-title, .wrap h2, .wrap h3, .callout b.h, nav.toc a'), emojify);
+  }
+
+  function start() { build(); if (!document.querySelector('.booktheme') && document.body) themeButton(null); emojifyPage(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

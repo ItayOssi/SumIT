@@ -7,6 +7,8 @@ const { fileExists, mkdirp, readText, writeText } = require('../util');
 const platform = require('../platform');
 
 const SummaryFonts = ['assistant', 'rubik'];   // the folders in web/vendor/fonts that study-book.css uses
+// The Fluent emojis that study-book.css draws (web/vendor/emoji/flat), and their license.
+const SummaryEmoji = ['target', 'book', 'pencil', 'bulb', 'cap', 'warning', 'compass', 'zap', 'memo', 'sparkles', 'sun', 'moon'];
 
 module.exports = {
   methods: {
@@ -27,6 +29,12 @@ module.exports = {
             const src = path.join(from, f), dest = path.join(to, f);
             try { if (!fileExists(dest) || fs.statSync(dest).size !== fs.statSync(src).size) fs.copyFileSync(src, dest); } catch { }
           }
+        }
+        // The emojis of the menu and the titles (SumIT 2.0), next to the style that names them.
+        const emojiDir = path.join(dir, 'emoji'); mkdirp(emojiDir);
+        for (const f of SummaryEmoji.map(n => path.join('flat', n + '.svg')).concat(['LICENSE.txt'])) {
+          const src = path.join(platform.WebDir, 'vendor', 'emoji', f), dest = path.join(emojiDir, path.basename(f));
+          try { if (fileExists(src) && (!fileExists(dest) || fs.statSync(dest).size !== fs.statSync(src).size)) fs.copyFileSync(src, dest); } catch { }
         }
         let html = readText(page);
         const orig = html;

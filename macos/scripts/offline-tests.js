@@ -393,6 +393,9 @@ async function runLifecycleTests(app, root, check) {
     check('the summary fonts (Assistant and Rubik) are next to the page, every file the style names, with their license',
       urls.length >= 4 && urls.every(u => fileExists(path.join(math, u))) && urls.some(u => u.includes('assistant')) && urls.some(u => u.includes('rubik'))
         && fileExists(path.join(math, 'fonts', 'assistant', 'OFL.txt')) && fileExists(path.join(math, 'fonts', 'rubik', 'OFL.txt')));
+    const emojiUrls = [...readText(path.join(math, 'study-book.css')).matchAll(/url\("(emoji\/[^"]+)"\)/g)].map(m => m[1]);
+    check('the Fluent emojis of the summary are next to the page, every one the style names, with their license',
+      emojiUrls.length >= 10 && emojiUrls.every(u => fileExists(path.join(math, u))) && fileExists(path.join(math, 'emoji', 'LICENSE.txt')));
   }
 }
 
@@ -2669,6 +2672,22 @@ async function runRecordingTests(app, root, check) {
 
 async function runQuizTests(app, root, check) {
   const Q = require('../../src/web/quiz-core.js');
+  {
+    // The Fluent emojis of the UI (emoji.js): every one it names is in vendor/emoji, and the text around them stays text.
+    const web = path.join(__dirname, '..', '..', 'src', 'web');
+    const ctx = { esc: (t) => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) };
+    require('vm').runInNewContext(readText(path.join(web, 'emoji.js')) + ';this.out={EMOJI,EMOJI_3D,emo,emoHtml};', ctx);
+    const E = ctx.out;
+    const names = [...new Set(Object.values(E.EMOJI))];
+    check('every emoji of the UI has its Fluent file in the app (flat, and 3D for the big ones), with the license',
+      names.every(n => fileExists(path.join(web, 'vendor', 'emoji', 'flat', n + '.svg')))
+        && [...E.EMOJI_3D].every(n => fileExists(path.join(web, 'vendor', 'emoji', '3d', n + '.png')))
+        && fileExists(path.join(web, 'vendor', 'emoji', 'LICENSE.txt')));
+    const html = E.emoHtml('<b>רצף</b> 🔥 ו-⚠️ ו-🙂', true);
+    check('emojis become images, the text stays escaped, and an unknown emoji stays as it is',
+      html.startsWith('&lt;b&gt;') && html.includes('src="vendor/emoji/3d/fire.png" alt="🔥"') && html.includes('flat/warning.svg')
+        && html.includes('🙂') && !html.includes('<b>') && E.emo('⚠️').includes('flat/warning.svg'));
+  }
   const raw = [
     { type: 'mcq', q: 'מה הסיבוכיות של חיפוש בינארי?', options: ['O(log n)', 'O(n)', 'O(n log n)', 'O(1)'], answer: 0, why: ['חצי בכל צעד', 'זה חיפוש לינארי', 'זה מיון', 'רק בטבלת גיבוב'], tag: 'סיבוכיות' },
     { type: 'mcq', q: 'שאלה עם אינדקס שגוי', options: ['א', 'ב', 'ג'], answer: 5 },

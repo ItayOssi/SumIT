@@ -77,7 +77,7 @@ function ticketRow(it) {
   const el = h(`<div class="task ticket-row" data-src="${it.source}">${it.source === 'mine' ? '<label class="task-check"><input type="checkbox"><span class="box"></span></label>' : ''}
     <div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div>
     <span class="chip${it.overdue || it.days === 0 ? ' bad' : it.days != null && it.days <= 3 ? ' warn' : ''}">${esc(TasksTicket.when(it))}</span></div>`);
-  el.querySelector('b').textContent = it.title + (it.exam && it.source !== 'mine' ? ' 📝' : '');
+  setEmo(el.querySelector('b'), it.title + (it.exam && it.source !== 'mine' ? ' 📝' : ''));
   el.querySelector('small').textContent = [TICKET_SOURCE[it.source], it.course, it.date ? it.date.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ');
   if (it.source === 'mine') {
     el.querySelector('input').onchange = () => { const t = S.tasks.find(x => x.id === it.taskId); if (t) { t.done = true; saveTasks(); toast('סומן כבוצע'); } };

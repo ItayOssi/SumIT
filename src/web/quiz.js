@@ -106,7 +106,7 @@ function renderQuiz() {
     const why = q.type === 'mcq' ? '' : q.why;
     const yours = q.type === 'cloze' && !r.correct ? `<div>כתבת: <b style="display:inline">${esc(r.typed || '')}</b> · התשובה: <b style="display:inline">${esc(q.answer)}</b></div>` : '';
     const alarm = !r.correct && set.sure === 'sure' ? '<span class="qz-alarm">טעית כשהיית בטוח. זו הטעות שהכי שווה לעצור עליה רגע.</span>' : '';
-    feedback = `<div class="qz-feedback ${r.correct ? 'right' : 'wrong'}"><b>${r.correct ? '✓ נכון' : '✗ לא נכון'}</b>${yours}${why ? md(why) : ''}${alarm}</div>`;
+    feedback = `<div class="qz-feedback ${r.correct ? 'right' : 'wrong'}"><b>${r.correct ? emo('✨') + ' נכון!' : emo('💡') + ' לא נכון, וזה מה שחשוב לזכור'}</b>${yours}${why ? md(why) : ''}${alarm}</div>`;
   }
   const last = set.i === set.order.length - 1;
   const action = checked
@@ -158,11 +158,12 @@ function renderQuizEnd(set) {
     : s.percent >= 60 ? 'בכיוון. שווה לעבור שוב על מה שטעית, ואז לנסות שוב.'
     : 'זה בדיוק הזמן לחזור לסיכום, לנושאים שלמטה, ולנסות שוב.';
   const weak = s.weak.length ? `<div class="qz-weak"><b>כדאי לחזור על:</b> ${s.weak.map(t => `<span class="qz-tag">${esc(t)}</span>`).join('')}</div>` : '';
-  const sure = s.confidentWrong ? `<div class="qz-weak">⚠️ ${s.confidentWrong === 1 ? 'טעות אחת' : s.confidentWrong + ' טעויות'} כשהיית בטוח. אלה הנקודות שהכי כדאי לבדוק בסיכום.</div>` : '';
+  const sure = s.confidentWrong ? `<div class="qz-weak">${emo('⚠️')} ${s.confidentWrong === 1 ? 'טעות אחת' : s.confidentWrong + ' טעויות'} כשהיית בטוח. אלה הנקודות שהכי כדאי לבדוק בסיכום.</div>` : '';
   const prior = set.prevAttempt;
   const prev = !set.retry && prior ? `<div class="qz-prev">בפעם הקודמת ${prior.date ? '(' + esc(prior.date) + ')' : ''}: ${prior.right} מתוך ${prior.total}</div>` : '';
   const wrong = set.order.filter(i => set.results[i] && !set.results[i].correct);
-  $('quizEnd').innerHTML = `<div class="qz-ring" style="--p:${s.percent}"><div class="qz-score" dir="ltr">${s.right}<small> / ${s.total}</small></div></div>
+  const medal = emo(s.percent >= 85 ? '🎉' : s.percent >= 60 ? '✨' : '💡', true);
+  $('quizEnd').innerHTML = `<div class="qz-medal">${medal}</div><div class="qz-ring" style="--p:${s.percent}"><div class="qz-score" dir="ltr">${s.right}<small> / ${s.total}</small></div></div>
     <b>${set.retry ? 'סבב תיקון: ' : ''}${verdict}</b>${weak}${sure}${prev}
     <div class="qz-end-actions">${wrong.length ? `<button class="primary small" id="quizRetryWrong">תרגל שוב את ${wrong.length === 1 ? 'השאלה שטעית בה' : wrong.length + ' השאלות שטעית בהן'}</button>` : ''}
     <button class="soft small" id="quizRestart">מההתחלה</button><button class="soft small" id="quizFresh">בוחן חדש מהסיכום</button></div>`;
