@@ -5,9 +5,31 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { nativeTheme } = require('electron');
-const { Str, Bool, Int, Dict, Trunc, Exec, delay, guidN, fileExists, dirExists, listFiles, mkdirp, readText, writeText, nativeRel } = require('../util');
+const { Str, Bool, Int, Dict, Trunc, Exec, delay, guidN, fileExists, dirExists, listFiles, mkdirp, readText, writeText, nativeRel, TranscriptSeconds, RecordingLength } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
+
+// What a summary was built from: whether the AI opened the transcript (a tool call named it), the files it opened,
+// and how many points it marked as said only in the lecture. known=false when the AI reports no tool calls (ChatGPT),
+// and then nothing is claimed either way.
+function SummarySources(touched, html, transcriptSeconds) {
+  const named = (Array.isArray(touched) ? touched : []).map(String);
+  const files = [...new Set(named.filter(t => !/[\n|*]/.test(t) && /\.[A-Za-z0-9]{1,5}$/.test(t)).map(t => path.basename(t.replace(/\\/g, '/'))))];
+  return {
+    known: named.length > 0,
+    transcriptRead: named.some(t => t.includes(C.TranscriptSuffix)),
+    transcriptSeconds: transcriptSeconds || 0,
+    fromLecture: (String(html || '').match(/class=["'][^"']*\bfrom-lecture\b/g) || []).length,
+    files: files.slice(0, 20),
+  };
+}
+
+// One line for the student: what the recording gave this summary.
+function SourcesNote(src) {
+  if (!src || !src.known || !(src.transcriptSeconds > 0)) return '';
+  if (!src.transcriptRead) return 'שים לב: ה-AI לא פתח את התמלול בסיכום הזה';
+  return 'התמלול נקרא (' + RecordingLength(src.transcriptSeconds) + ')' + (src.fromLecture > 0 ? ' · ' + src.fromLecture + ' נקודות מהשיעור שלא במצגות' : ' · לא נמצא בו דבר שלא במצגות');
+}
 
 const MergeScript = `import sys, pymupdf
 out, rest = sys.argv[1], sys.argv[2:]
@@ -32,6 +54,8 @@ module.exports = {
     host.pdfFailure = '';
   },
   methods: {
+    SummarySources,
+    SourcesNote,
     DigestRel(num) { return C.SumitDir + '/digests/הרצאה ' + num + '.md'; },
 
     LecturePdfPath(course, num) {
@@ -125,7 +149,10 @@ module.exports = {
       if (!this.AiReadyOrSay(t => this.SectionStatus(course, num, t, false, true))) return null;
       const dir = this.LectureDir(course, num);
       const transcript = path.join(dir, C.RecordingFolder);
-      const hasTranscript = dirExists(transcript) && listFiles(transcript, false).some(f => f.endsWith(C.TranscriptSuffix + '.txt'));
+      const transcriptFiles = dirExists(transcript) ? listFiles(transcript, false).filter(f => f.endsWith(C.TranscriptSuffix + '.txt')) : [];
+      const hasTranscript = transcriptFiles.length > 0;
+      let transcriptSeconds = 0;
+      for (const f of transcriptFiles) { try { transcriptSeconds += TranscriptSeconds(readText(f)); } catch { } }
       if (this.CountFiles(dir) === 0 && !hasTranscript) {
         this.SectionStatus(course, num, 'אין עדיין חומר להרצאה הזו - הוסף קבצים קודם', false, true);
         return null;
@@ -158,6 +185,7 @@ module.exports = {
         + ' בסוף כתוב גם תקציר "' + this.DigestRel(num) + '" (עד 60 שורות: הנושאים, כל נוסחה ב-LaTeX, הגדרות, שיטות פתרון ושמות הסעיפים בדף) לשימוש ההרצאות הבאות.\n'
         + 'החומר של ההרצאה: התיקייה "' + folder + '"' + (hasTranscript ? ', התמלול "' + folder + '/' + C.RecordingFolder + '"' : '')
         + ', מצגות ומחברת המרצה ב-"' + folder + '/' + C.LecturerNotes + '", והמחברת של הסטודנט ב-"' + folder + '/' + C.Notebook + '" אם יש.\n'
+        + (hasTranscript ? 'קרא את התמלול. הוסף לסיכום מה שהמרצה אמר בעל פה ולא כתוב במצגות (הסברים, דגשים, דוגמאות, מה שאמר שיהיה במבחן), וסמן כל נקודה כזו ב-<span class="from-lecture">מהשיעור</span> בתחילתה. אם התמלול קצר או לא מוסיף דבר, אל תמציא נקודות כאלה.\n' : '')
         + 'כתוב את דף הלימוד "' + folder + '/' + C.SummaryName + '/' + C.SummaryHtmlName + '" לפי הסקיל (אל תיצור קבצים אחרים בתיקיית הסיכום), ובו:\n'
         + '0. בראש הדף: מה חובה לדעת מההרצאה ומה אפשר לדלג עליו, לפי מה ששיעורי הבית והמבחנים בודקים. הסיכום צריך לכלול את כל מה שרלוונטי לסטודנט ולהשמיט מה שלא.\n'
         + '1. סיכום של כל החומר של ההרצאה - מפורט וברור ככל האפשר, בלי פרטים לא חשובים: כל נושא שנלמד, ההסברים, כרטיסי הנוסחאות, הדוגמאות של המרצה, והפערים שהמצגות לא מסבירות.\n'
@@ -189,6 +217,9 @@ module.exports = {
           const writers = Dict(authorMeta, 'summaryWriters') || {};
           writers[String(num)] = result.Provider || this.Provider;
           authorMeta.summaryWriters = writers;
+          const sources = Dict(authorMeta, 'summarySources') || {};
+          sources[String(num)] = SummarySources(result.Touched, readText(this.StudyPagePath(course, num)), transcriptSeconds);
+          authorMeta.summarySources = sources;
           this.SaveMeta(course, authorMeta);
           if (this.HelperOrder().length > 0) {
             phaseText = 'AI נוסף בודק את הפתרונות...';
@@ -222,7 +253,8 @@ module.exports = {
         : pdf ? 'הסיכום מוכן ✨ (' + warning + ')'
         : pageReady ? 'הסיכום מוכן, אבל קובץ ה-PDF לא נוצר (' + warning + '). אפשר לפתוח את הסיכום, ולנסות שוב אחר כך.'
         : 'הסתיים בלי סיכום - נסה שוב';
-      this.SectionStatus(course, num, status, false, (result && result.Error) || !pageReady);
+      const sourcesNote = pageReady && result && !result.Error ? SourcesNote(Dict(Dict(this.LoadMeta(course), 'summarySources'), String(num))) : '';
+      this.SectionStatus(course, num, status + (sourcesNote ? ' · ' + sourcesNote : ''), false, (result && result.Error) || !pageReady);
       this.SendSectionLocal(course, num);
       if (pageReady && (!result || !result.Error)) {
         writeText(cache, fingerprint);

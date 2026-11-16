@@ -37,6 +37,33 @@ partial class HitStudent
             check("default courses folder is HIT\\קורסים", HitStudent.DefaultStudyRootForTest().EndsWith(@"HIT\קורסים"));
             check("nested download destination", app.SafeDownloadFolder(@"הרצאות\הרצאה 1") == LectureFolderName(1));
             check("download traversal is flattened", !app.SafeDownloadFolder(@"..\..\outside").Contains("\\"));
+
+            // Recordings: a short one is noticed (most likely one part of a lecture that was paused in Zoom), Zoom's answer is kept
+            // without links, and a summary says whether the AI opened the transcript and how many points came only from the lecture.
+            string vtt = "WEBVTT\n\n1\n00:00:03.000 --> 00:00:06.000\nד\"ר כהן: אוקיי, ממשיכים\n\n2\n00:52:10.000 --> 00:52:12.000\nד\"ר כהן: זה יהיה במבחן\n";
+            check("the length of a transcript is its last stamp", TranscriptSeconds(VttToText(vtt, "T")) == 3130 && TranscriptSeconds("no stamps") == 0);
+            check("a recording under 10 minutes is called short, a lecture is not",
+                ShortRecordingNote(34).Contains("34 שניות") && ShortRecordingNote(3130) == "" && ShortRecordingNote(0) == "");
+            var playInfo = app.json.Deserialize<Dictionary<string, object>>("{\"status\":true,\"result\":{\"viewMp4Url\":\"https://ssrweb.zoom.us/x.mp4?token=SECRET\",\"fileId\":\"abcdefghijklmnopqrstuvwxyz0123\",\"duration\":34,\"meet\":{\"topic\":\"C\"},"
+                + "\"clips\":[{\"fileId\":\"f1\",\"startTime\":0},{\"fileId\":\"f2\",\"startTime\":34},{\"fileId\":\"f3\",\"startTime\":90}]}}");
+            string shape = app.json.Serialize(PlayInfoShape(playInfo));
+            check("Zoom's answer is kept without links or ids", !shape.Contains("https") && !shape.Contains("SECRET") && !shape.Contains("abcdefgh") && shape.Contains("\"duration\":34"));
+            check("the parts Zoom lists for a recording are counted", PlayInfoParts(Dict(playInfo, "result")) == 3 && PlayInfoParts(Dict(playInfo, "result")["meet"]) == 1);
+            check("a tool call gives the files and commands it names",
+                string.Join("|", TouchedBy(new Dictionary<string, object> { { "file_path", "/a/b.pdf" }, { "command", "cat x" }, { "other", "y" } })) == "/a/b.pdf|cat x" && TouchedBy(null).Count == 0);
+            var touchedFiles = new List<string> { @"C:\c\מחברת מרצה\slides.pdf", @"C:\c\הקלטה\הרצאה מספר 1 " + TranscriptSuffix + ".txt" };
+            string marked = "<p><span class=\"from-lecture\">מהשיעור</span> דגש</p><li><span class='x from-lecture'>מהשיעור</span> עוד</li>";
+            var sourcesSeen = SummarySources(touchedFiles, marked, 3130);
+            check("the summary sources: the transcript was read, two points came from the lecture, the files by name",
+                Bool(sourcesSeen, "known") && Bool(sourcesSeen, "transcriptRead") && Int(sourcesSeen, "fromLecture") == 2 && ((List<string>)sourcesSeen["files"]).Contains("slides.pdf"));
+            check("the summary's line says the transcript was read and what it added", SourcesNote(sourcesSeen).Contains("התמלול נקרא (52 דקות)") && SourcesNote(sourcesSeen).Contains("2 נקודות מהשיעור"));
+            check("a summary that never opened the transcript says so", SourcesNote(SummarySources(new List<string> { @"C:\c\slides.pdf" }, "", 3130)).Contains("לא פתח את התמלול"));
+            check("without tool calls (ChatGPT) nothing is claimed", SourcesNote(SummarySources(new List<string>(), "", 3130)) == "" && SourcesNote(SummarySources(null, "", 3130)) == "");
+            string recDir = Path.Combine(dir, RecordingFolder); Directory.CreateDirectory(recDir);
+            File.WriteAllText(Path.Combine(recDir, "הרצאה מספר 1.mp4"), "x");
+            File.WriteAllText(Path.Combine(recDir, "הרצאה מספר 1 " + TranscriptSuffix + ".txt"), VttToText("WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nא: ממשיכים\n", "T"));
+            check("a short recording is flagged in the lecture's info", app.json.Serialize(app.LocalInfo(course, 1)).Contains("3 שניות"));
+            File.Delete(Path.Combine(recDir, "הרצאה מספר 1.mp4")); File.Delete(Path.Combine(recDir, "הרצאה מספר 1 " + TranscriptSuffix + ".txt"));
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 2 }, { "date", "2026-02-31" } });
             check("invalid dates do not create lecture", app.ManualLectures(course).Count == 1);
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 2 }, { "title", "Lecture 2" } });
@@ -165,6 +192,9 @@ partial class HitStudent
         app.PrepareStudyPage(bookPage); app.PrepareStudyPage(bookPage);
         string bookHtml = File.ReadAllText(bookPage);
         check("diagram support is offline and added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "data-sumit-diagrams").Count == 1 && File.Exists(Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math", "study-diagrams.js")));
+        string mathDir = Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math");
+        var fontUrls = System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(Path.Combine(mathDir, "study-book.css")), "url\\(\"(fonts/[^\"]+)\"\\)").Cast<System.Text.RegularExpressions.Match>().Select(m => m.Groups[1].Value).ToList();
+        check("the summary fonts (Assistant and Rubik) are next to the page, every file the style names, with their license", fontUrls.Count >= 4 && fontUrls.All(u => File.Exists(Path.Combine(mathDir, u.Replace('/', Path.DirectorySeparatorChar)))) && fontUrls.Any(u => u.Contains("assistant")) && fontUrls.Any(u => u.Contains("rubik")) && File.Exists(Path.Combine(mathDir, "fonts", "assistant", "OFL.txt")) && File.Exists(Path.Combine(mathDir, "fonts", "rubik", "OFL.txt")));
         check("the study page becomes a book, added once", System.Text.RegularExpressions.Regex.Matches(bookHtml, "data-sumit-book").Count == 2 && File.Exists(Path.Combine(Path.GetDirectoryName(bookPage), ".sumit-math", "study-book.js")) && bookHtml.Contains("sumit-render-start"));        string sample = Environment.GetEnvironmentVariable("SUMIT_STUDY_SAMPLE");
         if (!string.IsNullOrEmpty(sample) && File.Exists(sample)) {
             string actual = Path.Combine(root, "actual-study", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(actual));

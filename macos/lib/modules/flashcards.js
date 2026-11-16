@@ -34,6 +34,31 @@ module.exports = {
 
     FlashcardsFile(summaryPath) { return path.join(path.dirname(summaryPath), 'כרטיסי זיכרון.json'); },
 
+    // Three passes over a summary (extract, write, audit), through the summary chat's helper route. On a Google account
+    // through the CLI it is one conversation (the summary is sent once); otherwise each pass is a call, and the auditor
+    // gets the summary again with the draft. progress(n) is called as pass n starts. Returns the auditor's answer.
+    async HelperStages(stages, summary, progress) {
+      progress(1);
+      if (this.HelperMode('gemini') === 'account') {
+        const reply = await this.HelperCallCliTurns([
+          stages[0].system + '\n\n' + summary,
+          stages[1].system + '\n' + (stages[1].follow || 'The core concepts are your previous answer.'),
+          stages[2].system + '\n' + (stages[2].follow || 'The draft flashcards are your previous answer; check them against the summary in the first message.'),
+        ], (n) => { if (n < stages.length) progress(n + 1); });
+        if (reply.Error) throw new Error(reply.Text || 'Gemini לא ענה');
+        return reply.Texts[reply.Texts.length - 1];
+      }
+      let input = summary, answer = '';
+      for (let i = 0; i < stages.length; i++) {
+        if (i) progress(i + 1);
+        const message = i === 2 ? summary + '\n\n=== ' + (stages[2].draftLabel || 'טיוטת הכרטיסים') + ' ===\n' + input : input;
+        const reply = await this.SummaryGemini(stages[i].system, [['user', message]], null);
+        if (reply.Error) throw new Error(reply.Text || 'Gemini לא ענה');
+        answer = input = reply.Text;
+      }
+      return answer;
+    },
+
     async MakeFlashcards(m) {
       const requestId = Str(m, 'requestId');
       let fullPath = Str(m, 'path');
@@ -57,28 +82,7 @@ module.exports = {
         const summary = where + '\n=== הסיכום ===\n' + this.FullSummaryContext(readText(fullPath));
         const started = Date.now();
         const progress = (step) => this.Send({ type: 'flashcardsProgress', requestId, path: fullPath, step, steps: STAGES.length, text: STAGES[step - 1].label });
-        let answer = '';
-        progress(1);
-        if (this.HelperMode('gemini') === 'account') {
-          // One conversation, three turns: the summary is sent once and the CLI starts once (about half the wait).
-          const reply = await this.HelperCallCliTurns([
-            STAGES[0].system + '\n\n' + summary,
-            STAGES[1].system + '\nThe core concepts are your previous answer.',
-            STAGES[2].system + '\nThe draft flashcards are your previous answer; check them against the summary in the first message.',
-          ], (n) => { if (n < STAGES.length) progress(n + 1); });
-          if (reply.Error) throw new Error(reply.Text || 'Gemini לא ענה');
-          answer = reply.Texts[reply.Texts.length - 1];
-        } else {
-          let input = summary;
-          for (let i = 0; i < STAGES.length; i++) {
-            if (i) progress(i + 1);
-            // The auditor checks the draft against the summary, so it gets both.
-            const message = i === 2 ? summary + '\n\n=== טיוטת הכרטיסים ===\n' + input : input;
-            const reply = await this.SummaryGemini(STAGES[i].system, [['user', message]], null);
-            if (reply.Error) throw new Error(reply.Text || 'Gemini לא ענה');
-            answer = input = reply.Text;
-          }
-        }
+        const answer = await this.HelperStages(STAGES, summary, progress);
         const cards = CardsFromAnswer(answer);
         if (!cards.length) throw new Error('Gemini לא החזיר כרטיסים תקינים. נסה שוב.');
         try { writeText(this.FlashcardsFile(fullPath), JSON.stringify({ summaryMtime: mtime, cards }, null, 1)); } catch { }

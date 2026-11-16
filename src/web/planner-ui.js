@@ -117,7 +117,7 @@ function refreshReview() { send({ type: 'getReviewQueue' }); }
 function startReview() { send({ type: 'startReview' }); }
 
 function reviewEvent(m) {
-  if (m.type === 'reviewQueue') { S.review = { count: m.count, due: m.due, fresh: m.fresh, overdueDays: m.overdueDays || 0, courses: m.courses || {} }; renderToday(); return; }
+  if (m.type === 'reviewQueue') { S.review = { count: m.count, due: m.due, fresh: m.fresh, overdueDays: m.overdueDays || 0, courses: m.courses || {} }; renderToday(); if (typeof renderHeroBadges === 'function') renderHeroBadges(); return; }
   if (m.type === 'reviewSession') openReviewDialog(m.cards || []);
 }
 

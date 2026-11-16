@@ -1,3 +1,16 @@
+/* Fonts of a summary: Assistant for reading, Rubik for titles (as in the app). The files are copied next to the page,
+   into .sumit-math/fonts, by AddBookLayout (summary-book.js / SummaryBook.cs), so the page needs no network and a shared
+   ZIP carries them. SIL Open Font License; the license files are in .sumit-math/fonts/<font>/OFL.txt. */
+@font-face { font-family:"Rubik"; font-style:normal; font-weight:300 900; font-display:swap; src:url("fonts/rubik/rubik-hebrew.woff2") format("woff2"); unicode-range:U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family:"Rubik"; font-style:normal; font-weight:300 900; font-display:swap; src:url("fonts/rubik/rubik-latin.woff2") format("woff2"); unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family:"Assistant"; font-style:normal; font-weight:200 800; font-display:swap; src:url("fonts/assistant/assistant-hebrew.woff2") format("woff2"); unicode-range:U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family:"Assistant"; font-style:normal; font-weight:200 800; font-display:swap; src:url("fonts/assistant/assistant-latin.woff2") format("woff2"); unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+html body{font-family:"Assistant",system-ui,sans-serif;font-size:17.5px;line-height:1.75}
+html body :is(h1,h2,h3,h4,.kicker,.big-idea){font-family:"Rubik",system-ui,sans-serif}
+html body h1{font-weight:800;letter-spacing:-.01em}
+html body h2{font-weight:700}
+html body h3,html body h4,html body .big-idea{font-weight:600}
+html body :is(b,strong){font-weight:700}
 /* The study page as a book: pages on the right, a block for each homework question, readable links and notes, room between the steps. */
 .wrap{max-width:1120px}
 .bookgrid{display:grid;grid-template-columns:200px minmax(0,1fr);gap:28px;align-items:start;margin-top:10px}
@@ -23,6 +36,11 @@
 /* "not yet": only on the homework page, clearly marked */
 .notyet{background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5;border-inline-start:6px solid #dc2626;border-radius:12px;padding:14px 18px;margin:18px 0;font-weight:600}
 .notyet *{color:inherit}.notyet a{color:#7f1d1d;text-decoration:underline}
+
+/* a point the lecturer said in class and the slides don't have (from the transcript) */
+.from-lecture{display:inline-block;font-size:12px;font-weight:700;line-height:1.6;padding:0 9px;margin-inline-end:6px;border-radius:999px;background:#ede9fe;color:#4c1d95;border:1px solid #c4b5fd;vertical-align:1px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .from-lecture{background:#2e1065;color:#ddd6fe;border-color:#6d28d9}}
+@media print{.from-lecture{background:none;border-color:#7c3aed;color:#4c1d95}}
 
 /* the homework, a block for each question */
 .qgroup{margin:30px 0;padding:6px 20px 16px;border:1px solid var(--line,#ddd);border-radius:18px;background:var(--surface2,rgba(127,127,127,.06))}

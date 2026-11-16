@@ -29,6 +29,10 @@ const SyncEveryMs = 5 * 60 * 1000;
 const QuietMs = 5000;                        // a file written in the last seconds waits for the next sync
 const MassDelete = { count: 25, share: 0.3 };
 const SkipDirs = new Set(['.sumit-math', '.git', 'node_modules', '.Trash', '.sumit-sync-tmp']);
+// Inside a .sumit folder: the page images and drafts made while a summary is built. Not needed once it is ready, and many.
+const WorkDirs = new Set(['work', 'scratch', 'tmp']);
+const WorkRel = /(^|\/)\.sumit\/(work|scratch|tmp)(\/|$)/;
+const Parallel = 4;                          // files moved at the same time
 const SkipFile = /^(\.DS_Store|Thumbs\.db|desktop\.ini|~\$.*|\..*\.tmp|.*\.(tmp|partial|crdownload|rendering|part|download|sumit-download))$|^\.~/i;
 const SettingsRel = '.sumit/settings-sync.json';
 const PhotoRel = '.sumit/profile.jpg';   // the profile picture travels next to the settings; settings.photo is its md5
@@ -237,8 +241,13 @@ module.exports = {
       return body;
     },
 
+    // One renewal at a time: the files moving together wait for the same new token.
     async DriveToken() {
       if (this.driveAccess && this.driveAccess.until - 60000 > Date.now()) return this.driveAccess.token;
+      if (!this.driveTokenWait) this.driveTokenWait = this.DriveTokenNew().finally(() => { this.driveTokenWait = null; });
+      return this.driveTokenWait;
+    },
+    async DriveTokenNew() {
       const refresh = Unprotect(Str(Dict(this.settings, 'drive') || {}, 'refresh'));
       if (!refresh) throw new Error('לא מחובר ל-Google Drive.');
       try {
@@ -317,14 +326,21 @@ module.exports = {
       d.root = made.id; return d.root;
     },
 
+    // A folder is made once, also when several files that go into it move at the same time.
     async DriveFolder(relDir, ctx) {
       if (!relDir) return ctx.root;
       if (ctx.folders[relDir]) return ctx.folders[relDir];
-      const parent = await this.DriveFolder(path.posix.dirname(relDir) === '.' ? '' : path.posix.dirname(relDir), ctx);
-      const made = await this.DriveJson('/drive/v3/files?fields=id', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: path.posix.basename(relDir), mimeType: FolderMime, parents: [parent], appProperties: { sumit: '1' } }) });
-      ctx.folders[relDir] = made.id;
-      return made.id;
+      ctx.making = ctx.making || {};
+      if (!ctx.making[relDir]) {
+        ctx.making[relDir] = (async () => {
+          const parent = await this.DriveFolder(path.posix.dirname(relDir) === '.' ? '' : path.posix.dirname(relDir), ctx);
+          const made = await this.DriveJson('/drive/v3/files?fields=id', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: path.posix.basename(relDir), mimeType: FolderMime, parents: [parent], appProperties: { sumit: '1' } }) });
+          ctx.folders[relDir] = made.id;
+          return made.id;
+        })().catch((ex) => { delete ctx.making[relDir]; throw ex; });
+      }
+      return ctx.making[relDir];
     },
 
     // A new file (id empty) or new content for one that is there.
@@ -348,7 +364,7 @@ module.exports = {
 
     // ---------- this computer ----------
     DriveSkip(full, name, isDir) {
-      if (isDir) return SkipDirs.has(name) || (this.RecordingsDir && IsInside(full, this.RecordingsDir)) || full === this.RecordingsDir;
+      if (isDir) return SkipDirs.has(name) || (WorkDirs.has(name) && path.basename(path.dirname(full)) === '.sumit') || (this.RecordingsDir && IsInside(full, this.RecordingsDir)) || full === this.RecordingsDir;
       return SkipFile.test(name);
     },
 
@@ -440,6 +456,9 @@ module.exports = {
         const state = this.DriveLoadState(root);
         state.remoteRoot = rootId;
         const remote = await this.DriveListRemote(rootId);
+        // Work files that went up before they were skipped: left alone in Drive (not deleted, not downloaded) and forgotten here.
+        for (const r of Object.keys(remote.files)) if (WorkRel.test(r)) delete remote.files[r];
+        for (const r of Object.keys(state.files)) if (WorkRel.test(r)) delete state.files[r];
         // A computer that joins an account takes the settings that are there first; its own go up from the next sync.
         if (!remote.files[SettingsRel] || state.files[SettingsRel]) this.DriveSettingsOut(root);
         const local = this.DriveScanLocal(root, state.files);
@@ -453,15 +472,18 @@ module.exports = {
         }
         const ctx = { root: rootId, folders: remote.folders };
         const work = plan.filter(p => p.act !== 'same' && p.act !== 'forget');
-        let done = 0;
+        let done = 0, fatal = null;
         const step = () => { done++; if (done % 5 === 0 || done === work.length) this.DriveSend({ busy: true, progress: { done, total: work.length } }); };
         for (const p of plan) {
+          if (p.act === 'same') { const L = local[p.rel], R = remote.files[p.rel]; state.files[p.rel] = { id: R.id, md5: L.md5, size: L.size, mtime: L.mtime }; counts.same++; }
+          else if (p.act === 'forget') delete state.files[p.rel];
+        }
+        // The files that move go a few at a time; a sign-in that ran out stops all of them.
+        const move = async (p) => {
           const full = path.join(root, ...p.rel.split('/'));
-          if (!IsInside(full, root)) continue;
+          if (!IsInside(full, root)) return;
           const L = local[p.rel], R = remote.files[p.rel];
           try {
-            if (p.act === 'same') { state.files[p.rel] = { id: R.id, md5: L.md5, size: L.size, mtime: L.mtime }; counts.same++; continue; }
-            if (p.act === 'forget') { delete state.files[p.rel]; continue; }
             if (p.act === 'upload') {
               const r = await this.DriveUpload(p.rel, fs.readFileSync(full), R ? R.id : '', ctx);
               state.files[p.rel] = { id: r.id, md5: r.md5Checksum || L.md5, size: L.size, mtime: L.mtime }; counts.up++;
@@ -485,9 +507,13 @@ module.exports = {
               state.files[p.rel] = { id: up2.id, md5: up2.md5Checksum || L.md5, size: L.size, mtime: L.mtime };
               counts.conflicts++; conflicts.push(other);
             }
-          } catch (ex) { if (/401|לא מחובר|פגה/.test(ex.message)) throw ex; counts.failed = (counts.failed || 0) + 1; this.Diagnostic && this.Diagnostic('drive-sync', p.act, ex.message); }
+          } catch (ex) { if (/401|לא מחובר|פגה/.test(ex.message)) { fatal = fatal || ex; return; } counts.failed = (counts.failed || 0) + 1; this.Diagnostic && this.Diagnostic('drive-sync', p.act, ex.message); }
           step();
-        }
+        };
+        let next = 0;
+        const worker = async () => { while (!fatal && next < work.length) await move(work[next++]); };
+        await Promise.all(Array.from({ length: Math.min(Parallel, work.length) }, worker));
+        if (fatal) { this.DriveSaveState(state); throw fatal; }
         state.root = root;
         this.DriveSaveState(state);
         const settingsChanged = this.DriveSettingsIn(root);

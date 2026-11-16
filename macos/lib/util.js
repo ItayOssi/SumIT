@@ -312,8 +312,56 @@ function stampSeconds(stamp) {
   return total;
 }
 
+// The length of a transcript written by VttToText: its last "[hh:mm:ss]" stamp, in seconds (0 when it has none).
+function TranscriptSeconds(text) {
+  let last = 0;
+  for (const m of String(text || '').matchAll(/^\[(\d{1,2}:\d{2}(?::\d{2})?)\]/gm)) last = Math.max(last, stampSeconds(m[1]));
+  return last;
+}
+
+// Under 10 minutes a lecture recording is most likely one part of it: Zoom keeps a recording that was stopped and
+// started again as separate parts behind the same link, and only the part the link opens on is downloaded.
+const ShortRecordingSeconds = 600;
+function RecordingLength(seconds) {
+  const s = Math.round(seconds || 0);
+  return s < 60 ? s + ' שניות' : Math.round(s / 60) + ' דקות';
+}
+function ShortRecordingNote(seconds) {
+  if (!(seconds > 0) || seconds >= ShortRecordingSeconds) return '';
+  return 'ההקלטה קצרה (' + RecordingLength(seconds) + '), כנראה רק חלק מההרצאה. אם המרצה עצר והמשיך, ב-Zoom יש עוד חלקים: הדבק גם את הקישור שלהם.';
+}
+
+// Zoom's "play info" without what is private: links become "<url>", long ids and texts only their length.
+// Kept in diagnostics, to see how Zoom lists the parts of a recording.
+function PlayInfoShape(v, depth = 0) {
+  if (v === null || v === undefined || typeof v === 'number' || typeof v === 'boolean') return v === undefined ? null : v;
+  if (typeof v === 'string') return /^https?:\/\//i.test(v) ? '<url>' : v.length > 24 ? '<text ' + v.length + '>' : v;
+  if (depth >= 4) return '...';
+  if (Array.isArray(v)) return { length: v.length, first: v.slice(0, 2).map(x => PlayInfoShape(x, depth + 1)) };
+  const o = {};
+  for (const k of Object.keys(v)) o[k] = PlayInfoShape(v[k], depth + 1);
+  return o;
+}
+
+// How many parts Zoom lists for a recording: the longest list (down to two levels) of items that name a file or a start time.
+function PlayInfoParts(result) {
+  let most = 1;
+  const walk = (v, depth) => {
+    if (!v || typeof v !== 'object' || depth > 2) return;
+    if (Array.isArray(v)) {
+      if (v.length > most && v.every(x => x && typeof x === 'object' && Object.keys(x).some(k => /fileid|mp4|starttime|clip/i.test(k)))) most = v.length;
+      v.forEach(x => walk(x, depth + 1));
+      return;
+    }
+    for (const k of Object.keys(v)) walk(v[k], depth + 1);
+  };
+  walk(result, 0);
+  return most;
+}
+
 module.exports = {
   Str, Bool, Int, Dict, Arr, SafeName, Trunc, Q, Loose, IsInside, listFiles, listDirs, fileExists, dirExists, mkdirp,
   readText, writeText, nativeRel, Protect, Unprotect, delay, deferred, withTimeout, Mutex, spawnTracked, killTree, ExecOut,
   Exec, FindOnPath, sha256Hex, sha256B64, guidN, formatDate, VttToText,
+  TranscriptSeconds, ShortRecordingSeconds, RecordingLength, ShortRecordingNote, PlayInfoShape, PlayInfoParts,
 };

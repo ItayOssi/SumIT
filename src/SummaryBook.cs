@@ -7,6 +7,9 @@ using System.Text.RegularExpressions;
 // The script and the style sit next to the page and are refreshed each time it is opened, so an improvement reaches the pages made before.
 partial class HitStudent
 {
+    // The folders in web\vendor\fonts that study-book.css uses.
+    internal static readonly string[] SummaryFonts = { "assistant", "rubik" };
+
     internal void AddBookLayout(string page)
     {
         try
@@ -15,6 +18,18 @@ partial class HitStudent
             string dir = Path.Combine(Path.GetDirectoryName(page), ".sumit-math");
             Directory.CreateDirectory(dir);
             foreach (string f in new[] { "study-book.js", "study-book.css", "study-diagrams.js" }) File.Copy(Path.Combine(WebDir, f), Path.Combine(dir, f), true);
+            // The fonts that study-book.css names (Assistant and Rubik), next to it, so the page needs no network.
+            foreach (string font in SummaryFonts)
+            {
+                string from = Path.Combine(WebDir, "vendor", "fonts", font), to = Path.Combine(dir, "fonts", font);
+                if (!Directory.Exists(from)) continue;
+                Directory.CreateDirectory(to);
+                foreach (string src in Directory.GetFiles(from))
+                {
+                    string dest = Path.Combine(to, Path.GetFileName(src));
+                    try { if (!File.Exists(dest) || new FileInfo(dest).Length != new FileInfo(src).Length) File.Copy(src, dest, true); } catch { }
+                }
+            }
             string html = File.ReadAllText(page, Encoding.UTF8), orig = html;
             // The first version of the book was written into the page itself.
             html = Regex.Replace(html, "<style id=\"sumit-book\">.*?</style>", "", RegexOptions.Singleline);

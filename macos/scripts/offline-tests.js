@@ -258,6 +258,8 @@ async function run() {
 
     // 7b. Every institution in Israel: the list, the routing, switching, and the logos
     await runInstitutionTests(app, root, check);
+    await runRecordingTests(app, root, check);
+    await runQuizTests(app, root, check);
 
     // 8. Summary Share and Study Policy port verification
     const { buildSummaryShare } = require('../lib/modules/summary-share');
@@ -385,6 +387,13 @@ async function runLifecycleTests(app, root, check) {
       && fileExists(path.join(path.dirname(bookPage), '.sumit-math', 'study-book.js'))
       && bookHtml.includes('sumit-render-start')
   );
+  {
+    const math = path.join(path.dirname(bookPage), '.sumit-math');
+    const urls = [...readText(path.join(math, 'study-book.css')).matchAll(/url\("(fonts\/[^"]+)"\)/g)].map(m => m[1]);
+    check('the summary fonts (Assistant and Rubik) are next to the page, every file the style names, with their license',
+      urls.length >= 4 && urls.every(u => fileExists(path.join(math, u))) && urls.some(u => u.includes('assistant')) && urls.some(u => u.includes('rubik'))
+        && fileExists(path.join(math, 'fonts', 'assistant', 'OFL.txt')) && fileExists(path.join(math, 'fonts', 'rubik', 'OFL.txt')));
+  }
 }
 
 async function runHelperTests(app, root, check) {
@@ -1351,6 +1360,22 @@ async function runStudyExportTests(app, root, check) {
   const file = readText(ical);
   check('the calendar file has the blocks that are not done yet', (file.match(/BEGIN:VEVENT/g) || []).length === 1 && file.includes('DTSTART:20261102T100000') && last().text.includes('1 בלוקים'));
 
+  // "שלח דוח למפתח": the report in the template of the Discord bug forum goes to the clipboard, and the forum opens (not GitHub).
+  const diag = path.join(root, 'diag'), realDiagDir = app.DiagnosticDir, realClip = app.ClipboardWrite;
+  mkdirp(diag);
+  const good = (i) => '2026-11-15T10:00:0' + (i % 10) + 'Z version=1.0.51 operation=summary' + i + ' provider=gemini kind=timeout code=0';
+  writeText(path.join(diag, 'events.log'), [good(1), 'secret prompt text sk-abc123', good(2)].join('\n') + '\n');
+  let copied = '';
+  app.DiagnosticDir = () => diag; app.ClipboardWrite = (t) => { copied = t; };
+  opened.length = 0;
+  app.SendDeveloperLogs();
+  check('the developer report is copied in the bug forum template, with the version and only the safe event lines',
+    copied.includes('**מה קרה:**') && copied.includes('**צעדים לשחזור:**') && copied.includes('SumIT ' + C.Version) && copied.includes('operation=summary1') && copied.includes('operation=summary2') && !copied.includes('sk-abc123'));
+  check('the developer report opens the Discord bug forum and never GitHub', opened.length === 1 && opened[0] === C.DiscordBugForum && opened[0].startsWith('https://discord.com/channels/') && !opened.some(u => u.includes('github.com')) && last().text.includes('הועתק') && !last().error);
+  writeText(path.join(diag, 'events.log'), Array.from({ length: 15 }, (_, i) => good(i) + ' '.repeat(0)).map(s => s.replace('operation=summary', 'operation=' + 'x'.repeat(150) + '-')).join('\n'));
+  check('a long log is cut so the report fits in one Discord message', app.DeveloperReport().length <= 1900 && app.DeveloperReport().includes('```text'));
+  app.DiagnosticDir = realDiagDir; app.ClipboardWrite = realClip;
+
   app.Toast = realToast; app.savePath = realSave; platform.openExternal = realOpen; platform.revealInFinder = realReveal;
   app.settings.studyRoot = saved;
 }
@@ -2108,6 +2133,8 @@ async function runDriveTests(app, root, check) {
     put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/סיכום.html', '<h1>סיכום 1</h1>');
     put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/.sumit-math/katex.min.js', 'copy');
     put(A, 'קורסים/מבני נתונים/.DS_Store', 'x');
+    put(A, 'קורסים/מבני נתונים/.sumit/work/ex/דף_p01.png', 'page image');
+    put(A, 'קורסים/מבני נתונים/.sumit/scratch/body.html', 'draft');
     put(A, 'הקלטות/שיעור 1.mp4', 'video');
     put(A, 'פרופיל/profile.json', '{"streak":1}');
     const big = crypto.randomBytes(6 * 1024 * 1024); put(A, 'קורסים/מבני נתונים/הרצאות/הרצאה 1/הרצאה.pdf', big);
@@ -2131,11 +2158,23 @@ async function runDriveTests(app, root, check) {
     const remoteNames = Array.from(g.files.values()).map(f => f.name);
     check('the first sync uploads the study folder into a "SumIT" folder of Drive', c1.up === 4 && remoteNames.includes('SumIT') && remoteNames.includes('סיכום.html') && remoteNames.includes('profile.json') && remoteNames.includes('settings-sync.json'));
     check('copies made again by the app, system files and the recordings stay on the computer', !remoteNames.includes('katex.min.js') && !remoteNames.includes('.DS_Store') && !remoteNames.includes('שיעור 1.mp4'));
+    check('the page images and drafts made while a summary is built stay on the computer', !remoteNames.includes('דף_p01.png') && !remoteNames.includes('body.html') && !remoteNames.includes('work') && !remoteNames.includes('scratch'));
     check('a big file goes up in a resumable upload, small ones in one request', g.uploads.resumable === 1 && g.uploads.multipart === 3);
     const settingsFile = Array.from(g.files.values()).find(f => f.name === 'settings-sync.json');
     check('the settings in Drive carry the choices but never the keys', /openai/.test(settingsFile.content.toString()) && !/SECRET-KEY/.test(settingsFile.content.toString()));
     const c2 = await app.DriveSync();
     check('a second sync with nothing changed moves nothing', c2.up === 0 && c2.down === 0 && c2.same === 4);
+
+    // Work files that went up before an older version skipped them: no mass delete, left in Drive, never brought down.
+    const realSkip = app.DriveSkip;
+    app.DriveSkip = (full, name, isDir) => isDir && ['work', 'scratch', 'tmp'].includes(name) ? false : realSkip.call(app, full, name, isDir);
+    for (let i = 0; i < 30; i++) put(A, 'קורסים/מבני נתונים/.sumit/tmp/עמוד' + i + '.png', 'img ' + i);
+    await app.DriveSync();
+    app.DriveSkip = realSkip;
+    const cw = await app.DriveSync();
+    const workLeft = Array.from(g.files.values()).filter(f => /^עמוד\d+\.png$/.test(f.name));
+    const stateA = JSON.parse(readText(app.driveStateFile));
+    check('work files already in Drive are not deleted all at once and are forgotten by the sync', cw && cw.deleted === 0 && workLeft.length === 30 && workLeft.every(f => !f.trashed) && !Object.keys(stateA.files).some(r => r.includes('/.sumit/tmp/')));
 
     // The second computer: it had its own copy of one summary, and different settings.
     useB();
@@ -2143,6 +2182,7 @@ async function runDriveTests(app, root, check) {
     app.settings.helperPref = 'gemini'; app.settings.geminiKey = 'OTHER-KEY'; app.settings.drive.settingsSig = ''; app.settings.drive.settingsApplied = '';
     fs.rmSync(path.join(B, '.sumit'), { recursive: true, force: true });
     const c3 = await app.DriveSync();
+    check('the second computer does not bring down work files that are in Drive', !fs.existsSync(path.join(B, 'קורסים', 'מבני נתונים', '.sumit', 'tmp')));
     const conflictCopy = fs.readdirSync(path.join(B, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1')).find(n => n.includes('מ-Drive'));
     check('another computer gets everything, and a file it already had differently keeps both versions',
       c3.down >= 2 && c3.conflicts === 1 && fileExists(path.join(B, 'פרופיל', 'profile.json')) && fs.readFileSync(path.join(B, 'קורסים', 'מבני נתונים', 'הרצאות', 'הרצאה 1', 'הרצאה.pdf')).equals(big)
@@ -2166,7 +2206,12 @@ async function runDriveTests(app, root, check) {
     // Many deletes at once (a wrong folder, say) stop the sync until the student says yes.
     useA();
     for (let i = 0; i < 30; i++) put(A, 'קורסים/תרגילים/ת' + i + '.txt', 'תרגיל ' + i);
-    await app.DriveSync();
+    const realUpload = app.DriveUpload; let moving = 0, most = 0;
+    app.DriveUpload = async function (...args) { moving++; most = Math.max(most, moving); try { await new Promise(r => setTimeout(r, 5)); return await realUpload.apply(this, args); } finally { moving--; } };
+    const cp = await app.DriveSync();
+    app.DriveUpload = realUpload;
+    const tFolders = Array.from(g.files.values()).filter(f => f.name === 'תרגילים' && f.mimeType === 'application/vnd.google-apps.folder');
+    check('many files move a few at a time (four), and a new folder they share is made once', cp.up === 30 && most === 4 && tFolders.length === 1);
     fs.rmSync(path.join(A, 'קורסים', 'תרגילים'), { recursive: true, force: true });
     let stopped = null; try { await app.DriveSync(); } catch (ex) { stopped = ex; }
     check('a sync that would delete many files at once stops and asks', stopped && stopped.massDelete === 30 && Array.from(g.files.values()).filter(f => /^ת\d+\.txt$/.test(f.name) && !f.trashed).length === 30);
@@ -2555,4 +2600,138 @@ async function runInstitutionTests(app, root, check) {
   // Back to how the other tests expect it.
   app.settings = saved.settings; app.Toast = saved.Toast; app.SendSettings = saved.SendSettings; app.DefaultStudyRoot = saved.DefaultStudyRoot; app.moodle = saved.moodle; app.lastCourses = saved.lastCourses;
   app.settings.institute = 'hit'; delete app.settings.moodleUrl; app.EnsureInstitute();
+}
+
+// Recordings: a short one is noticed (it is most likely one part of a lecture that was paused in Zoom), Zoom's answer is kept
+// without links, and a summary says whether the AI opened the transcript and how many points came only from the lecture.
+async function runRecordingTests(app, root, check) {
+  const U = require('../lib/util');
+  const vtt = 'WEBVTT\n\n1\n00:00:03.000 --> 00:00:06.000\nד"ר כהן: אוקיי, ממשיכים\n\n2\n00:52:10.000 --> 00:52:12.000\nד"ר כהן: זה יהיה במבחן\n';
+  check('the length of a transcript is its last stamp', U.TranscriptSeconds(VttToText(vtt, 'T')) === 3130 && U.TranscriptSeconds('no stamps') === 0);
+  check('a recording under 10 minutes is called short, a lecture is not',
+    U.ShortRecordingNote(34).includes('34 שניות') && U.ShortRecordingNote(3130) === '' && U.ShortRecordingNote(0) === '');
+  const info = { status: true, result: { viewMp4Url: 'https://ssrweb.zoom.us/x.mp4?token=SECRET', fileId: 'abcdefghijklmnopqrstuvwxyz0123', duration: 34, meet: { topic: 'C' },
+    clips: [{ fileId: 'f1', startTime: 0 }, { fileId: 'f2', startTime: 34 }, { fileId: 'f3', startTime: 90 }] } };
+  const shape = JSON.stringify(U.PlayInfoShape(info));
+  check('Zoom\'s answer is kept without links or ids', !shape.includes('https') && !shape.includes('SECRET') && !shape.includes('abcdefgh') && shape.includes('"duration":34'));
+  check('the parts Zoom lists for a recording are counted', U.PlayInfoParts(info.result) === 3 && U.PlayInfoParts({ duration: 34, meet: { topic: 'C' } }) === 1);
+  check('a tool call gives the files and commands it names',
+    JSON.stringify(app.TouchedBy({ file_path: '/a/b.pdf', command: 'cat x', other: 'y' })) === JSON.stringify(['/a/b.pdf', 'cat x']) && app.TouchedBy(null).length === 0);
+
+  // The course task keeps what the AI touched.
+  const realRunAi = app.RunAi, realPy = app.EnsurePython;
+  app.EnsurePython = async () => { };
+  app.RunAi = async (key, cwd, prompt, session, system, onEvent) => {
+    onEvent({ Action: 'קורא slides.pdf', Touch: ['/c/הרצאות/הרצאה 1/מחברת מרצה/slides.pdf'] });
+    onEvent({ Touch: ['/c/הרצאות/הרצאה 1/הקלטה/הרצאה מספר 1 תמלול.txt'] });
+    return { Error: false, Text: 'ok', Provider: 'claude' };
+  };
+  const task = await app.CourseTask('test|rec', 'rec-course', () => { }, 'p');
+  app.RunAi = realRunAi; app.EnsurePython = realPy;
+  check('the course task keeps the files the AI opened', task.Touched.length === 2 && task.Touched[1].includes(C.TranscriptSuffix));
+
+  const html = '<p><span class="from-lecture">מהשיעור</span> דגש</p><li><span class=\'x from-lecture\'>מהשיעור</span> עוד</li>';
+  const src = app.SummarySources(task.Touched, html, 3130);
+  check('the summary sources: the transcript was read, two points came from the lecture, the files by name',
+    src.known && src.transcriptRead && src.fromLecture === 2 && src.files.includes('slides.pdf') && src.files.includes('הרצאה מספר 1 תמלול.txt'));
+  check('a summary that never opened the transcript says so', app.SourcesNote(app.SummarySources(['/c/slides.pdf'], '', 3130)).includes('לא פתח את התמלול'));
+  check('without tool calls (ChatGPT) nothing is claimed', app.SourcesNote(app.SummarySources([], '', 3130)) === '' && !app.SummarySources([], '', 1).known);
+
+  // The whole summary: the prompt asks for the marks, and the status and the lecture's info say what the recording gave.
+  const course = 'rec-course';
+  app.SaveLecture(course, { num: 1, title: 'L1' });
+  const recDir = path.join(app.LectureDir(course, 1), C.RecordingFolder);
+  mkdirp(recDir);
+  writeText(path.join(recDir, 'הרצאה מספר 1.mp4'), 'x');
+  writeText(path.join(recDir, 'הרצאה מספר 1 ' + C.TranscriptSuffix + '.txt'), VttToText(vtt, 'T'));
+  writeText(path.join(app.LectureDir(course, 1), C.LecturerNotes, 'slides.txt'), 'חומר');
+  const saved = { CourseTask: app.CourseTask, AiReadyOrSay: app.AiReadyOrSay, HelperOrder: app.HelperOrder, BuildLecturePdf: app.BuildLecturePdf, SectionStatus: app.SectionStatus };
+  let prompt = '';
+  const statuses = [];
+  app.AiReadyOrSay = () => true;
+  app.HelperOrder = () => [];
+  app.BuildLecturePdf = async () => { app.pdfFailure = ''; return '/x.pdf'; };
+  app.SectionStatus = (c, n, text) => statuses.push(text);
+  app.CourseTask = async (key, c, status, p) => {
+    prompt = p;
+    writeText(app.StudyPagePath(course, 1), '<html><body>' + html + '</body></html>');
+    return { Error: false, Text: 'ok', Provider: 'claude', Touched: ['/x/הקלטה/הרצאה מספר 1 ' + C.TranscriptSuffix + '.txt'] };
+  };
+  try { await app.LecturePdfCoreAsync(course, 1, 'L1', false, true); }
+  finally { Object.assign(app, saved); }
+  check('with a transcript the summary is asked to mark what was said only in the lecture', prompt.includes('class="from-lecture"') && prompt.includes('אל תמציא'));
+  check('the summary\'s status says the transcript was read and what it added', statuses[statuses.length - 1].includes('התמלול נקרא (52 דקות)') && statuses[statuses.length - 1].includes('2 נקודות מהשיעור'));
+  const L = app.LocalInfo(course, 1);
+  check('the lecture\'s info has the sources and the length of the recording', L.sources && L.sources.fromLecture === 2 && L.recordings[0].seconds === 3130 && L.recordings[0].short === '');
+  writeText(path.join(recDir, 'הרצאה מספר 1 ' + C.TranscriptSuffix + '.txt'), VttToText('WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nא: ממשיכים\n', 'T'));
+  check('a short recording is flagged in the lecture\'s info', app.LocalInfo(course, 1).recordings[0].short.includes('3 שניות'));
+}
+
+async function runQuizTests(app, root, check) {
+  const Q = require('../../src/web/quiz-core.js');
+  const raw = [
+    { type: 'mcq', q: 'מה הסיבוכיות של חיפוש בינארי?', options: ['O(log n)', 'O(n)', 'O(n log n)', 'O(1)'], answer: 0, why: ['חצי בכל צעד', 'זה חיפוש לינארי', 'זה מיון', 'רק בטבלת גיבוב'], tag: 'סיבוכיות' },
+    { type: 'mcq', q: 'שאלה עם אינדקס שגוי', options: ['א', 'ב', 'ג'], answer: 5 },
+    { type: 'mcq', q: 'שאלה עם שתי אפשרויות', options: ['א', 'ב'], answer: 0 },
+    { type: 'mcq', q: 'שאלה עם אפשרות כפולה', options: ['א', 'א', 'ב'], answer: 0 },
+    { type: 'tf', q: 'כל פונקציה חסומה אינטגרבילית', answer: 'לא נכון', why: 'דיריכלה' },
+    { type: 'tf', q: 'משפט בלי תשובה', answer: 'אולי' },
+    { type: 'cloze', q: 'הנגזרת של $x^2$ היא ____', answer: '2x', accept: ['$2x$'], why: 'כלל החזקה' },
+    { type: 'cloze', q: 'השלמה בלי מקום ריק', answer: 'x' },
+    { type: 'essay', q: 'סוג שלא נבדק', answer: 'x' },
+    { type: 'tf', q: 'כל פונקציה חסומה אינטגרבילית', answer: true },
+  ];
+  const qs = Q.fromAnswer('הנה הבוחן:\n' + JSON.stringify(raw) + '\nבהצלחה');
+  check('quiz: only questions that can be checked are kept (bad index, 2 options, a duplicate option, no blank, an unknown kind, a repeat)',
+    qs.length === 3 && qs.map(q => q.type).join() === 'mcq,tf,cloze', JSON.stringify(qs.map(q => q.q)));
+  const mcq = qs[0];
+  check('quiz: the options are shuffled, the right one and its reason move with it', mcq.options[mcq.answer] === 'O(log n)' && mcq.why[mcq.answer] === 'חצי בכל צעד');
+  check('quiz: the shuffle is the same every time (a cached quiz keeps its order)', JSON.stringify(Q.fromAnswer(JSON.stringify(raw))[0]) === JSON.stringify(mcq));
+  check('quiz: true/false reads "לא נכון" as false', qs[1].answer === false);
+  check('quiz: at most 12 questions', Q.fromAnswer(JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ type: 'tf', q: 'טענה ' + i, answer: true })))).length === 12);
+  check('quiz: an answer without JSON gives no questions', Q.fromAnswer('אין כאן בוחן').length === 0 && Q.fromAnswer('[{broken').length === 0);
+  const cloze = qs[2];
+  check('quiz: a typed answer is checked without spaces, dollars or case', Q.isCorrect(cloze, ' 2X ') && Q.isCorrect(cloze, '$2x$') && !Q.isCorrect(cloze, '2') && !Q.isCorrect(cloze, ''));
+  check('quiz: a Hebrew answer is accepted with a leading ה or ו', Q.clozeCorrect({ answer: 'נגזרת', accept: [] }, 'הנגזרת') && !Q.clozeCorrect({ answer: 'נגזרת', accept: [] }, 'אינטגרל'));
+  check('quiz: multiple choice and true/false are checked by the index and the value', Q.isCorrect(mcq, mcq.answer) && !Q.isCorrect(mcq, (mcq.answer + 1) % 4) && Q.isCorrect(qs[1], false) && !Q.isCorrect(qs[1], true));
+  const sc = Q.score(qs, [{ correct: false, sure: true }, { correct: true }, { correct: false }]);
+  check('quiz: the score, the topics to go back to and the mistakes made while sure', sc.right === 1 && sc.total === 3 && sc.percent === 33 && sc.weak.join() === 'סיבוכיות' && sc.confidentWrong === 1);
+
+  // The host: three passes, the auditor gets the summary again, the quiz is saved next to the summary and opens from there.
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'quiz-courses');
+  app.SaveLecture('קורס-בוחן', { num: 1, title: 'הרצאה 1' });
+  const page = app.StudyPagePath('קורס-בוחן', 1);
+  mkdirp(path.dirname(page)); writeText(page, '<html><body><h1>חיפוש בינארי</h1><p>O(log n)</p></body></html>');
+  const sent = [], calls = [];
+  const realSend = app.Send, realGem = app.SummaryGemini, realMode = app.HelperMode;
+  app.Send = (m) => sent.push(m);
+  app.HelperMode = () => 'key';
+  app.SummaryGemini = async (system, msgs) => { calls.push({ system, text: msgs[0][1] }); return { Text: calls.length < 3 ? 'טיוטה ' + calls.length : JSON.stringify(raw) }; };
+  await app.MakeQuiz({ requestId: 'q1', course: 'קורס-בוחן', path: page, title: 'הרצאה 1' });
+  const res = sent.find(m => m.type === 'quizResult');
+  check('quiz: made in three passes, with progress for each', calls.length === 3 && sent.filter(m => m.type === 'quizProgress').map(m => m.step).join() === '1,2,3');
+  check('quiz: the auditor checks the draft against the summary', calls[2].text.includes('חיפוש בינארי') && calls[2].text.includes('טיוטה 2') && calls[2].system.includes('"type":"mcq"'));
+  check('quiz: the result is sent and saved next to the summary', res && !res.error && res.questions.length === 3 && fileExists(app.QuizFile(page)));
+  sent.length = 0; calls.length = 0;
+  await app.MakeQuiz({ requestId: 'q2', course: 'קורס-בוחן', path: page });
+  const again = sent.find(m => m.type === 'quizResult');
+  check('quiz: opened again, it comes from the file with no AI call', calls.length === 0 && again.cached && JSON.stringify(again.questions) === JSON.stringify(res.questions));
+  app.SaveQuizAttempt({ course: 'קורס-בוחן', path: page, right: 2, total: 3 });
+  app.SaveQuizAttempt({ course: 'קורס-בוחן', path: page, right: 9, total: 3 });
+  app.SaveQuizAttempt({ course: 'קורס-בוחן', path: path.join(root, 'outside.html'), right: 1, total: 3 });
+  const att = app.LoadQuiz(page).attempts;
+  check('quiz: a finished quiz keeps its score; an impossible score or a page outside the course is ignored', att.length === 1 && att[0].right === 2 && att[0].total === 3);
+  writeText(page, '<html><body>סיכום חדש</body></html>');
+  fs.utimesSync(page, new Date(), new Date(Date.now() + 5000));
+  sent.length = 0; calls.length = 0;
+  app.SummaryGemini = async () => ({ Text: 'לא JSON' });
+  await app.MakeQuiz({ requestId: 'q3', course: 'קורס-בוחן', path: page });
+  const bad = sent.find(m => m.type === 'quizResult');
+  check('quiz: after the summary changes it is made again, and an answer with too few questions is an error', bad && bad.error && /שאלות/.test(bad.text));
+  sent.length = 0;
+  await app.MakeQuiz({ requestId: 'q4', course: 'קורס-אחר', path: page });
+  check('quiz: a summary of another course is refused', sent.find(m => m.type === 'quizResult').error);
+  app.Send = realSend; app.SummaryGemini = realGem; app.HelperMode = realMode;
+  app.settings.studyRoot = saved;
 }

@@ -693,6 +693,7 @@ function thisSemester(courses) {
   return cur.some(mine) ? cur.filter(mine) : cur;
 }
 function renderHome() {
+  renderHeroBadges();
   if (typeof ticketRender === 'function') ticketRender();
   renderStats(); renderNextUp(); if (typeof renderToday === 'function') renderToday();
   const name = firstName(S.userName || S.settings.userName);
@@ -711,6 +712,14 @@ function renderHome() {
     : week.length ? `יש לך ${week.length} ${week.length === 1 ? 'משימה' : 'משימות'} בשבוע הקרוב. אפשר להתחיל ממה שהכי דחוף.`
     : 'אין מטלות בשבוע הקרוב. זמן מצוין לחזור על החומר.';
   $('deadlineCount').textContent = ev.length + ' מטלות';
+  // SumIT 2.0: one line under the greeting with the thing that matters most - the next exam within a month, or the
+  // nearest deadline of the week.
+  const exams = ((S.timetable && S.timetable.exams) || []).filter(x => x.date && x.course).map(x => ({ x, d: daysFromToday(x.date) })).filter(e => e.d >= 0 && e.d <= 30).sort((a, b) => a.d - b.d);
+  const inDays = (d) => d === 0 ? 'היום' : d === 1 ? 'מחר' : `בעוד ${d} ימים`;
+  const focus = exams.length ? `המבחן ב${exams[0].x.course} ${inDays(exams[0].d)}`
+    : week.length ? (() => { const n = week.slice().sort((a, b) => a.when - b.when)[0]; return `${n.name} · ${relDay(n.when)}`; })() : '';
+  $('heroFocus').hidden = !focus;
+  $('heroFocus').textContent = focus;
 
   const box = $('deadlines'); box.innerHTML = '';
   if (homeLoading) {
@@ -740,7 +749,17 @@ function renderHome() {
     cur.forEach((c, i) => hc.append(courseCard(c, i)));
   }
 }
-$('heroArt').innerHTML = ART.mascot('wave');
+$('heroArt').innerHTML = ART.mascot('wave') + '<div class="hero-badges" id="heroBadges"></div>';
+// SumIT 2.0: small badges around the mascot with the student's own numbers - the streak (study track) and the cards
+// waiting for review. Each shows only when there is something to show.
+function renderHeroBadges() {
+  const box = $('heroBadges'); if (!box) return;
+  const si = S.track && S.track.stats && S.track.stats.streakInfo;
+  const rv = S.review;
+  const badge = (cls, ic, big, small) => `<div class="hero-badge ${cls}"><span class="hb-ic">${ic}</span><div><b>${big}</b><small>${small}</small></div></div>`;
+  box.innerHTML = (si && si.current > 0 ? badge('hb-streak', '🔥', si.current === 1 ? 'יום אחד' : si.current + ' ימים', 'רצף לימוד') : '')
+    + (rv && rv.count > 0 ? badge('hb-review', '✨', rv.count + ' כרטיסים', 'מחכים לחזרה') : '');
+}
 $('heroCourses').innerHTML = IC.book + 'לקורסים שלי';
 $('heroCourses').onclick = () => show('courses');
 $('heroPaste').innerHTML = IC.plus + 'הוסף מטלה';
@@ -1198,7 +1217,8 @@ function renderRecs() {
   lessonRecs.forEach(s => (s.local.recordings || []).forEach(rec => {
     const row = h('<div class="check-row ok"><div class="ci" data-ic="check"></div><div class="grow"><b dir="auto"></b><small></small></div><button class="small">נגן</button></div>');
     row.querySelector('b').textContent = 'הרצאה ' + s.num + ' · ' + rec.name;
-    row.querySelector('small').textContent = rec.transcript ? 'הקלטה ותמלול במחשב' : 'הקלטה במחשב · ללא תמלול';
+    row.querySelector('small').textContent = (rec.transcript ? 'הקלטה ותמלול במחשב' : 'הקלטה במחשב · ללא תמלול') + (rec.short ? ' · ' + rec.short : '');
+    if (rec.short) row.classList.replace('ok', 'warn');
     row.querySelector('button').onclick = () => send({type:'openPath',path:rec.path});
     list.querySelector('.rec-list').append(row);
   }));
@@ -1295,7 +1315,17 @@ function fillLecture(el, s) {
     li.querySelector('.nm').textContent = 'הקלטה\\' + r.name + (r.ext || '.mp4');
     li.querySelector('.kind').textContent = r.transcript ? 'עם תמלול' : '';
     li.querySelector('button').onclick = () => send({ type: 'openPath', path: r.path }); items.append(li);
+    if (r.short) { const w = h('<li class="muted"></li>'); w.textContent = '⚠️ ' + r.short; items.append(w); }
   });
+  // What the recording gave the summary: whether the AI opened the transcript, and the points marked "מהשיעור".
+  const src = L.sources;
+  if (src && src.known && src.transcriptSeconds > 0 && (L.studyPage || L.lecturePdf)) {
+    const li = h('<li class="muted"></li>');
+    li.textContent = src.transcriptRead
+      ? 'בסיכום: התמלול נקרא' + (src.fromLecture > 0 ? ', ו-' + src.fromLecture + ' נקודות סומנו "מהשיעור" (מה שנאמר ולא כתוב במצגות)' : ', אבל לא נמצא בו דבר שלא במצגות')
+      : 'בסיכום: ה-AI לא פתח את התמלול. "עדכן סיכום" יבנה אותו שוב.';
+    items.append(li);
+  }
 
   const a = el.querySelector('.actions'); a.innerHTML = '';
   const btn = (ic, text, cls, fn, disabled) => { const b = h(`<button class="${cls}"><span data-ic="${ic}"></span>${text}</button>`); b.onclick = (e) => { e.stopPropagation(); fn(); }; b.disabled = !!disabled; a.append(b); return b; };
@@ -1895,7 +1925,10 @@ function goStep(n) {
   document.querySelectorAll('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
   document.querySelectorAll('#wizDots i').forEach((d, i) => { d.classList.toggle('on', i === n); d.hidden = i === WIZ_GOOGLE && !wizGoogleOk(); });
   $('wizArt').innerHTML = ART[wizArt[n]]();
-  if (window.mountWizGauntlet) window.mountWizGauntlet($('wizArt'));   // the stones fly into the gauntlet as things get connected
+  const instStep = n === WIZ_INST && typeof instMosaic === 'function';
+  document.querySelector('#wizard .wizard').classList.toggle('inst-step', instStep);
+  if (instStep) { $('wizArt').innerHTML = ''; $('wizArt').append(instMosaic()); }
+  if (window.mountWizGauntlet && !instStep) window.mountWizGauntlet($('wizArt'));   // the stones fly into the gauntlet as things get connected
   $('wizNext').textContent = wizNext[n];
   $('wizBack').hidden = n === 0 || n === LAST;
   $('wizSkip').hidden = n === LAST;
@@ -2165,6 +2198,7 @@ function onMessage(m) {
     case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
+    case 'quizProgress': case 'quizResult': quizEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;
     case 'toast': toast(m.text, { error: m.error }); break;
     case 'updateCheck': { const t = document.getElementById('updateCheckText'); if (t) t.textContent = ' · ' + m.text; const a = document.getElementById('aboutUpdateText'); if (a) a.textContent = m.text; break; }

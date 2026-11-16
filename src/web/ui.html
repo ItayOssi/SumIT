@@ -6,6 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
 <title>SumIT</title>
 <link rel="icon" type="image/png" href="images/icon.png">
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="inst-hit">
@@ -59,6 +60,7 @@
           <div class="text">
             <div class="date" id="today"></div>
             <h1 id="greeting">שלום!</h1>
+            <p class="hero-focus" id="heroFocus" hidden></p>
             <p id="heroLine">טוען את מה שמחכה לך השבוע...</p>
             <div class="row wrap">
               <button class="white" id="heroCourses"></button>
@@ -240,7 +242,7 @@
         <button class="small soft" id="viewerShare" aria-controls="viewerShareNote" title="שמור את הסיכום בקובץ ZIP לשיתוף"><span data-ic="download"></span><span id="viewerShareLabel">שיתוף</span></button>
         <button class="small soft" id="viewerSelect">הקף אזור לשאלה</button>
         <button class="small soft" id="viewerChat"><span data-ic="chat"></span>שאל את הצ'אט</button>
-        <button class="small soft" id="viewerCards"><span data-ic="book"></span>כרטיסי זיכרון</button>
+        <button class="small soft" id="viewerCards" title="כרטיסי זיכרון ובוחן מהסיכום"><span data-ic="book"></span>כרטיסים ובוחן</button>
         <button class="small soft" id="viewerPdf"><span data-ic="file"></span>פתח כ-PDF</button>
       </div>
       <div id="viewerShareNote" hidden>
@@ -260,13 +262,22 @@
         <div id="summaryChatMessages" aria-live="polite" role="log"></div>
         <div class="chat-compose"><button id="summaryChatAttach" class="ghost small">צרף תמונות</button><input id="summaryChatFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><textarea id="summaryChatText" maxlength="8000" rows="2" placeholder="כתוב שאלה, או הדבק תמונות כאן…" aria-label="השאלה שלך"></textarea><button id="summaryChatSend" class="primary">שלח</button></div>
       </aside>
-      <aside id="flashcards" hidden dir="rtl" aria-label="כרטיסי זיכרון מהסיכום">
-        <div class="row"><b class="grow">כרטיסי זיכרון</b><button id="cardsRedo" class="ghost small" title="מכין את הכרטיסים מחדש מהסיכום">צור מחדש</button><button id="cardsClose" class="ghost small">סגור</button></div>
+      <aside id="flashcards" hidden dir="rtl" aria-label="כרטיסי זיכרון ובוחן מהסיכום">
+        <div class="row"><div class="seg grow" role="tablist" aria-label="סוג התרגול"><button id="modeCards" role="tab" aria-selected="true">כרטיסים</button><button id="modeQuiz" role="tab" aria-selected="false">בוחן</button></div><button id="cardsRedo" class="ghost small" title="מכין מחדש מהסיכום">צור מחדש</button><button id="cardsClose" class="ghost small">סגור</button></div>
+        <div id="cardsPane">
         <div id="cardsProgress" hidden><small id="cardsStep" role="status" aria-live="polite"></small><div class="bar"><i id="cardsBar"></i></div><small class="muted">שלושה שלבים ב-Gemini: חילוץ, כתיבה ובדיקה. בערך חצי דקה, ובפעם הבאה הכרטיסים נפתחים מיד.</small></div>
         <div id="cardsError" hidden role="alert"></div>
         <button id="cardsCard" hidden aria-live="polite"><small id="cardsTag"></small><span id="cardsSide"></span><div id="cardsText"></div><small class="muted" id="cardsHint"></small></button>
         <div class="row" id="cardsRate" hidden><button class="soft small" data-g="again">לא ידעתי</button><button class="soft small" data-g="hard">בערך</button><button class="primary small" data-g="good">ידעתי</button></div>
         <div class="row" id="cardsNav" hidden><button id="cardsPrev" class="soft small">הקודם</button><b class="grow" id="cardsCount"></b><button id="cardsNext" class="soft small">הבא</button></div>
+        </div>
+        <div id="quizPane" hidden>
+        <div id="quizProgress" hidden><small id="quizStep" role="status" aria-live="polite"></small><div class="bar"><i id="quizBar"></i></div><small class="muted">שלושה שלבים: רעיונות וטעויות נפוצות, כתיבת שאלות ובדיקה מול הסיכום. בערך חצי דקה, ובפעם הבאה הבוחן נפתח מיד. הבדיקה של התשובות לא עולה כלום.</small></div>
+        <div id="quizError" hidden role="alert"></div>
+        <div id="quizDots" hidden aria-hidden="true"></div>
+        <div id="quizCard" hidden aria-live="polite"></div>
+        <div id="quizEnd" hidden aria-live="polite"></div>
+        </div>
       </aside>
       </div>
     </section>
@@ -456,7 +467,9 @@
 <script src="ical.js"></script>
 <script src="app.js"></script>
 <script src="summary-chat.js"></script>
+<script src="quiz-core.js"></script>
 <script src="flashcards.js"></script>
+<script src="quiz.js"></script>
 <script src="planner-ui.js"></script>
 <script src="coach-ui.js"></script>
 <script src="block-plan-ui.js"></script>

@@ -421,8 +421,14 @@ return out;";
         string recDir = Path.Combine(dir, RecordingFolder);
         var recordingFiles = Directory.Exists(recDir) ? Directory.GetFiles(recDir)
             .Where(f => new[] { ".mp4", ".webm", ".mkv", ".m4a" }.Contains(Path.GetExtension(f).ToLowerInvariant()))
-            .Select(f => new { name = Path.GetFileNameWithoutExtension(f), ext = Path.GetExtension(f).ToLowerInvariant(), path = f,
-                transcript = File.Exists(Path.Combine(recDir, Path.GetFileNameWithoutExtension(f) + " " + TranscriptSuffix + ".txt")) }).ToList<object>() : new List<object>();
+            .Select(f =>
+            {
+                string tr = Path.Combine(recDir, Path.GetFileNameWithoutExtension(f) + " " + TranscriptSuffix + ".txt");
+                double seconds = 0;
+                try { if (File.Exists(tr)) seconds = TranscriptSeconds(File.ReadAllText(tr)); } catch { }
+                return new { name = Path.GetFileNameWithoutExtension(f), ext = Path.GetExtension(f).ToLowerInvariant(), path = f,
+                    transcript = File.Exists(tr), seconds = seconds, @short = ShortRecordingNote(seconds) };
+            }).ToList<object>() : new List<object>();
         var materialFiles = Directory.Exists(dir) ? Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .Where(f => !IsSummaryFile(f) && !f.Contains("\\" + PointersFolder + "\\") && !f.StartsWith(recDir + "\\", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f).Select(f => new { name = f.Substring(dir.Length + 1), path = f }).ToList<object>() : new List<object>();
@@ -430,7 +436,8 @@ return out;";
         {
             dir = dir, exists = Directory.Exists(dir), files = files, videos = recordingFiles.Count, transcripts = transcripts, recordings = recordingFiles,
             studyPage = File.Exists(page) ? page : null, exercises = exercises, pointers = pointers, materialFiles = materialFiles,
-            lecturePdf = File.Exists(LecturePdfPath(course, num)) ? LecturePdfPath(course, num) : null
+            lecturePdf = File.Exists(LecturePdfPath(course, num)) ? LecturePdfPath(course, num) : null,
+            sources = Dict(Dict(LoadMeta(course), "summarySources"), num.ToString())
         };
     }
 

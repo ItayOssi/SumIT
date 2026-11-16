@@ -25,7 +25,7 @@ function trackEvent(m) {
     if (before && after && !before.todayDone && after.todayDone) streakCelebrate(after);
     if (m.wizardDone) S.trackTab = 'overview';
     if (m.built && !m.wizardDone) toast(m.built.unplaced ? 'השבוע נבנה. ' + minLabel(m.built.unplaced) + ' לא נכנסו, אפשר להרחיב ימים או שעות.' : 'השבוע נבנה סביב מערכת השעות');
-    renderTrack(); window.dispatchEvent(new Event('sumit-track'));
+    renderTrack(); window.dispatchEvent(new Event('sumit-track')); if (typeof renderHeroBadges === 'function') renderHeroBadges();
     if (typeof twEvent === 'function') twEvent(m);
     // The first time in the study track, the wizard opens by itself (once per session if the student closes it).
     if (!m.wizardDone && m.profile && !(m.profile.routine && m.profile.routine.done) && !S.twDismissed && typeof openTrackWizard === 'function' && document.getElementById('view-track').classList.contains('active')) openTrackWizard();

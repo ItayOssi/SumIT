@@ -77,6 +77,19 @@ function instPicker(selected, onPick) {
   return box;
 }
 
+// SumIT 2.0: the header of the wizard's institution step - a tilted mosaic of every institution's logo (the real ones
+// as they arrive from inst-logos.js, the initials badges until then), with how many there are.
+function instMosaic() {
+  const list = Institutions.LIST.slice().sort((a, b) => (a.id < b.id ? -1 : 1));
+  const order = list.map((x, i) => list[(i * 7) % list.length]);   // a fixed shuffle, the same every time
+  const box = h('<div class="inst-mosaic" aria-hidden="true"><div class="inst-mosaic-grid"></div><div class="inst-mosaic-fade"></div><span class="inst-mosaic-count"></span></div>');
+  const grid = box.querySelector('.inst-mosaic-grid');
+  order.concat(order).slice(0, 40).forEach(inst => { const t = h('<span class="inst-tile"></span>'); t.append(instLogoEl(inst)); grid.append(t); });
+  box.querySelector('.inst-mosaic-count').innerHTML = `<b>${list.length}</b> מכללות ואוניברסיטאות בישראל`;
+  instAskLogos(list.map(i => i.id));
+  return box;
+}
+
 // The wizard step: pick, and type the Moodle address when the list has none for that institution.
 function renderWizardInstitute() {
   const box = $('wizInst'); if (!box) return;

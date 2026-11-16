@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Str, Bool, Int, SafeName, Trunc, Mutex, deferred, delay, fileExists, dirExists, listFiles, listDirs, mkdirp, readText, writeText } = require('../util');
+const { Str, Bool, Int, Dict, SafeName, Trunc, Mutex, deferred, delay, fileExists, dirExists, listFiles, listDirs, mkdirp, readText, writeText,
+  TranscriptSeconds, ShortRecordingNote } = require('../util');
 const C = require('../constants');
 const Inst = require('../institution');
 
@@ -492,11 +493,16 @@ module.exports = {
           .filter(f => ['.mp4', '.webm', '.mkv', '.m4a'].includes(path.extname(f).toLowerCase()))
           .map(f => {
             const base = path.basename(f, path.extname(f));
+            const tr = path.join(recDir, base + ' ' + C.TranscriptSuffix + '.txt');
+            let seconds = 0;
+            try { if (fileExists(tr)) seconds = TranscriptSeconds(readText(tr)); } catch { }
             return {
               name: base,
               ext: path.extname(f).toLowerCase(),
               path: f,
-              transcript: fileExists(path.join(recDir, base + ' ' + C.TranscriptSuffix + '.txt')),
+              transcript: fileExists(tr),
+              seconds,
+              short: ShortRecordingNote(seconds),
             };
           })
         : [];
@@ -512,6 +518,7 @@ module.exports = {
         dir, exists: dirExists(dir), files, videos: recordingFiles.length, transcripts, recordings: recordingFiles,
         studyPage: fileExists(page) ? page : null, exercises, pointers, materialFiles,
         sharedSummaries: shared,
+        sources: Dict(Dict(this.LoadMeta(course), 'summarySources'), String(num)),
         lecturePdf: fileExists(this.LecturePdfPath(course, num)) ? this.LecturePdfPath(course, num) : null,
       };
     },

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -102,7 +103,10 @@ partial class HitStudent
         if (!AiReadyOrSay(t => SectionStatus(course, num, t, false, true))) return null;
         string dir = LectureDir(course, num);
         string transcript = Path.Combine(dir, RecordingFolder);
-        bool hasTranscript = Directory.Exists(transcript) && Directory.GetFiles(transcript, "*" + TranscriptSuffix + ".txt").Length > 0;
+        string[] transcriptFiles = Directory.Exists(transcript) ? Directory.GetFiles(transcript, "*" + TranscriptSuffix + ".txt") : new string[0];
+        bool hasTranscript = transcriptFiles.Length > 0;
+        double transcriptSeconds = 0;
+        foreach (string f in transcriptFiles) { try { transcriptSeconds += TranscriptSeconds(File.ReadAllText(f)); } catch { } }
         if (CountFiles(dir) == 0 && !hasTranscript) { SectionStatus(course, num, "אין עדיין חומר להרצאה הזו - הוסף קבצים קודם", false, true); return null; }
 
         string folder = LectureFolderName(num);
@@ -121,6 +125,7 @@ partial class HitStudent
             + " בסוף כתוב גם תקציר \"" + DigestRel(num) + "\" (עד 60 שורות: הנושאים, כל נוסחה ב-LaTeX, הגדרות, שיטות פתרון ושמות הסעיפים בדף) לשימוש ההרצאות הבאות.\n"
             + "החומר של ההרצאה: התיקייה \"" + folder + "\"" + (hasTranscript ? ", התמלול \"" + folder + "/" + RecordingFolder + "\"" : "")
             + ", מצגות ומחברת המרצה ב-\"" + folder + "/" + LecturerNotes + "\", והמחברת של הסטודנט ב-\"" + folder + "/" + Notebook + "\" אם יש.\n"
+            + (hasTranscript ? "קרא את התמלול. הוסף לסיכום מה שהמרצה אמר בעל פה ולא כתוב במצגות (הסברים, דגשים, דוגמאות, מה שאמר שיהיה במבחן), וסמן כל נקודה כזו ב-<span class=\"from-lecture\">מהשיעור</span> בתחילתה. אם התמלול קצר או לא מוסיף דבר, אל תמציא נקודות כאלה.\n" : "")
             + "כתוב את דף הלימוד \"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\" לפי הסקיל (אל תיצור קבצים אחרים בתיקיית הסיכום), ובו:\n"
             + "0. בראש הדף: מה חובה לדעת מההרצאה ומה אפשר לדלג עליו, לפי מה ששיעורי הבית והמבחנים בודקים. הסיכום צריך לכלול את כל מה שרלוונטי לסטודנט ולהשמיט מה שלא.\n"
             + "1. סיכום ממוקד לפתרון: רק המושגים, השיטות והידע המקדים הנחוצים לשיעורי הבית, לשאלות המבחן הרלוונטיות ולדרישות מפורשות של המרצה. הסבר אותם היטב עם דוגמה מייצגת, בלי לסכם אוטומטית כל שקף או לשכפל דוגמאות.\n"
@@ -152,7 +157,10 @@ partial class HitStudent
             {
                 var authorMeta = LoadMeta(course);
                 var writers = Dict(authorMeta, "summaryWriters") ?? new Dictionary<string, object>();
-                writers[num.ToString()] = result.Provider ?? Provider; authorMeta["summaryWriters"] = writers; SaveMeta(course, authorMeta);
+                writers[num.ToString()] = result.Provider ?? Provider; authorMeta["summaryWriters"] = writers;
+                var sources = Dict(authorMeta, "summarySources") ?? new Dictionary<string, object>();
+                sources[num.ToString()] = SummarySources(result.Touched, File.ReadAllText(StudyPagePath(course, num), Encoding.UTF8), transcriptSeconds);
+                authorMeta["summarySources"] = sources; SaveMeta(course, authorMeta);
                 // A second AI (Gemini / ChatGPT) reads the homework solutions like a strict reviewer, if one is connected.
                 if (HelperOrder().Count > 0)
                 {
@@ -181,7 +189,8 @@ partial class HitStudent
             : pdf != null ? "הסיכום מוכן ✨ (" + warning + ")"
             : pageReady ? "הסיכום מוכן, אבל קובץ ה-PDF לא נוצר (" + warning + "). אפשר לפתוח את הסיכום, ולנסות שוב אחר כך."
             : "הסתיים בלי סיכום - נסה שוב";
-        SectionStatus(course, num, status, false, result.Error || !pageReady);
+        string sourcesNote = pageReady && !result.Error ? SourcesNote(Dict(Dict(LoadMeta(course), "summarySources"), num.ToString())) : "";
+        SectionStatus(course, num, status + (sourcesNote.Length > 0 ? " · " + sourcesNote : ""), false, result.Error || !pageReady);
         SendSectionLocal(course, num);
         if (pageReady && !result.Error)
         {
@@ -190,6 +199,35 @@ partial class HitStudent
             if (open) Send(new { type = "summaryReady", course = course, num = num, page = StudyPagePath(course, num), pdf = pdf });   // not opened in a browser: the student opens the interactive version inside the app
         }
         return result;
+    }
+
+    // What a summary was built from: whether the AI opened the transcript (a tool call named it), the files it opened,
+    // and how many points it marked as said only in the lecture. known=false when the AI reports no tool calls (ChatGPT),
+    // and then nothing is claimed either way.
+    static Dictionary<string, object> SummarySources(List<string> touched, string html, double transcriptSeconds)
+    {
+        var named = touched ?? new List<string>();
+        var files = named.Where(t => !Regex.IsMatch(t, @"[\n|*]") && Regex.IsMatch(t, @"\.[A-Za-z0-9]{1,5}$"))
+            .Select(t => Path.GetFileName(t.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar))).Distinct().Take(20).ToList();
+        return new Dictionary<string, object>
+        {
+            { "known", named.Count > 0 },
+            { "transcriptRead", named.Any(t => t.Contains(TranscriptSuffix)) },
+            { "transcriptSeconds", transcriptSeconds },
+            { "fromLecture", Regex.Matches(html ?? "", @"class=[""'][^""']*\bfrom-lecture\b").Count },
+            { "files", files },
+        };
+    }
+
+    // One line for the student: what the recording gave this summary.
+    static string SourcesNote(Dictionary<string, object> src)
+    {
+        double seconds = 0;
+        if (src != null && src.ContainsKey("transcriptSeconds")) double.TryParse(Convert.ToString(src["transcriptSeconds"], CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out seconds);
+        if (src == null || !Bool(src, "known") || !(seconds > 0)) return "";
+        if (!Bool(src, "transcriptRead")) return "שים לב: ה-AI לא פתח את התמלול בסיכום הזה";
+        int marks = Int(src, "fromLecture");
+        return "התמלול נקרא (" + RecordingLength(seconds) + ")" + (marks > 0 ? " · " + marks + " נקודות מהשיעור שלא במצגות" : " · לא נמצא בו דבר שלא במצגות");
     }
 
     // Study page (+ the homework sheets) -> one PDF. Returns its path, or null (and says why in pdfFailure).

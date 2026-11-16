@@ -242,6 +242,11 @@ partial class HitStudent
         string mp4Url = Str(result, "viewMp4Url");
         string transcriptUrl = Str(result, "transcriptUrl");
         string topic = Str(Dict(result, "meet"), "topic");
+        int seconds = Int(result, "duration");
+        int parts = PlayInfoParts(result);
+        if (seconds > 0) Log(job, "Length in Zoom: " + RecordingLength(seconds));
+        if (parts > 1) Log(job, "Zoom lists " + parts + " parts for this recording; only the one the link opens on is downloaded.");
+        KeepPlayInfo(info);
 
         string dir = job.Dir ?? RecordingsDir;
         string baseName = SafeName(job.Name.Length > 0 ? job.Name : (topic.Length > 0 ? topic : "Zoom recording"));
@@ -319,12 +324,28 @@ partial class HitStudent
                 string ext = Path.GetExtension(f).ToLowerInvariant();
                 if (ext == ".mp4" || ext == ".m4a" || ext == ".webm" || ext == ".mkv") job.VideoPath = f;
             }
-            Update(job, "done", job.TranscriptPath != null ? "הוידאו והתמלול נשמרו" : "הוידאו נשמר", 100);
+            double length = seconds > 0 ? seconds : (job.TranscriptPath != null ? TranscriptSeconds(File.ReadAllText(job.TranscriptPath)) : 0);
+            string note = parts > 1 ? "ב-Zoom ההקלטה הזו מחולקת ל-" + parts + " חלקים, וירד רק אחד. הדבק גם את הקישורים של שאר החלקים." : ShortRecordingNote(length);
+            if (note.Length > 0) Log(job, "Short: " + note);
+            Update(job, "done", (job.TranscriptPath != null ? "הוידאו והתמלול נשמרו" : "הוידאו נשמר") + (note.Length > 0 ? " · " + note : ""), 100);
+            if (note.Length > 0) Toast(note, false);
         }
         else
         {
             Update(job, "failed", job.TranscriptPath != null ? "התמלול נשמר, הוידאו נכשל" : "ההורדה נכשלה - ראה פרטים", 0);
         }
+    }
+
+    // The last play info from Zoom, without links or ids (diagnostics\zoom-play-info.json): how Zoom lists the parts of a recording.
+    void KeepPlayInfo(object info)
+    {
+        try
+        {
+            string dir = Path.Combine(DataDir, "diagnostics");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "zoom-play-info.json"), json.Serialize(PlayInfoShape(info)), new UTF8Encoding(false));
+        }
+        catch { }
     }
 
     static string TranscriptFile(string dir, string name)

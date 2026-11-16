@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Str, Dict, Int, SafeName, VttToText, FindOnPath, Exec, spawnTracked, deferred, delay, guidN, fileExists, dirExists, mkdirp, writeText } = require('../util');
+const { Str, Dict, Int, SafeName, VttToText, FindOnPath, Exec, spawnTracked, deferred, delay, guidN, fileExists, dirExists, mkdirp, writeText,
+  readText, TranscriptSeconds, RecordingLength, ShortRecordingNote, PlayInfoShape, PlayInfoParts } = require('../util');
 const platform = require('../platform');
 const C = require('../constants');
 
@@ -240,6 +241,11 @@ module.exports = {
       const mp4Url = Str(result, 'viewMp4Url');
       const transcriptUrl = Str(result, 'transcriptUrl');
       const topic = Str(Dict(result, 'meet'), 'topic');
+      const seconds = Int(result, 'duration');
+      const parts = PlayInfoParts(result);
+      if (seconds > 0) this.Log(job, 'Length in Zoom: ' + RecordingLength(seconds));
+      if (parts > 1) this.Log(job, 'Zoom lists ' + parts + ' parts for this recording; only the one the link opens on is downloaded.');
+      this.KeepPlayInfo(info);
 
       const dir = job.Dir || this.RecordingsDir;
       const baseName = SafeName(job.Name.length > 0 ? job.Name : (topic.length > 0 ? topic : 'Zoom recording'));
@@ -311,10 +317,23 @@ module.exports = {
             if (['.mp4', '.m4a', '.webm', '.mkv'].includes(ext)) job.VideoPath = path.join(dir, f);
           }
         } catch { }
-        this.Update(job, 'done', job.TranscriptPath ? 'הוידאו והתמלול נשמרו' : 'הוידאו נשמר', 100);
+        const length = seconds > 0 ? seconds : (job.TranscriptPath ? TranscriptSeconds(readText(job.TranscriptPath)) : 0);
+        const note = parts > 1 ? 'ב-Zoom ההקלטה הזו מחולקת ל-' + parts + ' חלקים, וירד רק אחד. הדבק גם את הקישורים של שאר החלקים.' : ShortRecordingNote(length);
+        if (note) this.Log(job, 'Short: ' + note);
+        this.Update(job, 'done', (job.TranscriptPath ? 'הוידאו והתמלול נשמרו' : 'הוידאו נשמר') + (note ? ' · ' + note : ''), 100);
+        if (note) this.Toast(note, false);
       } else {
         this.Update(job, 'failed', job.TranscriptPath ? 'התמלול נשמר, הוידאו נכשל' : 'ההורדה נכשלה - ראה פרטים', 0);
       }
+    },
+
+    // The last play info from Zoom, without links or ids (diagnostics/zoom-play-info.json): how Zoom lists the parts of a recording.
+    KeepPlayInfo(info) {
+      try {
+        const dir = this.DiagnosticDir();
+        mkdirp(dir);
+        writeText(path.join(dir, 'zoom-play-info.json'), JSON.stringify(PlayInfoShape(info), null, 2));
+      } catch { }
     },
 
     async WriteCookies(file) {

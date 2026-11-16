@@ -25,8 +25,8 @@ for (const file of jsFiles) {
 }
 
 const { Host } = require('../lib/host');
-if (Host.modules.length !== 34) {
-  console.error(`Expected 34 Host modules, loaded ${Host.modules.length}`);
+if (Host.modules.length !== 35) {
+  console.error(`Expected 35 Host modules, loaded ${Host.modules.length}`);
   process.exit(1);
 }
 

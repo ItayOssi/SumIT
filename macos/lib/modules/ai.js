@@ -51,6 +51,16 @@ function Phase(action) {
   return 'קורא את חומרי הקורס';
 }
 
+// What a tool call names (a file it reads, a command, a search): kept for the summary, to know whether the transcript was read.
+function TouchedBy(input) {
+  const out = [];
+  for (const k of ['file_path', 'absolute_path', 'path', 'command', 'pattern']) {
+    const v = Str(input, k);
+    if (v.length > 0) out.push(v);
+  }
+  return out;
+}
+
 function DescribeTool(name, input) {
   const fp = Str(input, 'file_path').length > 0 ? Str(input, 'file_path') : Str(input, 'absolute_path');
   const file = fp ? path.basename(fp.replace(/\\/g, '/')) : '';
@@ -79,6 +89,7 @@ module.exports = {
   },
   methods: {
     IsUsageLimit,
+    TouchedBy,
     LimitResetText,
     Phase,
     DescribeTool,
@@ -672,7 +683,10 @@ module.exports = {
         let sb = '';
         for (const part of content) {
           if (Str(part, 'type') === 'text') sb += Str(part, 'text');
-          else if (Str(part, 'type') === 'tool_use') e.Action = DescribeTool(Str(part, 'name'), Dict(part, 'input'));
+          else if (Str(part, 'type') === 'tool_use') {
+            e.Action = DescribeTool(Str(part, 'name'), Dict(part, 'input'));
+            e.Touch = (e.Touch || []).concat(TouchedBy(Dict(part, 'input')));
+          }
         }
         if (sb.length > 0) e.Text = sb;
         return e;
@@ -753,7 +767,7 @@ module.exports = {
               : name === 'run_command' ? 'Bash'
               : (name === 'grep_search' || name === 'list_dir' || name === 'find_by_name') ? 'Grep'
               : name;
-            return { Action: DescribeTool(mapped, input) };
+            return { Action: DescribeTool(mapped, input), Touch: TouchedBy(input) };
           }
           return null;
         }, onEvent);
@@ -878,7 +892,9 @@ module.exports = {
       status('מכין כלים...');
       await this.EnsurePython(status);
       let lastPhase = null;
+      const touched = [];
       const result = await this.RunAi(key, this.CourseDir(course), prompt, null, null, (ev) => {
+        if (Array.isArray(ev.Touch)) touched.push(...ev.Touch);
         if (!ev.Action) return;
         const phase = Phase(ev.Action);
         if (phase === lastPhase) return;
@@ -888,6 +904,7 @@ module.exports = {
       });
       this.Send({ type: 'aiRun', key, course, busy: false, result: result.Text, error: result.Error });
       this.SendCourseLocal(course);
+      result.Touched = touched;
       return result;
     },
 

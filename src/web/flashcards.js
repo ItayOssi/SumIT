@@ -9,6 +9,7 @@ function openFlashcards(regenerate) {
   if (!S.viewer || !S.course) return;
   $('summaryChat').hidden = true;
   $('flashcards').hidden = false;
+  practiceTab('cards');
   const path = S.viewer.path;
   if (cardsJob && cardsJob.path !== path) $('flashcards').dataset.error = 'מכין עכשיו כרטיסים לסיכום אחר. נסה שוב בעוד רגע.';
   else if ((!cardSets.has(path) || regenerate) && !cardsJob) {
@@ -21,7 +22,7 @@ function openFlashcards(regenerate) {
 }
 
 function renderFlashcards() {
-  if (!S.viewer || $('flashcards').hidden) return;
+  if (!S.viewer || $('flashcards').hidden || practiceMode !== 'cards') return;
   const set = cardSet(), busy = cardsJob?.path === S.viewer.path, err = $('flashcards').dataset.error || '';
   $('cardsProgress').hidden = !busy;
   if (busy) {
@@ -62,9 +63,10 @@ function flashcardsEvent(m) {
   renderFlashcards();
 }
 
-$('viewerCards').onclick = () => { $('flashcards').dataset.error = ''; $('flashcards').hidden ? openFlashcards(false) : ($('flashcards').hidden = true, requestAnimationFrame(() => placeSite(false))); };
+// The column opens on the tab used last (cards or quiz, quiz.js).
+$('viewerCards').onclick = () => { $('flashcards').dataset.error = ''; $('flashcards').hidden ? practiceOpen(false) : ($('flashcards').hidden = true, requestAnimationFrame(() => placeSite(false))); };
 $('cardsClose').onclick = () => { $('flashcards').hidden = true; requestAnimationFrame(() => placeSite(false)); };
-$('cardsRedo').onclick = () => { $('flashcards').dataset.error = ''; openFlashcards(true); };
+$('cardsRedo').onclick = () => { $('flashcards').dataset.error = ''; practiceOpen(true); };
 $('cardsCard').onclick = () => { const set = cardSet(); if (set) { set.back = !set.back; renderFlashcards(); } };
 // Rating a card sets when it comes back (reviews.js on the host). The next card follows.
 document.querySelectorAll('#cardsRate [data-g]').forEach(b => b.onclick = () => {
@@ -76,7 +78,7 @@ document.querySelectorAll('#cardsRate [data-g]').forEach(b => b.onclick = () => 
 $('cardsNext').onclick = () => moveCard(1);
 $('cardsPrev').onclick = () => moveCard(-1);
 $('flashcards').addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.target.tagName === 'TEXTAREA' || practiceMode !== 'cards') return;
   if (e.key === 'ArrowLeft') { e.preventDefault(); moveCard(1); }        // RTL: left is forward
   else if (e.key === 'ArrowRight') { e.preventDefault(); moveCard(-1); }
 });

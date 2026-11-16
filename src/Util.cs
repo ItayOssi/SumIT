@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -211,5 +212,73 @@ partial class HitStudent
             total = total * 60 + v;
         }
         return total;
+    }
+
+    // The length of a transcript written by VttToText: its last "[hh:mm:ss]" stamp, in seconds (0 when it has none).
+    public static double TranscriptSeconds(string text)
+    {
+        double last = 0;
+        foreach (Match m in Regex.Matches(text ?? "", @"^\[(\d{1,2}:\d{2}(?::\d{2})?)\]", RegexOptions.Multiline))
+            last = Math.Max(last, StampSeconds(m.Groups[1].Value));
+        return last;
+    }
+
+    // Under 10 minutes a lecture recording is most likely one part of it: Zoom keeps a recording that was stopped and
+    // started again as separate parts behind the same link, and only the part the link opens on is downloaded.
+    public const int ShortRecordingSeconds = 600;
+    public static string RecordingLength(double seconds)
+    {
+        int s = (int)Math.Round(seconds, MidpointRounding.AwayFromZero);
+        return s < 60 ? s + " שניות" : (int)Math.Round(s / 60.0, MidpointRounding.AwayFromZero) + " דקות";
+    }
+    public static string ShortRecordingNote(double seconds)
+    {
+        if (!(seconds > 0) || seconds >= ShortRecordingSeconds) return "";
+        return "ההקלטה קצרה (" + RecordingLength(seconds) + "), כנראה רק חלק מההרצאה. אם המרצה עצר והמשיך, ב-Zoom יש עוד חלקים: הדבק גם את הקישור שלהם.";
+    }
+
+    // Zoom's "play info" without what is private: links become "<url>", long ids and texts only their length.
+    // Kept in diagnostics, to see how Zoom lists the parts of a recording.
+    public static object PlayInfoShape(object v, int depth = 0)
+    {
+        if (v == null || v is bool || v is int || v is long || v is double || v is decimal) return v;
+        var str = v as string;
+        if (str != null) return Regex.IsMatch(str, "^https?://", RegexOptions.IgnoreCase) ? "<url>" : str.Length > 24 ? "<text " + str.Length + ">" : str;
+        if (depth >= 4) return "...";
+        var dict = v as IDictionary<string, object>;
+        if (dict != null)
+        {
+            var o = new Dictionary<string, object>();
+            foreach (var kv in dict) o[kv.Key] = PlayInfoShape(kv.Value, depth + 1);
+            return o;
+        }
+        var list = v as System.Collections.IEnumerable;
+        if (list == null) return v.ToString();
+        var items = list.Cast<object>().ToList();
+        return new Dictionary<string, object> { { "length", items.Count }, { "first", items.Take(2).Select(x => PlayInfoShape(x, depth + 1)).ToList() } };
+    }
+
+    // How many parts Zoom lists for a recording: the longest list (down to two levels) of items that name a file or a start time.
+    public static int PlayInfoParts(object result)
+    {
+        int most = 1;
+        Action<object, int> walk = null;
+        walk = (v, depth) =>
+        {
+            if (v == null || v is string || depth > 2) return;
+            var dict = v as IDictionary<string, object>;
+            if (dict != null) { foreach (var kv in dict) walk(kv.Value, depth + 1); return; }
+            var list = v as System.Collections.IEnumerable;
+            if (list == null) return;
+            var items = list.Cast<object>().ToList();
+            if (items.Count > most && items.All(x =>
+            {
+                var d = x as IDictionary<string, object>;
+                return d != null && d.Keys.Any(k => Regex.IsMatch(k, "fileid|mp4|starttime|clip", RegexOptions.IgnoreCase));
+            })) most = items.Count;
+            foreach (var x in items) walk(x, depth + 1);
+        };
+        walk(result, 0);
+        return most;
     }
 }

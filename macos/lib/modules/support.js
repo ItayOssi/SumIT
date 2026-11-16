@@ -218,22 +218,30 @@ with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as z:
       this.ImportSharedSummary(Str(m, 'course'), Int(m, 'num'), file);
     },
 
+    // The bug report for the Discord forum #דיווח-באגים, in the forum's template. Only the version, the system and the
+    // safe technical event lines (no prompts, keys or course content); a Discord message holds 2000 characters.
+    DeveloperReport() {
+      const head = '**מה קרה:** \n**מה ציפיתי שיקרה:** \n**צעדים לשחזור:** 1. ... 2. ... 3. ...\n**מחשב וגרסה:** Mac, SumIT ' + C.Version +
+        ' (' + process.platform + ' ' + process.arch + ', ' + process.version + ')\n**צילום מסך או הודעת שגיאה:** \n\n';
+      let safe = [];
+      const file = path.join(this.DiagnosticDir(), 'events.log');
+      if (fileExists(file)) {
+        safe = readText(file).split('\n').slice(-15)
+          .filter(s => s.length < 240 && /^[0-9TZ:.+\-]+ version=[0-9.]+ operation=[A-Za-z0-9_.-]* provider=[A-Za-z0-9_.-]* kind=[A-Za-z0-9_.-]* code=-?\d+$/.test(s));
+      }
+      const body = (lines) => head + 'אירועים טכניים אחרונים (בלי תוכן, מפתחות או סיסמאות):\n```text\n' + lines.join('\n') + '\n```';
+      while (safe.length && body(safe).length > 1900) safe.shift();
+      return body(safe);
+    },
+
+    ClipboardWrite(text) { clipboard.writeText(text); },
+
+    // "שלח דוח למפתח": the report goes to the clipboard and the bug forum opens in Discord; the student opens a post and pastes.
     SendDeveloperLogs() {
       try {
-        const C = require('../constants');
-        let report = 'SumIT ' + C.Version + '\nOS: ' + process.platform + ' ' + process.arch + '\nRuntime: ' + process.version + '\n\nמה קרה ומה ציפית שיקרה?\n\n\nTechnical events (no prompts or credentials):\n```text\n';
-        const file = path.join(this.DiagnosticDir(), 'events.log');
-        if (fileExists(file)) {
-          const lines = readText(file).split('\n');
-          const recent = lines.slice(Math.max(0, lines.length - 15));
-          const safe = recent.filter(s => s.length < 240 && /^[0-9TZ:.+\-]+ version=[0-9.]+ operation=[A-Za-z0-9_.-]* provider=[A-Za-z0-9_.-]* kind=[A-Za-z0-9_.-]* code=-?\d+$/.test(s));
-          report += safe.join('\n');
-        }
-        report += '\n```';
-        const { shell } = require('electron');
-        const url = 'https://github.com/Pinkel-Kinkel/SumIT/issues/new?title=' + encodeURIComponent('SumIT ' + C.Version + ' — דוח תקלה') + '&body=' + encodeURIComponent(report);
-        shell.openExternal(url);
-        this.Toast('נפתח דוח ב-GitHub עם הלוג הטכני. הוסף תיאור ולחץ Submit כדי לשלוח למפתח.', false);
+        this.ClipboardWrite(this.DeveloperReport());
+        platform.openExternal(C.DiscordBugForum);
+        this.Toast('הדוח הועתק. ב-Discord, בפורום דיווח-באגים, לחץ "New Post", הדבק (⌘V), מלא מה קרה ושלח. אם עוד לא הצטרפת לשרת, הצטרף קודם מ"דיסקורד: תמיכה וקהילה".', false);
       } catch (ex) {
         this.Toast('לא ניתן לפתוח דיווח: ' + (ex.message || String(ex)) + '. אפשר לייצא דוח תקלות ולשלוח אותו ידנית.', true);
       }

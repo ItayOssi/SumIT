@@ -6,6 +6,8 @@ const path = require('path');
 const { fileExists, mkdirp, readText, writeText } = require('../util');
 const platform = require('../platform');
 
+const SummaryFonts = ['assistant', 'rubik'];   // the folders in web/vendor/fonts that study-book.css uses
+
 module.exports = {
   methods: {
     AddBookLayout(page) {
@@ -15,6 +17,16 @@ module.exports = {
         mkdirp(dir);
         for (const f of ['study-book.js', 'study-book.css', 'study-diagrams.js']) {
           fs.copyFileSync(path.join(platform.WebDir, f), path.join(dir, f));
+        }
+        // The fonts that study-book.css names (Assistant and Rubik), next to it, so the page needs no network.
+        for (const font of SummaryFonts) {
+          const from = path.join(platform.WebDir, 'vendor', 'fonts', font), to = path.join(dir, 'fonts', font);
+          if (!fs.existsSync(from)) continue;
+          mkdirp(to);
+          for (const f of fs.readdirSync(from)) {
+            const src = path.join(from, f), dest = path.join(to, f);
+            try { if (!fileExists(dest) || fs.statSync(dest).size !== fs.statSync(src).size) fs.copyFileSync(src, dest); } catch { }
+          }
         }
         let html = readText(page);
         const orig = html;

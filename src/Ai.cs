@@ -460,9 +460,9 @@ partial class HitStudent
     // ---------- Running the AI ----------
 
     // One normalised event from either Claude or Gemini: some text, a tool action, or the session id.
-    class AiEvent { public string Text, Action, Session; }
+    class AiEvent { public string Text, Action, Session; public List<string> Touch; }
 
-    class AiResult { public bool Error; public bool Limit; public string Text = ""; public string Session; public string Provider; }
+    class AiResult { public bool Error; public bool Limit; public string Text = ""; public string Session; public string Provider; public List<string> Touched; }
 
     // Tools the AI may use. No web access and only Python as a shell command, so text hidden in a downloaded
     // PDF can't make it browse somewhere or run arbitrary commands.
@@ -572,7 +572,11 @@ partial class HitStudent
             foreach (Dictionary<string, object> part in content)
             {
                 if (Str(part, "type") == "text") sb.Append(Str(part, "text"));
-                else if (Str(part, "type") == "tool_use") e.Action = DescribeTool(Str(part, "name"), Dict(part, "input"));
+                else if (Str(part, "type") == "tool_use")
+                {
+                    e.Action = DescribeTool(Str(part, "name"), Dict(part, "input"));
+                    (e.Touch = e.Touch ?? new List<string>()).AddRange(TouchedBy(Dict(part, "input")));
+                }
             }
             if (sb.Length > 0) e.Text = sb.ToString();
             return e;
@@ -647,7 +651,7 @@ partial class HitStudent
                 string mapped = name == "read_file" || name == "view_file" ? "Read" : name == "write_file" || name == "write_to_file" ? "Write"
                     : name == "replace_file_content" || name == "multi_replace_file_content" || name == "sed_file" ? "Edit" : name == "run_command" ? "Bash"
                     : name == "grep_search" || name == "list_dir" || name == "find_by_name" ? "Grep" : name;
-                return new AiEvent { Action = DescribeTool(mapped, input) };
+                return new AiEvent { Action = DescribeTool(mapped, input), Touch = TouchedBy(input) };
             }
             return null;
         }, onEvent).ContinueWith(task => { try { File.Delete(taskFile); } catch { } var res = task.Result; if (idleStopped) { res.Error = true; res.Text = "Gemini לא ענה כמה דקות (השרת של Google איטי עכשיו). נסה שוב עוד מעט."; } return res; });
@@ -734,6 +738,18 @@ partial class HitStudent
         return "קורא את חומרי הקורס";                                                                                       // קורא את חומרי הקורס
     }
 
+    // What a tool call names (a file it reads, a command, a search): kept for the summary, to know whether the transcript was read.
+    static List<string> TouchedBy(Dictionary<string, object> input)
+    {
+        var o = new List<string>();
+        foreach (string k in new[] { "file_path", "absolute_path", "path", "command", "pattern" })
+        {
+            string v = Str(input, k);
+            if (v.Length > 0) o.Add(v);
+        }
+        return o;
+    }
+
     // Short Hebrew line describing what the AI is doing right now.
     static string DescribeTool(string name, Dictionary<string, object> input)
     {
@@ -799,8 +815,10 @@ partial class HitStudent
         await EnsurePython(status);
         // The student sees a few plain steps, never the commands or file names the AI is working with.
         string lastPhase = null;
+        var touched = new List<string>();
         var result = await RunAi(key, CourseDir(course), prompt, null, null, ev =>
         {
+            if (ev.Touch != null) touched.AddRange(ev.Touch);
             if (ev.Action == null) return;
             string phase = Phase(ev.Action);
             if (phase == lastPhase) return;
@@ -810,6 +828,7 @@ partial class HitStudent
         });
         Send(new { type = "aiRun", key = key, course = course, busy = false, result = result.Text, error = result.Error });
         SendCourseLocal(course);
+        result.Touched = touched;
         return result;
     }
 

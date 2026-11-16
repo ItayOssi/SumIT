@@ -15,3 +15,6 @@ Thumbs.db
 
 # The Google sign-in secret, written by the release workflow from a repository secret
 macos/lib/google-oauth.json
+
+# SumIT 2.0 design work (mockups, comparisons, third-party logos and emoji): kept locally, not in the repository
+/SumIT 2.0/
