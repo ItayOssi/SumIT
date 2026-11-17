@@ -76,9 +76,13 @@ module.exports = {
         if (total < 1 || total > QuizCore.MAX || right < 0 || right > total) return;
         const saved = this.LoadQuiz(page);
         if (!Array.isArray(saved.questions)) return;
-        const attempts = (Array.isArray(saved.attempts) ? saved.attempts : []).concat([{ date: this.ReviewToday(), right, total }]).slice(-5);
+        const earlier = Array.isArray(saved.attempts) ? saved.attempts : [], last = earlier[earlier.length - 1];
+        const attempts = earlier.concat([{ date: this.ReviewToday(), right, total }]).slice(-5);
         saved.attempts = attempts;
         writeText(this.QuizFile(page), JSON.stringify(saved, null, 1));
+        // Sparks for the study track, with the score of the attempt before (for the "comeback" achievement).
+        const prev = last && Int(last, 'total') > 0 ? Math.round(Int(last, 'right') / Int(last, 'total') * 100) : -1;
+        if (typeof this.TrackActivity === 'function') this.TrackActivity({ kind: 'quiz', pct: Math.round(right / total * 100), prev });
       } catch { }
     },
   },

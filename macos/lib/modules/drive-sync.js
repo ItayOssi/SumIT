@@ -39,7 +39,7 @@ const PhotoRel = '.sumit/profile.jpg';   // the profile picture travels next to 
 // Settings that are about the student, not about this computer: never keys, tokens, folders or window places.
 const SettingsSkip = /key|token|secret|password|dir$|root$|path|drive|window|bounds|zoom|lastupdate|install|machine|device|calsync/i;
 // Lists of records that are also about the student: their own tasks.
-const SettingsLists = new Set(['tasks']);
+const SettingsLists = new Set(['tasks', 'boardGroups']);
 
 const enc = (s) => encodeURIComponent(s);
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -196,6 +196,7 @@ module.exports = {
         const before = Unprotect(Str(Dict(this.settings, 'drive') || {}, 'refresh'));
         this.settings.drive = { refresh: Protect(tok.refresh_token), email: who.email, connected: new Date().toISOString(), last: '', root: '' };
         this.driveAccess = { token: tok.access_token, until: Date.now() + (Number(tok.expires_in) || 3000) * 1000 };
+        this.DriveKeepId(tok);
         await this.DriveFillProfile(who, !!opts.refreshProfile);
         this.SaveSettings();
         // Signed in again: the permission of the previous sign-in is given back to Google.
@@ -253,6 +254,7 @@ module.exports = {
       try {
         const tok = await this.DriveTokenRequest({ refresh_token: refresh, client_id: this.DriveClientId, client_secret: this.DriveClientSecret, grant_type: 'refresh_token' });
         this.driveAccess = { token: tok.access_token, until: Date.now() + (Number(tok.expires_in) || 3000) * 1000 };
+        this.DriveKeepId(tok);
         return tok.access_token;
       } catch (ex) {
         // Revoked in the Google account, or expired: this computer is no longer connected (its files stay).
@@ -261,10 +263,21 @@ module.exports = {
       }
     },
 
+    // Google's id_token comes with each token (the scope has openid); the friends leaderboard signs in to Firebase with it.
+    DriveKeepId(tok) {
+      if (!tok || !tok.id_token) return;
+      this.driveId = { token: tok.id_token, picture: IdTokenProfile(tok.id_token).picture, until: Date.now() + (Number(tok.expires_in) || 3000) * 1000 };
+    },
+    async DriveIdToken() {
+      if (!this.driveId || this.driveId.until - 120000 <= Date.now()) { this.driveAccess = null; await this.DriveToken(); }
+      if (!this.driveId || !this.driveId.token) throw new Error('Google לא החזיר את פרטי החשבון. התחבר שוב בפרופיל.');
+      return this.driveId;
+    },
+
     async DriveDisconnect() {
       const refresh = Unprotect(Str(Dict(this.settings, 'drive') || {}, 'refresh'));
       if (refresh) { try { await fetch(this.DriveRevokeUrl + '?token=' + enc(refresh), { method: 'POST' }); } catch { } }
-      delete this.settings.drive; this.driveAccess = null; this.SaveSettings();
+      delete this.settings.drive; this.driveAccess = null; this.driveId = null; this.boardAuth = null; this.SaveSettings();
       try { fs.unlinkSync(this.DriveStateFile); } catch { }
     },
 

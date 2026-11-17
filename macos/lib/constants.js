@@ -12,6 +12,9 @@ module.exports = {
   MacRepo: 'ItayOssi/SumIT',   // the macOS releases (tags v<version>-mac)
   // Google sign-in for the Drive sync (a desktop OAuth client; its id is public, its secret comes from the build).
   GoogleClientId: '801092395708-ebfqk3dpnvv2p2gokob4fjk03ll4fnk4.apps.googleusercontent.com',
+  // The friends leaderboard (leaderboard.js): a Firebase project with Firestore and Google sign-in. Both values are public
+  // (the rules in macos/firebase/firestore.rules guard the data); empty until the project exists, and the tab stays hidden.
+  Firebase: { apiKey: 'AIzaSyBPq2d4sRTFK42hk9_hrktqV_jbCAW2Jlg', projectId: 'sumit-friends' },
   DiscordInvite: 'https://discord.gg/9XNk3XrsWJ',   // SumIT's server: support and the community; the student can change it in settings
   DiscordBugForum: 'https://discord.com/channels/1571162062468415590/1571271065584402452',   // its forum #דיווח-באגים, where "שלח דוח למפתח" sends the student
 

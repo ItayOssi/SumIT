@@ -1,0 +1,41 @@
+rules_version = '2';
+// The friends leaderboard of SumIT (macos/lib/modules/leaderboard.js).
+// groups/{code}: a group, made once; its code (6 letters and digits) is what friends type to join.
+// groups/{code}/members/{uid}: one row per student, written only by that student; read only by the members of the group.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /groups/{code} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['name', 'owner', 'created'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && request.resource.data.created is string && request.resource.data.created.size() <= 40;
+      allow update, delete: if false;
+
+      match /members/{uid} {
+        function inGroup() {
+          return exists(/databases/$(db)/documents/groups/$(code)/members/$(request.auth.uid));
+        }
+        function validRow(d) {
+          return d.keys().hasOnly(['name', 'photo', 'week', 'weekSparks', 'total', 'level', 'streak', 'day', 'updated'])
+            && d.name is string && d.name.size() <= 40
+            && d.photo is string && (d.photo == '' || d.photo.matches('^https://[a-z0-9-]+[.]googleusercontent[.]com/.{1,400}$'))
+            && d.week is string && d.week.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && d.day is string && d.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && d.updated is string && d.updated.size() <= 40
+            && d.weekSparks is int && d.weekSparks >= 0 && d.weekSparks <= 30000
+            && d.total is int && d.total >= 0 && d.total <= 10000000
+            && d.level is int && d.level >= 1 && d.level <= 1000
+            && d.streak is int && d.streak >= 0 && d.streak <= 5000;
+        }
+        allow read: if request.auth != null && inGroup();
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && exists(/databases/$(db)/documents/groups/$(code))
+          && validRow(request.resource.data);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}

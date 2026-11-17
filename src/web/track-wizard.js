@@ -1,13 +1,13 @@
-// The study-track wizard (macOS host: study-track.js), built like the first-run wizard (#wizard in ui.html): a card over a blurred
-// page, a banner with an animated scene, and the SumIT mascot, who greets the student, talks in a speech bubble at every step,
-// thinks while the plan is built and celebrates at the end.
+// The study-track wizard (macOS host: study-track.js), built like the first-run wizard (#wizard in ui.html): a full screen split in
+// two, the steps on one side and an animated scene on the other, with the SumIT mascot, who greets the student, talks in a speech
+// bubble at every step, thinks while the plan is built and celebrates at the end.
 // Steps: welcome, the student's day, what is already taken (the connected calendars and things added by hand), the courses of the
 // semester, a difficulty and an energy for each course (suggested by the app, decided by the student), the plan, and done.
 // Nothing is saved until "build"; closing in the middle keeps the answers for this session.
 const TW_STEPS = [
   { key: 'welcome', title: 'בוא נבנה לך תוכנית לימודים', next: 'בוא נתחיל', say: 'היי! אני אעזור לך לבנות שבוע לימודים שמתאים לחיים שלך, ולא להפך.' },
   { key: 'day', title: 'איך נראה היום שלך?', next: 'המשך', say: 'ספר לי קצת על השגרה שלך. אפשר לשנות הכל אחר כך.' },
-  { key: 'busy', title: 'מה כבר תפוס בשבוע?', next: 'המשך', say: 'עבודה, אימון, משמרת? את הזמן הזה אני לא נוגע בו.' },
+  { key: 'busy', title: 'מה כבר תפוס?', next: 'המשך', say: 'עבודה, לימודים, אימון, משמרת? את הזמן הזה אני לא נוגע בו.' },
   { key: 'courses', title: 'אילו קורסים יש לך הסמסטר?', next: 'המשך', say: 'סמן את מה שאתה לומד עכשיו.' },
   { key: 'rate', title: 'מה קשה, ומה דורש אנרגיה?', next: 'המשך', say: 'סימנתי הצעה לכל קורס. אתה מחליט.' },
   { key: 'plan', title: 'זו התוכנית שלך', next: 'בנה את התוכנית שלי', say: 'הכל מוכן. לחיצה אחת ואני בונה לך את השבוע.' },
@@ -21,7 +21,9 @@ S.tw = null;            // the open wizard: { step, routine, scan, courses, rati
 S.twDismissed = false;  // closed without finishing: not opened again by itself in this session
 
 const twMin = (hhmm) => { const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
-const twSame = (a, b) => a.day === b.day && a.start === b.start && a.end === b.end;
+const twSame = (a, b) => a.day === b.day && a.start === b.start && a.end === b.end && (a.date || '') === (b.date || '');
+// The weekly commitments first, by the day of the week; then the one-time events, by date.
+const twByTime = (a, b) => (a.date || '').localeCompare(b.date || '') || a.day - b.day || twMin(a.start) - twMin(b.start);
 const twReduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- Small icons, and the scenes of the banner, one per step (330×200, like ART in art.js)
@@ -81,7 +83,8 @@ function openTrackWizard() {
   const w = S.twAnswers || {
     step: 0,
     routine: { wake: rt.wake || '07:30', sleep: rt.sleep || '23:30', peak: rt.peak || 'morning', days: (rt.days || [0, 1, 2, 3, 4]).slice(), hours: rt.hours || 10, block: rt.block || 45,
-      commitments: (rt.commitments || []).map(c => Object.assign({ on: true }, c)) },
+      // A one-time event that already passed is gone.
+      commitments: (rt.commitments || []).filter(c => !c.date || c.date >= t.today).map(c => Object.assign({ on: true }, c)) },
     scan: null, scanning: false, ratings: {}, ratingsAsked: '',
     // The first time, every course starts from the app's suggestion; after that, from what the student chose last time.
     courses: p.courses.map(c => ({ name: c.name, on: true, level: rt.done ? c.level : 0, energy: rt.done ? (c.energy || 2) : 0, examDate: c.examDate || '', mine: !!rt.done }))
@@ -152,7 +155,7 @@ function twFinish() {
   const r = w.routine;
   send({ type: 'track', op: 'wizardFinish',
     routine: { wake: r.wake, sleep: r.sleep, peak: r.peak, days: r.days, hours: r.hours, block: r.block,
-      commitments: r.commitments.filter(c => c.on).map(c => ({ id: c.id, title: c.title, day: c.day, start: c.start, end: c.end, source: c.source })) },
+      commitments: r.commitments.filter(c => c.on).map(c => Object.assign({ id: c.id, title: c.title, day: c.day, start: c.start, end: c.end, source: c.source }, c.date ? { date: c.date } : {})) },
     courses: w.courses.filter(c => c.on).map(c => ({ name: c.name, level: c.level || 2, energy: c.energy || 2, examDate: c.examDate || '', manual: !!c.manual })) });
 }
 
@@ -163,8 +166,10 @@ function twEvent(m) {
     if (!w) return;
     w.scanning = false; w.scan = m;
     for (const c of m.commitments || []) if (!w.routine.commitments.some(x => twSame(x, c))) w.routine.commitments.push(Object.assign({ on: true, id: 'k' + c.day + c.start.replace(':', '') }, c));
-    w.routine.commitments.sort((a, b) => a.day - b.day || twMin(a.start) - twMin(b.start));
-    if (w.step === 2) { twRender(false); twSay(m.commitments.length ? 'מצאתי ביומן ' + m.commitments.length + ' דברים שחוזרים כל שבוע. סמן מה תופס לך זמן.' : 'לא מצאתי ביומן דברים שחוזרים כל שבוע. אפשר להוסיף ידנית.'); }
+    for (const c of m.upcoming || []) if (!w.routine.commitments.some(x => twSame(x, c))) w.routine.commitments.push(Object.assign({ on: true, id: 'u' + c.date.replace(/-/g, '').slice(2) + c.start.replace(':', '') }, c));
+    w.routine.commitments.sort(twByTime);
+    const n = (m.commitments || []).length + (m.upcoming || []).length;
+    if (w.step === 2) { twRender(false); twSay(n ? 'מצאתי ביומן ' + n + ' דברים שתופסים לך זמן בשבועות הקרובים. סמן מה באמת חוסם.' : 'לא מצאתי ביומן דברים שתופסים זמן בשבועות הקרובים. אפשר להוסיף ידנית.'); }
     return;
   }
   if (m.type === 'trackRatings') {
@@ -274,7 +279,7 @@ function twRow(icon, title, sub, opts) {
 function twStepWelcome(body) {
   twLead(body, 'חמישה צעדים קצרים, ואני בונה לך שבוע של בלוקי למידה סביב החיים שלך: בשעות שבהן יש לך הכי הרבה כוח, ובלי לגעת בזמן שכבר תפוס.');
   body.append(twRow('clock', 'היום שלך', 'מתי אתה קם, מתי יש לך הכי הרבה אנרגיה, וכמה זמן אתה מצליח להתרכז', { i: 0 }));
-  body.append(twRow('calendar', 'מה כבר תפוס', 'אני קורא את היומן המחובר ומוצא מה חוזר כל שבוע', { i: 1 }));
+  body.append(twRow('calendar', 'מה כבר תפוס', 'אני קורא את היומן המחובר ומוצא מה תופס לך זמן מעכשיו והלאה', { i: 1 }));
   body.append(twRow('brain', 'הקורסים, הקושי והאנרגיה', 'אני מציע, אתה מחליט, ומזה יוצא סדר העדיפות', { i: 2 }));
 }
 
@@ -299,22 +304,24 @@ function twStepDay(body, w) {
 function twStepBusy(body, w) {
   const r = w.routine, t = S.track;
   if (!w.scan && !w.scanning && t.calendars) { w.scanning = true; send({ type: 'track', op: 'routineScan' }); }
-  twLead(body, 'כל מה שחוזר כל שבוע. הבלוקים לא ייכנסו לזמן הזה, וגם לא לשעות ההרצאות במערכת השעות.');
+  twLead(body, 'מה שתופס לך זמן מעכשיו והלאה: דברים שחוזרים כל שבוע, ואירועים קרובים מהיומן. הבלוקים לא ייכנסו לזמן הזה, וגם לא לשעות ההרצאות במערכת השעות.');
   if (!t.calendars) {
     const row = twRow('calendar', 'לא חיברת עדיין יומן', 'חבר את Google Calendar בהגדרות, יומנים. אחר כך חזור ולחץ "השגרה שלי": התשובות שלך נשמרות.');
     const go = h('<button class="soft small">להגדרות היומן</button>');
     go.onclick = () => { if (w.close) w.close(false); show('settings'); setTimeout(() => { const c = $('calendarsCard'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 200); };
     row.append(go); body.append(row);
   } else if (w.scanning) {
-    body.append(h('<div class="check-row"><div class="ci"><span class="spinner"></span></div><div class="grow"><b>קורא את היומן...</b><small>מחפש אירועים שחוזרים כל שבוע</small></div></div>'));
+    body.append(h('<div class="check-row"><div class="ci"><span class="spinner"></span></div><div class="grow"><b>קורא את היומן...</b><small>מחפש מה תופס לך זמן בשבועות הקרובים</small></div></div>'));
   } else if (w.scan) {
     const s = w.scan, busiest = (s.busyByDay || []).map((m, i) => [m, i]).filter(x => x[0] >= 120).sort((a, b) => b[0] - a[0]).slice(0, 2);
     const sub = [busiest.length ? 'הכי עמוס: ' + busiest.map(x => TRACK_DAYS[x[1]] + ' (' + minLabel(x[0]) + ')').join(', ') : '', s.firstStart ? 'היום ביומן מתחיל בדרך כלל ב-' + s.firstStart + ' ונגמר ב-' + s.lastEnd : ''].filter(Boolean).join(' · ');
-    body.append(twRow('calendar', s.commitments.length ? 'מצאתי ' + s.commitments.length + ' אירועים קבועים ביומן' : 'אין ביומן אירועים קבועים', sub || 'מתוך ' + s.events + ' אירועים בארבעת השבועות האחרונים', { ok: true }));
+    const n = s.commitments.length + (s.upcoming || []).length;
+    body.append(twRow('calendar', n ? 'מצאתי ביומן ' + [s.commitments.length ? s.commitments.length + ' קבועים' : '', (s.upcoming || []).length ? (s.upcoming || []).length + ' חד-פעמיים' : ''].filter(Boolean).join(' ו-') : 'אין ביומן אירועים שתופסים זמן', sub || 'מתוך ' + s.events + ' אירועים בארבעת השבועות הקרובים', { ok: true }));
   }
   const list = h('<div class="tw-list"></div>');
-  r.commitments.forEach((c, i) => list.append(twRow(c.source === 'calendar' ? 'calendar' : 'clock', c.title, 'יום ' + TRACK_DAYS[c.day] + ' · ' + c.start + '–' + c.end + (c.weeks ? ' · ב-' + c.weeks + ' השבועות האחרונים' : ''),
-    { check: true, checked: c.on !== false, onChange: (v) => { c.on = v; }, chip: c.source === 'calendar' ? 'מהיומן' : '', onRemove: () => { r.commitments = r.commitments.filter(x => x !== c); twRender(false); }, i })));
+  r.commitments.forEach((c, i) => list.append(twRow(c.source === 'calendar' ? 'calendar' : 'clock', c.title,
+    (c.date ? 'יום ' + TRACK_DAYS[c.day] + ', ' + trackDM(c.date) : 'כל יום ' + TRACK_DAYS[c.day]) + ' · ' + c.start + '–' + c.end + (c.weeks ? ' · ב-' + c.weeks + ' השבועות הקרובים' : ''),
+    { check: true, checked: c.on !== false, onChange: (v) => { c.on = v; }, chip: c.date ? 'פעם אחת' : c.source === 'calendar' ? 'כל שבוע' : '', onRemove: () => { r.commitments = r.commitments.filter(x => x !== c); twRender(false); }, i })));
   body.append(list);
 
   const add = h(`<div class="row wrap tw-add"><input type="text" data-title maxlength="60" placeholder="הוסף: עבודה, אימון..." class="grow">
@@ -326,7 +333,7 @@ function twStepBusy(body, w) {
     if (!(twMin(end) > twMin(start))) { toast('השעה של הסוף צריכה להיות אחרי ההתחלה', { error: true }); return; }
     if (r.commitments.length >= 40) return;
     r.commitments.push({ id: 'h' + Date.now().toString(36), title: title || 'התחייבות', day, start, end, source: 'manual', on: true });
-    r.commitments.sort((a, b) => a.day - b.day || twMin(a.start) - twMin(b.start));
+    r.commitments.sort(twByTime);
     twRender(false); twSay('רשמתי. את הזמן הזה אני משאיר לך.');
   };
   body.append(add);
@@ -392,7 +399,7 @@ function twStepPlan(body, w) {
   const heavy = order.filter(c => (c.level || 2) * (c.energy || 2) >= 6), light = order.filter(c => (c.level || 2) * (c.energy || 2) <= 2), taken = r.commitments.filter(c => c.on).length;
   const rows = [
     ['clock', r.hours + ' שעות בשבוע', 'בימים ' + r.days.map(d => TRACK_DAYS[d]).join(', ') + ', בין ' + win.from + ' ל-' + win.to],
-    ['calendar', taken ? taken + ' התחייבויות קבועות נשארות פנויות' : 'ההרצאות נשארות פנויות', taken ? 'וגם ההרצאות במערכת השעות' : 'הבלוקים נבנים סביב מערכת השעות'],
+    ['calendar', taken ? taken + ' דברים שתופסים זמן נשארים פנויים' : 'ההרצאות נשארות פנויות', taken ? 'וגם ההרצאות במערכת השעות' : 'הבלוקים נבנים סביב מערכת השעות'],
     ['sparkles', 'בלוקים של ' + TW_BLOCKS.find(x => x[0] === r.block)[1], 'עם הפסקה של 10 דקות לפחות ביניהם'],
     ['brain', heavy.length ? 'בשעות ה' + peak[1] + ': ' + heavy.map(c => c.name).join(', ') : 'אין קורס קשה ותובעני במיוחד', heavy.length ? 'הקורסים הכי תובעניים, בשעות שבהן יש לך הכי הרבה כוח' : 'הבלוקים מסודרים לפי הסדר הרגיל'],
   ];
@@ -408,7 +415,7 @@ function twStepDone(body, w) {
   twLead(body, b.blocks ? 'השבוע שלך מחכה במסלול הלמידה. סמן "בוצע" אחרי כל בלוק, וההתקדמות תתעדכן.' : 'לא מצאתי זמן פנוי לבלוקים. אפשר לחזור לאשף מ"השגרה שלי" ולהוסיף ימים או שעות.');
   if (b.blocks) body.append(twRow('check', b.blocks + ' בלוקים נכנסו לשבוע', 'בתוך חלון היום שלך, מחוץ להתחייבויות ולהרצאות', { ok: true, i: 0 }));
   if (b.unplaced) body.append(twRow('alert', minLabel(b.unplaced) + ' לא נכנסו', 'אפשר להוסיף ימים או שעות, ולבנות שוב', { i: 1 }));
-  body.append(twRow('sparkles', 'מה כדאי לעשות עכשיו', 'במסלול יש גם משימות שנגזרות מהחומר בתיקיות הקורסים', { i: 2 }));
+  body.append(twRow('sparkles', 'כל בלוק עם שיטת למידה', 'פיינמן, תרגילים מדפי התרגול, כרטיסיות ובוחן מהסיכומים שלך', { i: 2 }));
 }
 
 // The same window as routineWindow in study-track.js: an hour after getting up, until an hour before sleep (at most 23:45).

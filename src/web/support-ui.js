@@ -1,10 +1,15 @@
-$('collapseSidebar').onclick=()=>{
- const hidden=document.querySelector('.app').classList.toggle('nav-collapsed');
- $('collapseSidebar').setAttribute('aria-expanded',String(!hidden));$('collapseSidebar').title=hidden?'הצג תפריט ראשי':'הסתר תפריט ראשי';
- try{localStorage.setItem('sumit-nav-collapsed',String(hidden));}catch{}
- requestAnimationFrame(()=>placeSite(false));
-};
-try{if(localStorage.getItem('sumit-nav-collapsed')==='true')$('collapseSidebar').click();}catch{}
+function setNavCollapsed(hidden) {
+ document.querySelector('.app').classList.toggle('nav-collapsed', hidden);
+ const b = $('collapseSidebar'), label = hidden ? 'הרחב את התפריט' : 'כווץ את התפריט';
+ b.setAttribute('aria-expanded', String(!hidden)); b.title = label; b.setAttribute('aria-label', label);
+ $('collapseIcon').innerHTML = hidden ? IC.sideOpen : IC.sideClose; $('collapseText').textContent = hidden ? 'הרחב' : 'כווץ';
+ try { localStorage.setItem('sumit-nav-collapsed', String(hidden)); } catch {}
+ requestAnimationFrame(() => placeSite(false));
+}
+$('collapseSidebar').onclick = () => setNavCollapsed(!document.querySelector('.app').classList.contains('nav-collapsed'));
+// In the narrow rail each icon keeps its name as a tooltip.
+document.querySelectorAll('nav.side .nav-item').forEach(b => { if (!b.title) b.title = b.querySelector('.nav-text')?.textContent.trim() || ''; });
+{ let c = false; try { c = localStorage.getItem('sumit-nav-collapsed') === 'true'; } catch {} setNavCollapsed(c); }
 $('sendDeveloperLogs').onclick=()=>send({type:'sendDeveloperLogs'});
 $('exportDiagnostics').onclick=()=>send({type:'exportDiagnostics'});
 $('viewerShareCloud').onclick=()=>{S.shareToCloud=true;$('viewerShare').click();S.shareToCloud=false;};

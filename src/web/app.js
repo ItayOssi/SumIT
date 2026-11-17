@@ -2355,11 +2355,13 @@ function onMessage(m) {
     case 'summarySelectionReady': case 'summaryChatChunk': case 'summaryChatResult': summaryChatEvent(m); break;
     case 'reviewQueue': case 'reviewSession': reviewEvent(m); break;
     case 'calendars': case 'calendarStatus': calendarsEvent(m); break;
-    case 'driveSync': if (typeof driveEvent === 'function') driveEvent(m); break;
+    case 'driveSync': if (typeof driveEvent === 'function') driveEvent(m); if (S.board && S.board.configured && m.connected !== undefined && !!m.connected !== !!S.board.connected) { S.boardListed = false; send({ type: 'board', op: 'state' }); } break;
     case 'coachReady': case 'stuckResult': coachEvent(m); break;
     case 'ticketReady': case 'ticketOpen': ticketEvent(m); break;
     case 'instLogo': if (typeof instLogoArrived === 'function') instLogoArrived(m); break;
     case 'blockReady': case 'blockResult': blockEvent(m); break;
+    case 'sparks': if (typeof sparksEvent === 'function') sparksEvent(m); break;
+    case 'board': if (typeof boardEvent === 'function') boardEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'quizProgress': case 'quizResult': quizEvent(m); break;

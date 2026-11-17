@@ -757,6 +757,7 @@ class Host {
       case 'exportTool': this.ExportToolHandle(m); break;
       case 'calSync': this.CalSyncHandle(m); break;
       case 'driveSync': this.DriveHandle(m); break;
+      case 'board': this.BoardHandle(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1188,7 +1189,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'support', 'task-reminders', 'inst-logos'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'leaderboard', 'support', 'task-reminders', 'inst-logos'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

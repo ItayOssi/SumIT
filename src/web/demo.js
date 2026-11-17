@@ -1,6 +1,12 @@
 // Demo host for ui.html?demo=1: answers the page with sample data, for screenshots and visual QA.
 (function () {
   const listeners = [];
+  // The goals of the demo blocks: study methods, as study-track.js makes them from the course folders.
+  const DEMO_GOALS = ['שיטת פיינמן: בחר רעיון מרכזי מהסיכום של הרצאה 3 (ערימות) והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
+    'תרגול: פתור 2 תרגילים מדף התרגול של הרצאה 4 (עצי AVL) לבד, ורק אז הצץ בפתרון',
+    'כרטיסיות: עבור על הכרטיסיות של הרצאה 5 (ערכים עצמיים), ואת אלה שלא ידעת חזור עליהן בסוף',
+    'בוחן: ענה על הבוחן של הרצאה 2 בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן',
+    'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מהרצאה 2, ואז השווה לסיכום וסמן מה חסר'];
   // A calendar for the screenshots: a meeting today, one tomorrow, and a weekly one.
   const demoCalendar = () => {
     const d = new Date(), p = (n) => String(n).padStart(2, '0'), stamp = (x, h, m) => '' + x.getFullYear() + p(x.getMonth() + 1) + p(x.getDate()) + 'T' + p(h) + p(m) + '00';
@@ -30,6 +36,27 @@
     const week = []; for (let i = 0; i < 7; i++) { const d = new Date(ws); d.setDate(d.getDate() + i); const di = iso(d); week.push({ date: di, state: done.has(di) ? 'done' : di === frozen ? 'frozen' : di === t ? 'today' : di > t ? 'future' : 'missed' }); }
     return { current, best: Math.max(9, current), todayDone, atRisk: !todayDone, freezes: 1, week, next: 7, prev: 3, milestone: 0 };
   };
+  // Sparks for the demo, shaped like sparksInfo in study-track.js (the real numbers come from the host).
+  const DEMO_W = [[/^(תרגיל מבחן קודם|פתור מבחן קודם)/, 3], [/^(פתור את תרגיל הבית|תרגול)/, 2.5], [/^(שיטת פיינמן|שליפה)/, 2], [/^בוחן/, 1.5], [/^(כרטיסיות|חזרה מרווחת)/, 1]];
+  const demoBase = (b) => Math.round(Math.min(180, b.minutes) / 15 * 10 * ((DEMO_W.find(x => x[0].test(b.goal || '')) || [0, 1])[1]));
+  const DEMO_AWARDS = [['flame', 'streak', 'fire', 'להבה בוערת', 'ימים ברצף', [3, 7, 14], 12], ['freeze', 'streak', 'ice', 'שומר על הקור', 'הקפאות שהצילו את הרצף', [1, 3, 10], 1],
+    ['perfect', 'streak', 'calendar', 'שבוע מושלם', 'שבועות שכל הבלוקים בהם בוצעו', [1, 5, 15], 1], ['spread', 'streak', 'books', 'פיזור חכם', 'שבועות שבהם כל קורס קיבל בלוק', [1, 5, 10], 6],
+    ['crown', 'streak', 'crown', 'מאה ימים', 'רצף ארוך במיוחד', [30, 100, 365], 12], ['practice', 'methods', 'muscle', 'מכונת תרגול', 'תרגילים מדפי התרגול ומתרגילי הבית', [25, 100, 250], 23],
+    ['feynman', 'methods', 'speak', 'מורה מלידה', 'בלוקים בשיטת פיינמן', [10, 25, 50], 32], ['elephant', 'methods', 'elephant', 'זיכרון של פיל', 'כרטיסיות שעברת', [100, 500, 1000], 1240],
+    ['recall', 'methods', 'brain', 'דף ריק', 'שליפות מהזיכרון', [5, 15, 30], 9], ['exam', 'methods', 'shield', 'מוכן לקרב', 'מבחנים קודמים בשבועיים שלפני המבחן', [1, 3, 6], 0],
+    ['perfectQuiz', 'quiz', 'hundred', 'מושלם', '100% בבוחן', [1, 5, 10], 5], ['comeback', 'quiz', 'rocket', 'קאמבק', 'שיפור של 30% ויותר בבוחן חוזר', [1, 3, 5], 1],
+    ['early', 'quiz', 'sunrise', 'ציפור מוקדמת', 'בלוקים שהתחילו לפני 8:00', [1, 5, 15], 2], ['variety', 'quiz', 'gem', 'שלוש שיטות ביום', 'ימים עם שלוש שיטות למידה שונות', [1, 5, 10], 0],
+    ['return', 'quiz', 'star', 'חוזר לעניינים', 'רצף חדש אחרי שהקודם נשבר', [1, 3, 5], 0]];
+  const demoSparks = (p) => {
+    const done = p.plan.blocks.filter(b => b.done).reduce((n, b) => n + Math.round(demoBase(b) * 1.1), 0), total = 1240 + done;
+    const lv = total >= 1400 ? { level: 8, name: 'מומחה', from: 1400, to: 1960, next: 'מומחה' } : { level: 7, name: 'מתרגל', from: 920, to: 1400, next: 'מומחה' };
+    const awards = DEMO_AWARDS.map(([id, group, emoji, title, desc, tiers, value]) => { if (id === 'practice') value += p.plan.blocks.filter(b => b.done && /^תרגול/.test(b.goal)).length * 2; const tier = tiers.filter(t => value >= t).length; return { id, group, emoji, title, desc, hidden: ['early', 'variety', 'return'].includes(id), tier, value, tiers, next: tiers[tier] || 0 }; });
+    const blocks = {}; p.plan.blocks.forEach(b => { blocks[b.id] = demoBase(b); });
+    const t = [1, 2, 3].map(k => awards.filter(a => a.tier >= k).length);
+    const str = demoStreak(p, new Date()).current, tiers = [[3, 1.1], [7, 1.25], [14, 1.5], [30, 2]], mult = tiers.reduce((m, [d, x]) => (str >= d ? x : m), 1), nt = tiers.find(([d]) => d > str);
+    return { total, bonus: 0, level: lv, streak: str, mult, multNext: mult, nextTier: nt ? { days: nt[0] - str, mult: nt[1] } : null, tiers, today: done, week: { earned: 246 + done, goal: 520 }, blocks, awards,
+      count: { bronze: t[0], silver: t[1], gold: t[2], reached: t[0], all: awards.length, hidden: awards.filter(a => a.hidden && !a.tier).length } };
+  };
   const trackSnapshot = (extra) => {
     const today = new Date(), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
     const p = trackProfile, wsIso = iso(ws), wl = p.log.filter(e => e.date >= wsIso), per = {};
@@ -37,8 +64,10 @@
     const bl = p.plan.blocks;
     return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0, calendars: 1, window: { from: '08:30', to: '22:30' },
       suggested: ['פיזיקה 1', 'חשבון אינפיניטסימלי 2'].filter(n => !p.courses.some(c => c.name === n)).map(name => ({ name, where: 'מערכת השעות' })),
+      sparks: demoSparks(p),
       stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: demoStreak(p, today).current, streakInfo: demoStreak(p, today), perCourse: per } }, extra || {});
   };
+  let demoBoard = null;
   const trackDemo = (m) => {
     const p = trackProfile, c = p.courses.find(x => x.name === m.course);
     if (m.op === 'load') return emit(trackSnapshot(), 200);
@@ -48,7 +77,14 @@
     if (m.op === 'name') p.name = m.value;
     if (m.op === 'log' && c) p.log.push({ date: iso(new Date()), course: m.course, minutes: m.minutes, note: '', block: '' });
     if (m.op === 'topic' && c) { const row = p.progress[m.course] || (p.progress[m.course] = { topics: [] }); if (m.act === 'add') row.topics.push({ id: 't' + row.topics.length + Date.now(), title: m.title, done: false }); const t = row.topics.find(x => x.id === m.id); if (t && m.act === 'toggle') t.done = !t.done; if (t && m.act === 'remove') row.topics = row.topics.filter(x => x !== t); }
-    if (m.op === 'done' || m.op === 'undo') { const b = p.plan.blocks.find(x => x.id === m.id); if (b) { p.log = p.log.filter(e => e.block !== b.id); b.done = m.op === 'done'; b.doneMinutes = b.done ? b.minutes : 0; if (b.done) p.log.push({ date: iso(new Date()), course: b.course, minutes: b.minutes, note: b.goal, block: b.id }); } }
+    if (m.op === 'done' || m.op === 'undo') { const b = p.plan.blocks.find(x => x.id === m.id); if (b) { p.log = p.log.filter(e => e.block !== b.id); b.done = m.op === 'done'; b.doneMinutes = b.done ? b.minutes : 0; if (b.done) p.log.push({ date: iso(new Date()), course: b.course, minutes: b.minutes, note: b.goal, block: b.id }); }
+      // Done: the sparks it gave, and on the first one an achievement, as the host sends them.
+      if (b && b.done) {
+        const before = demoSparks(Object.assign({}, p, { plan: { blocks: p.plan.blocks.filter(x => x !== b) } })), after = demoSparks(p);
+        const unlocked = p.plan.blocks.filter(x => x.done).length === 1 ? [{ id: 'practice', title: 'מכונת תרגול', desc: 'תרגילים מדפי התרגול ומתרגילי הבית', emoji: 'muscle', tier: 1, sparks: 50 }] : [];
+        return emit(trackSnapshot({ sparkGain: { points: after.total - before.total, mult: after.mult, total: after.total }, unlocked, levelUp: after.level.level > before.level.level ? after.level : null, sparkBlock: b.id }), 150);
+      }
+    }
     if (m.op === 'blockSave') {
       const ws = trackSnapshot().weekStart; if (!p.plan.weekStart) p.plan.weekStart = ws;
       const b = p.plan.blocks.find(x => x.id === m.id);
@@ -65,7 +101,8 @@
       { id: 'r', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'review', lecture: null, title: 'חזור על 14 כרטיסי זיכרון', why: 'הגיע הזמן לחזור עליהם, לפי החזרה המרווחת', minutes: 15 },
       { id: 'c', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'cards', lecture: 3, title: 'צור כרטיסי זיכרון מהסיכום של הרצאה 3 (ערימות)', why: 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה', minutes: 15 }] }, 700);
     if (m.op === 'routineScan') return emit({ type: 'trackRoutineScan', calendars: 1, events: 23, firstStart: '08:30', lastEnd: '19:00', busyByDay: [180, 420, 120, 390, 60, 0, 0],
-      commitments: [{ title: 'עבודה', day: 1, start: '15:00', end: '20:00', weeks: 4, source: 'calendar' }, { title: 'אימון כושר', day: 3, start: '18:00', end: '19:30', weeks: 3, source: 'calendar' }] }, 900);
+      commitments: [{ title: 'עבודה', day: 1, start: '15:00', end: '20:00', weeks: 4, source: 'calendar' }, { title: 'אימון כושר', day: 3, start: '18:00', end: '19:30', weeks: 3, source: 'calendar' }],
+      upcoming: [{ title: 'תור לרופא שיניים', date: iso(new Date(Date.now() + 3 * 86400000)), day: new Date(Date.now() + 3 * 86400000).getDay(), start: '10:00', end: '11:00', source: 'calendar' }] }, 900);
     if (m.op === 'ratings') {
       const ratings = {};
       (m.courses || []).forEach(n => { ratings[n] = /אלגברה|אינפי|פיזיקה|חשבון/.test(n) ? { level: 3, energy: 3, reasons: ['קורס מתמטי: לומדים דרך פתרון, וזה דורש ריכוז מלא'] } : /מבני נתונים/.test(n) ? { level: 3, energy: 2, reasons: ['קורס תיאוריה: הוכחות והבנה של למה', 'המבחן בעוד 12 ימים'] } : { level: 2, energy: 1, reasons: ['קורס של מושגים וזיכרון: אפשר ללמוד גם בשעות של פחות אנרגיה'] }; });
@@ -75,12 +112,12 @@
       p.routine = Object.assign({}, m.routine, { done: true, updated: iso(new Date()) });
       p.courses = (m.courses || []).map(c => Object.assign({ hoursPerWeek: 0, notes: '' }, p.courses.find(x => x.name === c.name) || {}, c));
       const ws = trackSnapshot().weekStart;
-      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: x.level * x.energy >= 6 ? '09:00' : '16:30', minutes: m.routine.block || 45, course: x.name, goal: k ? 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון' : 'חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day || a.start.localeCompare(b.start)) };
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: x.level * x.energy >= 6 ? '09:00' : '16:30', minutes: m.routine.block || 45, course: x.name, goal: DEMO_GOALS[(i + k) % DEMO_GOALS.length], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day || a.start.localeCompare(b.start)) };
       return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length }, wizardDone: true }), 1100);
     }
     if (m.op === 'build') {
-      const ws = trackSnapshot().weekStart, goals = ['חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת', 'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון'];
-      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: goals[k], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
+      const ws = trackSnapshot().weekStart, goals = DEMO_GOALS;
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: goals[(i + k) % goals.length], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
       return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length } }), 500);
     }
     if (m.op === 'strategy') {
@@ -179,6 +216,27 @@
           break;
         }
         case 'track': trackDemo(m); break;
+        // The friends leaderboard: two groups of made-up students, nothing leaves the page.
+        case 'board': {
+          const me = { uid: 'me', name: 'נועה', photo: '', me: true, level: 7, streak: 4, total: 1240, week: 0 };
+          const sp = trackProfile && trackProfile.plan ? trackProfile.plan.blocks.filter(b => b.done).length * 60 : 0;
+          me.week = 410 + sp;
+          const rank = (list) => { list.sort((a, b) => b.week - a.week); list.forEach((x, i) => { x.rank = i > 0 && list[i - 1].week === x.week ? list[i - 1].rank : i + 1; }); return list; };
+          if (!demoBoard) demoBoard = { groups: [{ code: 'K7Q2MX', name: 'חבורת אינפי 2' }, { code: 'FRND22', name: 'מבני נתונים' }] };
+          if (m.op === 'create') { const code = 'H3WP8N'; demoBoard.groups.push({ code, name: (m.name || '').trim() || 'הקבוצה שלי' }); demoBoard.created = code; }
+          if (m.op === 'join') { const code = String(m.code || '').toUpperCase().replace(/[\s-]/g, ''); if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) { emit({ type: 'board', configured: true, connected: true, groups: demoBoard.groups, max: 5, error: 'הקוד הוא 6 אותיות ומספרים, למשל K7Q2MX.' }, 200); break; } if (!demoBoard.groups.some(g => g.code === code)) demoBoard.groups.push({ code, name: 'סטטיסטיקה' }); demoBoard.joined = code; }
+          if (m.op === 'leave') demoBoard.groups = demoBoard.groups.filter(g => g.code !== m.code);
+          const people = {
+            K7Q2MX: [{ uid: 'a', name: 'אורי', level: 9, streak: 12, total: 2860, week: 640 }, { uid: 'b', name: 'מאיה', level: 6, streak: 5, total: 1105, week: 455 },
+              { uid: 'c', name: 'יונתן', level: 5, streak: 0, total: 830, week: 210 }, { uid: 'd', name: 'שירה', level: 3, streak: 2, total: 320, week: 95 }, { uid: 'e', name: 'דניאל', level: 2, streak: 0, total: 140, week: 0 }],
+            FRND22: [{ uid: 'f', name: 'עידו', level: 4, streak: 3, total: 600, week: 120 }],
+          };
+          const list = demoBoard.groups.map(g => ({ code: g.code, name: g.name, members: rank([Object.assign({}, me)].concat((people[g.code] || []).map(x => Object.assign({ photo: '', me: false }, x)))) }));
+          const out = { type: 'board', configured: true, connected: true, groups: demoBoard.groups.slice(), max: 5, list };
+          if (m.op === 'create') { out.created = out.focus = demoBoard.created; }
+          if (m.op === 'join') { out.joined = out.focus = demoBoard.joined; }
+          emit(out, m.op === 'state' ? 150 : 500); break;
+        }
         case 'exportTool':
           if (m.op === 'icloud') { [1, 2, 3].forEach(i => emit({ type: 'icloudExport', state: 'busy', course: m.course, done: i - 1, total: 3 }, 250 * i)); emit({ type: 'icloudExport', state: 'done', course: m.course, total: 3, added: 3, updated: 0, unchanged: 0, kept: 0, text: '3 סיכומים סונכרנו ל-iCloud (בדמו לא נכתבים קבצים)' }, 1100); break; }
           if (m.op === 'icloudReveal') break;

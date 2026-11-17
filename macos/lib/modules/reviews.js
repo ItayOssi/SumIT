@@ -159,6 +159,7 @@ module.exports = {
         mkdirp(path.dirname(page));
         writeText(this.ReviewsFile(page), JSON.stringify(state));
         this.SendReviewSummary();
+        if (typeof this.TrackActivity === 'function') this.TrackActivity({ kind: 'card' });   // sparks for the study track
       } catch (ex) {
         this.Toast('לא הצלחתי לשמור את הדירוג: ' + (ex.message || String(ex)), true);
       }

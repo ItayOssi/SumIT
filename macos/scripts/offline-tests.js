@@ -12,6 +12,8 @@ const {
 } = require('../lib/util');
 const platform = require('../lib/platform');
 const C = require('../lib/constants');
+// The tests never reach the real Firebase project: its address comes only from the env of the fake one (runBoardTests).
+C.Firebase = { apiKey: '', projectId: '' };
 const { Host } = require('../lib/host');
 
 platform.extendPath();
@@ -242,6 +244,7 @@ async function run() {
 
     // 6f3. Sync with Google Drive: the rules, sign-in and two computers, through a fake Google
     await runDriveTests(app, root, check);
+    await runBoardTests(app, root, check);
 
     // 6g. Study track (beta): the profile, the strategy, the week of blocks and the progress
     await runStudyTrackTests(app, root, check);
@@ -1649,21 +1652,33 @@ async function runStudyTrackTests(app, root, check) {
   check('the study window is an hour after getting up until an hour before sleep, and a sleep after midnight ends the day at 23:45',
     JSON.stringify(app.TrackRoutineWindow({ wake: '07:30', sleep: '23:30' })) === '{"from":"08:30","to":"22:30"}' && app.TrackRoutineWindow({ wake: '09:10', sleep: '01:00' }).to === '23:45' && app.TrackRoutineWindow({ wake: '09:10', sleep: '01:00' }).from === '10:15');
 
-  // The calendar: work every Monday 15:00-20:00 for four weeks is a commitment; a one-off meeting, an all-day event and a "free" event are not.
+  // The calendar, from now on only: work every Monday 15:00-20:00 in the next weeks is a commitment; a class that ended last month,
+  // a meeting that already took place, an all-day event and a "free" event are not; a dentist next week is a one-time event with its date.
   const at = (y, mo, d, hh, mi) => new Date(y, mo - 1, d, hh, mi).getTime();
   const nowCal = new Date(2026, 10, 11, 12, 0);   // a Wednesday
   const evs = [];
-  for (const d of [12, 19, 26]) evs.push({ start: at(2026, 10, d, 15, 0), end: at(2026, 10, d, 20, 0), title: 'עבודה', busy: true, allDay: false });
-  evs.push({ start: at(2026, 11, 2, 15, 0), end: at(2026, 11, 2, 20, 0), title: 'עבודה', busy: true, allDay: false });
-  evs.push({ start: at(2026, 11, 9, 15, 0), end: at(2026, 11, 9, 20, 0), title: 'עבודה', busy: true, allDay: false });
-  evs.push({ start: at(2026, 11, 4, 9, 0), end: at(2026, 11, 4, 10, 0), title: 'פגישה עם המנחה', busy: true, allDay: false });
-  evs.push({ start: at(2026, 11, 5, 0, 0), end: at(2026, 11, 6, 0, 0), title: 'יום הולדת', busy: false, allDay: true });
-  for (const d of [3, 10]) evs.push({ start: at(2026, 11, d, 18, 0), end: at(2026, 11, d, 19, 0), title: 'אולי', busy: false, allDay: false });
+  for (const d of [16, 23, 30]) evs.push({ start: at(2026, 11, d, 15, 0), end: at(2026, 11, d, 20, 0), title: 'עבודה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 12, 7, 15, 0), end: at(2026, 12, 7, 20, 0), title: 'עבודה', busy: true, allDay: false });
+  for (const d of [5, 12, 19, 26]) evs.push({ start: at(2026, 10, d, 10, 0), end: at(2026, 10, d, 12, 0), title: 'חוג שנגמר', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 4, 9, 0), end: at(2026, 11, 4, 10, 0), title: 'פגישה שהייתה', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 18, 9, 0), end: at(2026, 11, 18, 10, 0), title: 'רופא שיניים', busy: true, allDay: false });
+  evs.push({ start: at(2026, 12, 2, 9, 0), end: at(2026, 12, 2, 10, 0), title: 'רחוק מדי', busy: true, allDay: false });
+  evs.push({ start: at(2026, 11, 13, 0, 0), end: at(2026, 11, 14, 0, 0), title: 'יום הולדת', busy: false, allDay: true });
+  for (const d of [17, 24]) evs.push({ start: at(2026, 11, d, 18, 0), end: at(2026, 11, d, 19, 0), title: 'אולי', busy: false, allDay: false });
   const rf = app.TrackRoutineFromEvents(evs, nowCal);
-  check('an event that comes back every week at the same hours is a commitment, with the number of weeks; one-off, all-day and free events are not',
-    rf.commitments.length === 1 && rf.commitments[0].title === 'עבודה' && rf.commitments[0].day === 1 && rf.commitments[0].start === '15:00' && rf.commitments[0].end === '20:00' && rf.commitments[0].weeks === 5 && rf.commitments[0].source === 'calendar');
-  check('the busy minutes of an average weekday count the last four weeks only', rf.busyByDay[1] === 300 && rf.busyByDay[3] === 15 && rf.busyByDay[0] === 0 && rf.firstStart !== '' && rf.events === 5);
-  check('no events give no commitments and no crash', app.TrackRoutineFromEvents([], nowCal).commitments.length === 0 && app.TrackRoutineFromEvents(null, nowCal).firstStart === '');
+  check('only what is ahead counts: an event that comes back every week at the same hours is a commitment; a series that ended, a past meeting, all-day and free events are not',
+    rf.commitments.length === 1 && rf.commitments[0].title === 'עבודה' && rf.commitments[0].day === 1 && rf.commitments[0].start === '15:00' && rf.commitments[0].end === '20:00' && rf.commitments[0].weeks === 4 && rf.commitments[0].source === 'calendar');
+  check('a busy event that happens once in the next two weeks is a one-time event with its date; one further away is not',
+    rf.upcoming.length === 1 && rf.upcoming[0].title === 'רופא שיניים' && rf.upcoming[0].date === '2026-11-18' && rf.upcoming[0].day === 3 && rf.upcoming[0].start === '09:00');
+  check('the busy minutes of an average weekday count the next four weeks only', rf.busyByDay[1] === 300 && rf.busyByDay[3] === 30 && rf.busyByDay[0] === 0 && rf.firstStart !== '' && rf.events === 6);
+  check('no events give no commitments and no crash', app.TrackRoutineFromEvents([], nowCal).commitments.length === 0 && app.TrackRoutineFromEvents(null, nowCal).firstStart === '' && app.TrackRoutineFromEvents(null, nowCal).upcoming.length === 0);
+  const rtDated = app.TrackCleanRoutine({ commitments: [{ title: 'רופא שיניים', day: 0, start: '09:00', end: '10:00', date: '2026-11-18', source: 'calendar' }, { title: 'עבודה', day: 1, start: '15:00', end: '20:00' }] });
+  const pDated = app.TrackClean({ courses: [{ name: 'קורס', level: 3, energy: 3, hoursPerWeek: 6 }] });
+  const wDated = app.TrackBuildWeek(pDated, [], { weekStart: '2026-11-15', today: '2026-11-14', days: [3], from: '08:00', to: '12:00', blocked: rtDated.commitments, block: 60 });
+  const wOther = app.TrackBuildWeek(pDated, [], { weekStart: '2026-11-22', today: '2026-11-14', days: [3], from: '08:00', to: '12:00', blocked: rtDated.commitments, block: 60 });
+  check('a one-time event keeps its date and its weekday follows it, and it takes time on that date only',
+    rtDated.commitments.find(c => c.date).date === '2026-11-18' && rtDated.commitments.find(c => c.date).day === 3 && !rtDated.commitments.find(c => c.title === 'עבודה').date
+    && wDated.blocks.every(b => mins(b.start) >= 10 * 60 + 15 || mins(b.start) + b.minutes <= 9 * 60 - 15) && wOther.blocks.some(b => mins(b.start) < 10 * 60 && mins(b.start) + b.minutes > 9 * 60));
 
   // The same through the calendars the app keeps, read with the page's iCal reader (a weekly rule, local time).
   const savedCalDir = app.calendarsDir, savedCalList = app.settings.calendars;
@@ -1748,11 +1763,30 @@ async function runStudyTrackTests(app, root, check) {
   check('each task names the lecture and says why, from the material', hw.title.includes('הרצאה 3 (עצי AVL)') && hw.why.includes('בעוד 2 ימים') && sm.why.includes('4 קבצים') && recs.find(r => r.kind === 'cards').lecture === 2 && recs.find(r => r.kind === 'practice').lecture === 1);
   check('the most urgent comes first, a lecture with no material gives no task, and a far deadline or no exam gives nothing',
     recs[0].kind === 'homework' && !recs.some(r => r.lecture === 4) && recs.filter(r => r.course === 'היסטוריה').length === 0 && app.TrackRecommend([], '2026-11-10').length === 0 && app.TrackRecommend(null, '2026-11-10').length === 0);
-  const goals = app.TrackGoals(recs);
-  check('the tasks become goals of the blocks, by course and in order, without the transcription', goals['מבני נתונים'][0] === hw.title && !goals['מבני נתונים'].some(g => g.startsWith('תמלל')));
-  const gp = app.TrackClean({ courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 3 }] });
-  const gw = app.TrackBuildWeek(gp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2, 3, 4], goals });
-  check('a week built with tasks uses them as the goals of its blocks, and the general goals after them', gw.blocks.length >= 3 && gw.blocks.some(b => b.goal === hw.title) && gw.blocks.every(b => b.goal.length > 0));
+  const studyList = [
+    { course: 'מבני נתונים', level: 3, examDays: 6, pastExams: 2, cardsDue: 12, lectures: [
+      { num: 1, title: 'מבוא', hasSummary: true, cards: 5, files: 2, exercises: 3 },
+      { num: 2, title: 'ערימות', hasSummary: true, cards: 0, files: 1, exercises: 2 },
+      { num: 3, title: 'עצי AVL', hasSummary: false, files: 3, transcripts: 1, videos: 2, due: '2026-11-12' }] },
+    { course: 'פיזיקה', level: 2, examDays: null, pastExams: 0, cardsDue: 0, lectures: [{ num: 1, title: 'קינמטיקה', hasSummary: false, files: 2, exercises: 4 }] },
+    { course: 'ריק', level: 1, lectures: [] }];
+  const goals = app.TrackGoals(studyList, '2026-11-10');
+  const gDS = goals['מבני נתונים'] || [];
+  check('the goals of the blocks start with homework due soon, the past exam and the cards due', gDS[0] === 'פתור את תרגיל הבית של הרצאה 3 (עצי AVL)' && gDS[1].includes('מבחן קודם') && gDS[2].includes('12 הכרטיסיות'));
+  check('then study methods on the newest summary: Feynman, exercises from the practice sheet, the cards, the quiz and recall on a blank page',
+    gDS[3].startsWith('שיטת פיינמן') && gDS[3].includes('הרצאה 2 (ערימות)') && gDS.some(g => g.startsWith('תרגול') && g.includes('{ex}') && g.includes('הרצאה 2')) && gDS.some(g => g.startsWith('כרטיסיות: צור') && g.includes('הרצאה 2'))
+    && gDS.some(g => g.startsWith('כרטיסיות: עבור') && g.includes('הרצאה 1')) && gDS.some(g => g.startsWith('בוחן')) && gDS.some(g => g.startsWith('שליפה') && g.includes('הרצאה 1')) && gDS.every(g => g.length <= 200));
+  check('making a summary or transcribing a recording is never the goal of a block', !Object.values(goals).flat().some(g => /צור סיכום|תמלל/.test(g)));
+  check('a course without summaries gets the exercises of its practice sheets, and a course with nothing in its folder gets no goals of its own',
+    goals['פיזיקה'].length === 1 && goals['פיזיקה'][0].includes('דף התרגול של הרצאה 1 (קינמטיקה)') && !goals['ריק'] && Object.keys(app.TrackGoals(null, '2026-11-10')).length === 0);
+  const gp = app.TrackClean({ courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 6 }, { name: 'פיזיקה', level: 2, hoursPerWeek: 2 }] });
+  const gw = app.TrackBuildWeek(gp, [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2, 3, 4], goals, block: 60 });
+  const exBlocks = gw.blocks.filter(b => b.goal.startsWith('תרגול'));
+  check('a week built with the goals uses them in order, and the number of exercises follows the length of the block',
+    gw.blocks.some(b => b.goal === gDS[0]) && gw.blocks.every(b => b.goal.length > 0 && !b.goal.includes('{ex}')) && exBlocks.length > 0
+    && exBlocks.every(b => b.goal.includes(b.minutes <= 30 ? 'תרגיל אחד' : b.minutes <= 60 ? '2 תרגילים' : '3 תרגילים')));
+  const gGen = app.TrackBuildWeek(app.TrackClean({ courses: [{ name: 'בלי תיקייה', level: 2, hoursPerWeek: 3 }] }), [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2, 3, 4], block: 30 });
+  check('without a folder, the blocks get the general study methods', gGen.blocks.length >= 3 && gGen.blocks.some(b => b.goal.startsWith('שיטת פיינמן')) && gGen.blocks.some(b => b.goal.includes('תרגיל אחד')));
 
   // Through the host, from a real folder: lecture 1 with material and no summary, lecture 2 with a summary and no cards, a past exam.
   const tCourse = 'אלגוריתמים - תשפז';
@@ -1779,6 +1813,52 @@ async function runStudyTrackTests(app, root, check) {
   sent.length = 0; await app.TrackHandle({ type: 'track', op: 'tasks' });
   const nowTasks = app.TrackTasks(app.TrackLoad(), localToday);
   check('the page gets the tasks with how many there are', sent[0] && sent[0].type === 'trackTasks' && nowTasks.length > 0 && sent[0].tasks.length === Math.min(10, nowTasks.length) && sent[0].total === nowTasks.length);
+
+  // ---- Sparks (✨) and achievements.
+  check('the study method of a block is read from the start of its goal, and a goal typed by hand is "other"',
+    app.TrackMethod('שיטת פיינמן: הסבר') === 'feynman' && app.TrackMethod('תרגול: פתור 2 תרגילים') === 'practice' && app.TrackMethod('פתור את תרגיל הבית של הרצאה 3') === 'homework'
+    && app.TrackMethod('תרגיל מבחן קודם בתנאי מבחן') === 'exam' && app.TrackMethod('שליפה מהזיכרון: כתוב') === 'recall' && app.TrackMethod('בוחן: ענה') === 'quiz'
+    && app.TrackMethod('כרטיסיות: עבור') === 'cards' && app.TrackMethod('חזרה מרווחת: עבור על 4') === 'cards' && app.TrackMethod('לימוד') === 'other' && app.TrackMethod(null) === 'other');
+  const spDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const spLog = (date, note, minutes, extra) => Object.assign({ date, course: 'קורס', minutes: minutes || 45, note, block: 'b' + date }, extra || {});
+  const sp1 = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }, { name: 'קשה', level: 3 }], log: [spLog('2026-11-01', 'תרגול: פתור 2 תרגילים'), spLog('2026-11-01', 'כרטיסיות: עבור', 45, { course: 'קשה', block: 'x2' })] });
+  const s1 = app.TrackSparks(sp1, '2026-11-01');
+  check('a block gives 10 sparks a quarter of an hour times its method, and a hard course 30% more; a week where every course got a block is "smart spread"', s1.today === 75 + 39 && s1.bonus === 50 && s1.total === 164 && s1.mult === 1 && s1.awards.find(a => a.id === 'spread').tier === 1);
+  const sp8 = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: Array.from({ length: 8 }, (_, i) => spLog(spDay('2026-11-01', i), 'שיטת פיינמן: הסבר')) });
+  const s8 = app.TrackSparks(sp8, '2026-11-08');
+  check('the streak multiplies the sparks: ×1 for two days, ×1.1 from the third, ×1.25 from the seventh', s8.total - s8.bonus === 60 * 2 + 66 * 4 + 75 * 2 && s8.streak === 8 && s8.mult === 1.25 && s8.nextTier.days === 6 && s8.nextTier.mult === 1.5);
+  const flame = s8.awards.find(a => a.id === 'flame');
+  check('reaching an achievement adds its sparks: bronze 50, silver 150', flame.tier === 2 && flame.next === 14 && s8.bonus === 200 && s8.count.bronze === 1 && s8.count.silver === 1 && s8.count.all === 15);
+  const spGap = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-06'].map(d => spLog(d, 'שיטת פיינמן: הסבר')) });
+  const sGap = app.TrackSparks(spGap, '2026-11-06');
+  check('a broken streak starts again at ×1, and a new streak after one of 3 days is the hidden "return" achievement', sGap.streak === 1 && sGap.mult === 1 && sGap.today === 60 && sGap.awards.find(a => a.id === 'return').tier === 1);
+  check('a block finished today gets the multiplier of the streak with today in it', app.TrackSparks(sp8, '2026-11-09').multNext === 1.25 && app.TrackSparks(spGap, '2026-11-07').multNext === 1);
+  const spCap = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: Array.from({ length: 6 }, (_, i) => spLog('2026-11-01', 'תרגול: פתור 3 תרגילים', 180, { block: 'c' + i })) });
+  const sCap = app.TrackSparks(spCap, '2026-11-01');
+  check('what is only reported gives at most 600 sparks a day, and the exercises are counted from the goals', sCap.today === 600 && sCap.awards.find(a => a.id === 'practice').value === 18);
+  const spVer = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], verified: { cards: { '2026-11-01': 40, 'bad': 9 }, quizzes: [{ date: '2026-11-01', pct: 100, prev: 50 }, { date: '2026-11-01', pct: 85, prev: -1 }, { date: 'x', pct: 100 }] } });
+  const sVer = app.TrackSparks(spVer, '2026-11-01');
+  check('memory cards rated and quizzes finished count, checked by the app: cards up to 60 a day, a quiz by its score, 100% and a comeback are achievements',
+    spVer.verified.quizzes.length === 2 && !spVer.verified.cards.bad && sVer.today === 60 + 50 + 30 && sVer.awards.find(a => a.id === 'elephant').value === 40 && sVer.awards.find(a => a.id === 'perfectQuiz').tier === 1 && sVer.awards.find(a => a.id === 'comeback').tier === 1);
+  check('a level takes 100 sparks and each one after it 60 more, with a name', app.TrackLevel(0).level === 1 && app.TrackLevel(99).level === 1 && app.TrackLevel(100).level === 2 && app.TrackLevel(259).level === 2 && app.TrackLevel(260).level === 3 && app.TrackLevel(0).name === 'טירון' && app.TrackLevel(260).name === 'סקרן' && app.TrackLevel(100).to === 260);
+  const spNew = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: sp8.log });
+  const spFirst = app.TrackAwardsNew(spNew, app.TrackSparks(spNew, '2026-11-08')), spSeen1 = spNew.awards.seen.flame;
+  spNew.log.push(...Array.from({ length: 6 }, (_, i) => spLog(spDay('2026-11-09', i), 'שיטת פיינמן: הסבר')));
+  const second = app.TrackAwardsNew(spNew, app.TrackSparks(spNew, '2026-11-14'));
+  check('the first time, the achievements already reached are taken as known; after that, a new tier is announced once, with its sparks',
+    spFirst.length === 0 && spNew.awards.init && spSeen1 === 2 && second.length === 2 && second.some(a => a.id === 'flame' && a.tier === 3 && a.sparks === 400) && second.some(a => a.id === 'feynman' && a.tier === 1)
+    && app.TrackAwardsNew(spNew, app.TrackSparks(spNew, '2026-11-14')).length === 0 && app.TrackClean(JSON.parse(JSON.stringify(spNew))).awards.seen.flame === 3);
+  // Through the host: "done" on a block gives its sparks, and a week with every block done is a perfect week.
+  const spWs = app.TrackWeekStart(localToday), spToday = new Date(localToday + 'T12:00:00').getDay();
+  app.TrackSave(app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], awards: { init: true }, plan: { weekStart: spWs, blocks: [0, 1, 2].map(i => ({ id: 'p' + i, day: spToday, start: '0' + (7 + i) + ':00', minutes: 45, course: 'קורס', goal: 'תרגול: פתור 2 תרגילים' })) } }));
+  state = await op({ op: 'done', id: 'p0' });
+  check('a block marked done sends the sparks it gave, the block, and the sparks of every block of the plan', state.sparkGain && state.sparkGain.points === 75 && state.sparkBlock === 'p0' && state.sparks.blocks.p1 === 75 && state.sparks.today === 75 && app.TrackLoad().log.find(e => e.block === 'p0').start === '07:00');
+  check('a block that started before 8:00 is the hidden early bird, announced once', state.unlocked.length === 1 && state.unlocked[0].id === 'early');
+  await op({ op: 'done', id: 'p1' }); state = await op({ op: 'done', id: 'p2' });
+  check('every block of the week done makes a perfect week, kept with the profile', app.TrackLoad().awards.perfectWeeks.includes(spWs) && state.unlocked.some(a => a.id === 'perfect'));
+  sent.length = 0;
+  const actR = app.TrackActivity({ kind: 'card' });
+  check('a memory card rated anywhere in the app counts, and the page hears about the sparks', actR && actR.sparkGain.points > 0 && sent.some(x => x.type === 'sparks' && x.kind === 'card') && app.TrackLoad().verified.cards[localToday] === 1 && app.TrackActivity({ kind: 'other' }) === null);
 
   app.Send = realSend; app.ask = realAsk; app.savePath = realSave; app.pickFiles = realPick; app.Toast = realToast;
   app.settings.studyRoot = saved;
@@ -2021,7 +2101,9 @@ function fakeGoogle() {
         }
         if (f.get('grant_type') === 'refresh_token') {
           if (f.get('refresh_token') !== g.refresh || g.revoked.includes(f.get('refresh_token'))) return json(400, { error: 'invalid_grant' });
-          const t = 'at-' + (++g.n); g.tokens.add(t); return json(200, { access_token: t, expires_in: 3600 });
+          const t = 'at-' + (++g.n); g.tokens.add(t);
+          const idt = 'x.' + Buffer.from(JSON.stringify({ sub: g.sub || '1', email: 'student@gmail.com', picture: g.picture || '' })).toString('base64url') + '.y';
+          return json(200, { access_token: t, expires_in: 3600, id_token: idt });
         }
         return json(400, { error: 'unsupported' });
       }
@@ -2242,6 +2324,154 @@ async function runDriveTests(app, root, check) {
     app.settings.studyRoot = saved.study; app.settings.recordingsDir = saved.rec; app.Send = saved.send; app.settings.helperPref = saved.helper; app.settings.geminiKey = saved.gkey;
     if (saved.drive === undefined) delete app.settings.drive; else app.settings.drive = saved.drive;
     delete app.driveStateFile; delete app.driveTrash; delete app.driveAccess; delete app.driveFast;
+  }
+}
+
+// A fake Firebase (Auth and Firestore) on 127.0.0.1 that keeps the rules of macos/firebase/firestore.rules: the tests never reach the real one.
+function fakeFirebase() {
+  const f = { docs: new Map(), signIns: 0, fail401: 0 };
+  const P = '/v1/projects/sumit-test/databases/(default)/documents';
+  f.server = http.createServer((req, res) => {
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => {
+      const body = Buffer.concat(chunks).toString(), u = new URL(req.url, 'http://x');
+      const json = (code, o) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (u.pathname === '/v1/accounts:signInWithIdp') {
+        if (u.searchParams.get('key') !== 'test-key') return json(400, { error: { message: 'API_KEY_INVALID' } });
+        const idt = new URLSearchParams(JSON.parse(body).postBody).get('id_token') || '';
+        let sub = ''; try { sub = JSON.parse(Buffer.from(idt.split('.')[1], 'base64url').toString()).sub; } catch { }
+        if (!sub) return json(400, { error: { message: 'INVALID_IDP_RESPONSE' } });
+        f.signIns++; return json(200, { idToken: 'fb-' + sub, localId: 'u' + sub, expiresIn: '3600' });
+      }
+      if (!u.pathname.startsWith(P)) return json(404, {});
+      const auth = (req.headers.authorization || '').replace('Bearer ', '');
+      if (!/^fb-/.test(auth)) return json(401, {});
+      if (f.fail401 > 0) { f.fail401--; return json(401, {}); }
+      const uid = 'u' + auth.slice(3), rel = decodeURIComponent(u.pathname.slice(P.length)), parts = rel.split('/').filter(Boolean);
+      const doc = (k) => f.docs.get(k), name = (k) => 'projects/sumit-test/databases/(default)/documents' + k;
+      const inGroup = (code) => f.docs.has('/groups/' + code + '/members/' + uid);
+      if (parts.length === 1 && req.method === 'POST') {
+        const id = u.searchParams.get('documentId'), k = '/groups/' + id, d = JSON.parse(body);
+        if (f.docs.has(k)) return json(409, {});
+        if (!/^[A-HJ-NP-Z2-9]{6}$/.test(id) || (d.fields.owner || {}).stringValue !== uid) return json(403, {});
+        f.docs.set(k, { name: name(k), fields: d.fields }); return json(200, doc(k));
+      }
+      if (parts.length === 2 && req.method === 'GET') return doc(rel) ? json(200, doc(rel)) : json(404, {});
+      if (parts.length === 3 && req.method === 'GET') {
+        if (!inGroup(parts[1])) return json(403, {});
+        const docs = Array.from(f.docs.entries()).filter(([k]) => k.startsWith('/groups/' + parts[1] + '/members/')).map(([, v]) => v);
+        return json(200, docs.length ? { documents: docs } : {});
+      }
+      if (parts.length === 4) {
+        if (parts[3] !== uid) return json(403, {});
+        if (req.method === 'DELETE') { f.docs.delete(rel); return json(200, {}); }
+        if (req.method === 'PATCH') {
+          if (!f.docs.has('/groups/' + parts[1])) return json(403, {});
+          const d = JSON.parse(body), keys = Object.keys(d.fields);
+          if (!keys.every(k => ['name', 'photo', 'week', 'weekSparks', 'total', 'level', 'streak', 'day', 'updated'].includes(k))) return json(403, {});
+          f.docs.set(rel, { name: name(rel), fields: d.fields }); return json(200, doc(rel));
+        }
+      }
+      json(404, {});
+    });
+  });
+  return f;
+}
+
+async function runBoardTests(app, root, check) {
+  const L = require('../lib/modules/leaderboard');
+  const codes = Array.from({ length: 40 }, () => L.NewCode());
+  check('a group code is 6 letters and digits that are easy to read out (no I, O, 0 or 1)', codes.every(c => L.CodeOk(c) && !/[IO01]/.test(c)) && new Set(codes).size > 30);
+  check('a typed code may have spaces, dashes and small letters', L.CleanCode(' k7q-2mx ') === 'K7Q2MX' && !L.CodeOk('K7Q2M') && !L.CodeOk('K7Q2MO'));
+  const back = L.FromDoc({ name: 'projects/p/databases/(default)/documents/groups/AAAAAA/members/u9', ...L.ToFields({ name: 'דנה', weekSparks: 120.4, level: 3 }) });
+  check('a row goes to Firestore as typed values and comes back the same', back.id === 'u9' && back.name === 'דנה' && back.weekSparks === 120 && back.level === 3);
+  const today = '2026-11-17', week = '2026-11-15';
+  const rank = L.Ranking([
+    { id: 'a', name: 'אורי', week, weekSparks: 300, total: 900, level: 4, streak: 6, day: today, photo: 'https://lh3.googleusercontent.com/a/x' },
+    { id: 'b', name: 'בר', week: '2026-11-08', weekSparks: 999, total: 5000, level: 9, streak: 20, day: '2026-11-13', photo: 'https://evil.example/x.png' },
+    { id: 'me', name: 'נועה', week, weekSparks: 300, total: 400, level: 2, streak: 3, day: '2026-11-16' },
+    { id: 'c', name: '', week, weekSparks: 50, total: 50, level: 1, streak: 1, day: today },
+  ], 'me', today);
+  check('the table goes by the sparks of this week; last week\'s count as 0', rank.map(m => m.uid).join() === 'a,me,c,b' && rank[3].week === 0);
+  check('equal sparks share a place, and the next one is after them', rank[0].rank === 1 && rank[1].rank === 1 && rank[2].rank === 3 && rank[3].rank === 4);
+  check('a streak not reported since yesterday is over, and the student is marked', rank[3].streak === 0 && rank[1].streak === 3 && rank[1].me && !rank[0].me);
+  check('only a Google picture is kept, and a row without a name says "סטודנט"', rank[0].photo && !rank[3].photo && rank[2].name === 'סטודנט');
+
+  const sent = [], realSend = app.Send; app.Send = (m) => sent.push(m);
+  await app.BoardHandle({ op: 'create', name: 'x' });
+  check('without a Firebase project the tab stays hidden and nothing is sent anywhere', sent.length === 1 && sent[0].type === 'board' && sent[0].configured === false);
+
+  const g = fakeGoogle(), f = fakeFirebase();
+  await new Promise(r => g.server.listen(0, '127.0.0.1', r)); await new Promise(r => f.server.listen(0, '127.0.0.1', r));
+  const gb = 'http://127.0.0.1:' + g.server.address().port, fb = 'http://127.0.0.1:' + f.server.address().port;
+  const env = { SUMIT_GOOGLE_TOKEN_URL: gb + '/token', SUMIT_GOOGLE_REVOKE_URL: gb + '/revoke', SUMIT_GOOGLE_CLIENT_ID: 'test-client', SUMIT_GOOGLE_CLIENT_SECRET: 'test-secret',
+    SUMIT_FIREBASE_API_KEY: 'test-key', SUMIT_FIREBASE_PROJECT: 'sumit-test', SUMIT_FIREBASE_AUTH_URL: fb + '/v1', SUMIT_FIRESTORE_URL: fb + '/v1' };
+  const savedEnv = {}; for (const k of Object.keys(env)) { savedEnv[k] = process.env[k]; process.env[k] = env[k]; }
+  const saved = { drive: app.settings.drive, groups: app.settings.boardGroups, name: app.settings.displayName };
+  const friendPhoto = 'https://lh3.googleusercontent.com/a/friend=s96-c';
+  try {
+    sent.length = 0;
+    delete app.settings.drive; delete app.settings.boardGroups; app.driveAccess = null; app.driveId = null; app.boardAuth = null;
+    await app.BoardHandle({ op: 'list' });
+    check('the tab asks to sign in with Google first', sent[0].configured && !sent[0].connected && sent[0].groups.length === 0);
+
+    app.settings.drive = { refresh: Protect('rt-1'), email: 'student@gmail.com' }; app.settings.displayName = 'נועה';
+    app.boardPhotos = new Map([[friendPhoto, 'data:image/png;base64,AAAA']]);
+    sent.length = 0;
+    await app.BoardHandle({ op: 'create', name: '  חבורת אינפי  ' });
+    const made = sent[0], code = made.created;
+    check('a new group gets a code, is kept in the settings, and the student is its first row', L.CodeOk(code) && made.groups[0].code === code && made.groups[0].name === 'חבורת אינפי'
+      && made.list[0].members.length === 1 && made.list[0].members[0].me && made.list[0].members[0].name === 'נועה');
+    const mine = L.FromDoc(f.docs.get('/groups/' + code + '/members/u1'));
+    const sp = fileExists(app.TrackFile) ? app.TrackSparks(app.TrackLoad(), new Date().toISOString().slice(0, 10)) : null;
+    check('the row has the sparks of this week, the level and the streak, and nothing else', mine.weekSparks === (sp ? sp.week.earned : 0) && mine.level >= 1 && 'streak' in mine
+      && Object.keys(mine).sort().join() === 'day,id,level,name,photo,streak,total,updated,week,weekSparks');
+    check('signing in to Firebase uses the Google account already connected, once', f.signIns === 1);
+
+    // A friend joins with the code and writes their row (as the app on their computer would).
+    const put = (who, k, fields) => fetch(fb + '/v1/projects/sumit-test/databases/(default)/documents' + k, { method: 'PATCH', headers: { authorization: 'Bearer fb-' + who, 'content-type': 'application/json' }, body: JSON.stringify(L.ToFields(fields)) });
+    const wk = (() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
+    const day = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+    await put('2', '/groups/' + code + '/members/u2', { name: 'אורי', photo: friendPhoto, week: wk, weekSparks: 99999, total: 120000, level: 12, streak: 9, day, updated: 'now' });
+    sent.length = 0;
+    await app.BoardHandle({ op: 'list' });
+    const ms = sent[0].list[0].members;
+    check('the friend is in the table, first by this week\'s sparks, with their picture as a data: URL', ms.length === 2 && ms[0].name === 'אורי' && ms[0].rank === 1 && ms[0].photo.startsWith('data:image/png') && ms[1].me);
+    check('the Firebase token is used again, not asked for each request', f.signIns === 1);
+
+    const outsider = await fetch(fb + '/v1/projects/sumit-test/databases/(default)/documents/groups/' + code + '/members', { headers: { authorization: 'Bearer fb-3' } });
+    const forged = await put('3', '/groups/' + code + '/members/u1', { name: 'x', photo: '', week: wk, weekSparks: 0, total: 0, level: 1, streak: 0, day, updated: '' });
+    check('someone outside the group cannot read it, and nobody can write another student\'s row', outsider.status === 403 && forged.status === 403);
+
+    // Joining a group a friend made: a code typed loosely, a wrong code, and leaving.
+    await fetch(fb + '/v1/projects/sumit-test/databases/(default)/documents/groups?documentId=FRND22', { method: 'POST', headers: { authorization: 'Bearer fb-2' }, body: JSON.stringify(L.ToFields({ name: 'סטטיסטיקה', owner: 'u2', created: 'now' })) });
+    sent.length = 0;
+    await app.BoardHandle({ op: 'join', code: 'frn-d22' });
+    check('a code typed with a dash and small letters joins the friend\'s group, with its name', sent[0].joined === 'FRND22' && sent[0].groups.some(x => x.code === 'FRND22' && x.name === 'סטטיסטיקה') && f.docs.has('/groups/FRND22/members/u1'));
+    sent.length = 0;
+    await app.BoardHandle({ op: 'join', code: 'ZZZZ22' });
+    await app.BoardHandle({ op: 'join', code: 'abc' });
+    check('a code with no group, or not a code at all, says so', /לא מצאתי קבוצה/.test(sent[0].error) && /6 אותיות/.test(sent[1].error));
+    check('the groups travel with the settings to another computer', JSON.stringify(require('../lib/modules/drive-sync').SyncableSettings(app.settings).boardGroups) === JSON.stringify(app.settings.boardGroups));
+
+    // The row goes up by itself after the profile changes; an expired Firebase token is renewed.
+    f.docs.get('/groups/' + code + '/members/u1').fields.updated = { stringValue: 'old' };
+    f.fail401 = 1; app.boardQuietMs = 0;
+    if (fileExists(app.TrackFile)) app.TrackSave(app.TrackLoad()); else app.BoardSoon();
+    await delay(300);
+    check('a saved profile sends the row again a moment later, with a new token after a 401', L.FromDoc(f.docs.get('/groups/' + code + '/members/u1')).updated !== 'old' && f.signIns === 2);
+
+    sent.length = 0;
+    await app.BoardHandle({ op: 'leave', code: 'FRND22' });
+    check('leaving a group takes the row out of it and the group out of the settings', !f.docs.has('/groups/FRND22/members/u1') && !app.BoardGroups().some(x => x.code === 'FRND22') && sent[0].list.length === 1);
+    await app.DriveDisconnect();
+    check('disconnecting Google also forgets the Firebase sign-in', !app.boardAuth && !app.driveId);
+  } finally {
+    g.server.close(); f.server.close(); app.Send = realSend;
+    clearTimeout(app.boardTimer); delete app.boardQuietMs; delete app.boardPhotos; app.boardAuth = null; app.driveId = null; app.driveAccess = null;
+    for (const k of Object.keys(env)) { if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k]; }
+    if (saved.drive === undefined) delete app.settings.drive; else app.settings.drive = saved.drive;
+    if (saved.groups === undefined) delete app.settings.boardGroups; else app.settings.boardGroups = saved.groups;
+    app.settings.displayName = saved.name;
   }
 }
 

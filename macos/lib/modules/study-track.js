@@ -36,7 +36,8 @@ const name = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 const same = (a, b) => { a = name(a); b = name(b); return !!a && !!b && (a === b || a.includes(b) || b.includes(a)); };
 
 function newProfile(today) {
-  return { version: 1, name: '', created: today || localDate(new Date()), courses: [], strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [], routine: cleanRoutine(null) };
+  return { version: 1, name: '', created: today || localDate(new Date()), courses: [], strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [], routine: cleanRoutine(null),
+    awards: { init: false, seen: {}, perfectWeeks: [] }, verified: { cards: {}, quizzes: [] } };
 }
 
 // ---------- The routine: the answers of the wizard ----------
@@ -59,9 +60,11 @@ function cleanRoutine(raw) {
     if (!Number.isInteger(day) || day < 0 || day > 6 || !Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
     let id = Trunc(Str(c, 'id'), 20).replace(/[^\w-]/g, ''); if (!id || ids.has(id)) id = 'c' + (out.commitments.length + 1) + '-' + ids.size;
     ids.add(id);
-    out.commitments.push({ id, title: Trunc(Str(c, 'title').replace(/\s+/g, ' ').trim(), 60) || 'התחייבות', day, start: toHHMM(a), end: toHHMM(b), source: Str(c, 'source') === 'calendar' ? 'calendar' : 'manual' });
+    // A one-time event (from the calendar) has a date: it takes that day only. Its weekday follows the date.
+    const date = isDate(Str(c, 'date')) ? Str(c, 'date') : '';
+    out.commitments.push(Object.assign({ id, title: Trunc(Str(c, 'title').replace(/\s+/g, ' ').trim(), 60) || 'התחייבות', day: date ? parseDate(date).getDay() : day, start: toHHMM(a), end: toHHMM(b), source: Str(c, 'source') === 'calendar' ? 'calendar' : 'manual' }, date ? { date } : {}));
   }
-  out.commitments.sort((x, y) => x.day - y.day || toMin(x.start) - toMin(y.start));
+  out.commitments.sort((x, y) => (x.date || '').localeCompare(y.date || '') || x.day - y.day || toMin(x.start) - toMin(y.start));
   return out;
 }
 
@@ -74,36 +77,41 @@ function routineWindow(rt) {
 
 // ---------- The calendar: fixed commitments of the week ----------
 
-// The events of the last weeks, as they come out of ical.js: { start, end (ms), title, busy, allDay }.
-// An event that comes back at the same hours on the same weekday in at least two different weeks is a commitment (work, training, a shift).
+// The events of the coming weeks, as they come out of ical.js: { start, end (ms), title, busy, allDay }. Only what is still ahead
+// counts: a series that has ended, or a meeting that already took place, does not take time from the plan. Only busy, timed events.
+// An event that comes back at the same hours on the same weekday in at least two of the next four weeks is a weekly commitment (work,
+// a class, training, a shift); one that happens once in the next two weeks is a one-time event, kept with its date.
 function routineFromEvents(events, now) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
-  const from = nowMs - 28 * 86400000;
-  const timed = arr(events).filter(e => e && e.busy !== false && !e.allDay && e.end > e.start && e.end - e.start >= 15 * 60000 && e.end - e.start <= 12 * 3600000);
+  const until = nowMs + 28 * 86400000, soon = nowMs + 14 * 86400000;
+  const timed = arr(events).filter(e => e && e.busy !== false && !e.allDay && e.end > e.start && e.end - e.start >= 15 * 60000 && e.end - e.start <= 12 * 3600000 && e.end > nowMs && e.start < until);
   const weekOf = (d) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()); return localDate(x); };
   const groups = new Map(), perDay = Array.from({ length: 7 }, () => new Map());
   for (const e of timed) {
     const s = new Date(e.start), en = new Date(e.end);
-    if (s.getDate() !== en.getDate() && !(en.getHours() === 0 && en.getMinutes() === 0)) continue;   // a night shift or a trip is not a weekly slot
+    if (s.getDate() !== en.getDate() && !(en.getHours() === 0 && en.getMinutes() === 0)) continue;   // a night shift or a trip is not a slot of a day
     const day = s.getDay(), start = toHHMM(s.getHours() * 60 + s.getMinutes()), end = en.getHours() === 0 && en.getMinutes() === 0 ? '23:59' : toHHMM(en.getHours() * 60 + en.getMinutes());
     const title = Trunc(String(e.title || '').replace(/\s+/g, ' ').trim(), 60);
     const key = title.toLowerCase() + '|' + day + '|' + start + '|' + end;
-    const g = groups.get(key) || { title: title || 'אירוע ביומן', day, start, end, weeks: new Set() };
-    g.weeks.add(weekOf(s)); groups.set(key, g);
-    if (e.start >= from && e.start < nowMs) { const d = localDate(s); perDay[day].set(d, (perDay[day].get(d) || 0) + Math.round((e.end - e.start) / 60000)); }
+    const g = groups.get(key) || { title: title || 'אירוע ביומן', day, start, end, weeks: new Set(), first: e.start };
+    g.weeks.add(weekOf(s)); g.first = Math.min(g.first, e.start); groups.set(key, g);
+    const d = localDate(s); perDay[day].set(d, (perDay[day].get(d) || 0) + Math.round((e.end - e.start) / 60000));
   }
   const commitments = [...groups.values()].filter(g => g.weeks.size >= 2)
     .map(g => ({ title: g.title, day: g.day, start: g.start, end: g.end, weeks: g.weeks.size, source: 'calendar' }))
     .sort((a, b) => a.day - b.day || toMin(a.start) - toMin(b.start)).slice(0, 20);
-  // Busy minutes on an average day of each weekday, over the four weeks before now.
+  const upcoming = [...groups.values()].filter(g => g.weeks.size === 1 && g.first < soon)
+    .map(g => ({ title: g.title, date: localDate(new Date(g.first)), day: g.day, start: g.start, end: g.end, source: 'calendar' }))
+    .sort((a, b) => a.date.localeCompare(b.date) || toMin(a.start) - toMin(b.start)).slice(0, 12);
+  // Busy minutes on an average day of each weekday, over the next four weeks.
   const busyByDay = perDay.map(m => Math.round([...m.values()].reduce((n, v) => n + v, 0) / 4));
   const firsts = [], lasts = [];
   const byDate = new Map();
-  for (const e of timed) { if (e.start < from || e.start >= nowMs) continue; const d = localDate(new Date(e.start)); const x = byDate.get(d) || [Infinity, -Infinity]; byDate.set(d, [Math.min(x[0], e.start), Math.max(x[1], e.end)]); }
+  for (const e of timed) { const d = localDate(new Date(e.start)); const x = byDate.get(d) || [Infinity, -Infinity]; byDate.set(d, [Math.min(x[0], e.start), Math.max(x[1], e.end)]); }
   for (const [a, b] of byDate.values()) { const s = new Date(a), en = new Date(b); firsts.push(s.getHours() * 60 + s.getMinutes()); lasts.push(en.getHours() * 60 + en.getMinutes()); }
   const median = (l) => { if (!l.length) return null; const x = l.slice().sort((a, b) => a - b); return x[Math.floor(x.length / 2)]; };
   const fm = median(firsts), lm = median(lasts);
-  return { commitments, busyByDay, firstStart: fm === null ? '' : toHHMM(fm), lastEnd: lm === null ? '' : toHHMM(lm), events: timed.filter(e => e.start >= from && e.start < nowMs).length };
+  return { commitments, upcoming, busyByDay, firstStart: fm === null ? '' : toHHMM(fm), lastEnd: lm === null ? '' : toHHMM(lm), events: timed.length };
 }
 
 // ---------- Difficulty and energy, suggested ----------
@@ -282,18 +290,31 @@ function cleanProfile(raw) {
   for (const e0 of arr(r.log).slice(-Limits.log)) {
     const e = obj(e0), date = Str(e, 'date'), minutes = Int(e, 'minutes');
     if (!isDate(date) || minutes < 1) continue;
-    p.log.push({ date, course: Trunc(name(Str(e, 'course')), 120), minutes: Math.min(minutes, 600), note: Trunc(Str(e, 'note').trim(), 120), block: Trunc(Str(e, 'block'), 20) });
+    const start = Number.isFinite(toMin(Str(e, 'start'))) ? toHHMM(toMin(Str(e, 'start'))) : '';
+    p.log.push(Object.assign({ date, course: Trunc(name(Str(e, 'course')), 120), minutes: Math.min(minutes, 600), note: Trunc(Str(e, 'note').trim(), 120), block: Trunc(Str(e, 'block'), 20) }, start ? { start } : {}));
   }
   p.routine = cleanRoutine(r.routine);
+  // The achievements already announced (by tier), and the weeks whose blocks were all done.
+  const aw = obj(r.awards), told = {};
+  for (const a of Awards) { const t = Int(obj(aw.seen), a.id); if (t > 0) told[a.id] = clamp(t, 0, 3); }
+  p.awards = { init: aw.init === true, seen: told, perfectWeeks: Array.from(new Set(arr(aw.perfectWeeks).map(String).filter(isDate))).sort().slice(-300) };
+  // What the app saw the student do, not what they reported: memory cards rated (per day) and quizzes finished.
+  const vf = obj(r.verified), cards = {};
+  for (const [d, n] of Object.entries(obj(vf.cards)).filter(([d]) => isDate(d)).sort((a, b) => a[0].localeCompare(b[0])).slice(-400)) { const k = clamp(Math.round(Number(n) || 0), 0, 2000); if (k) cards[d] = k; }
+  const quizzes = arr(vf.quizzes).map(obj).filter(q => isDate(Str(q, 'date'))).slice(-300)
+    .map(q => ({ date: Str(q, 'date'), pct: clamp(Math.round(Number(q.pct) || 0), 0, 100), prev: Number.isFinite(Number(q.prev)) && Number(q.prev) >= 0 ? clamp(Math.round(Number(q.prev)), 0, 100) : -1 }));
+  p.verified = { cards, quizzes };
   return p;
 }
 
 // ---------- A week of blocks, around the timetable ----------
 
+// The general goals of a block, when the course folder gives nothing more specific: study methods, not chores.
+// "{ex}" is the number of exercises, set by the length of the block (see exercisesFor).
 const GoalList = [
-  'חזרה על ההרצאה האחרונה: קרא את הסיכום ושלוף מהזיכרון מה שזכרת',
-  'תרגול: פתור תרגילים בעצמך לפני שאתה מסתכל בפתרון',
-  'סיכום ושאלות פתוחות: כתוב מה עדיין לא ברור והכן שאלות',
+  'שיטת פיינמן: בחר רעיון אחד מההרצאה האחרונה והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לחומר',
+  'תרגול: פתור {ex} מדף התרגול האחרון לבד, ורק אז הצץ בפתרון',
+  'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מההרצאה האחרונה, ואז השווה לחומר וסמן מה חסר',
 ];
 const ExamGoal = 'תרגיל מבחן קודם בתנאי מבחן, ובדיקה של מה לקח הכי הרבה זמן';
 
@@ -307,6 +328,9 @@ function cut(intervals, from, to) {
   }
   return out;
 }
+
+// How many exercises fit in a block: one in half an hour, two in up to an hour, three in more.
+const exercisesFor = (minutes) => (minutes <= 30 ? 'תרגיל אחד' : minutes <= 60 ? '2 תרגילים' : '3 תרגילים');
 
 function buildWeek(profile, classes, opts) {
   const o = Object.assign({ hours: 10, days: [0, 1, 2, 3, 4], from: '09:00', to: '20:00', today: '', nowMin: 0, blocked: [], block: 60, peak: '', goals: {} }, opts || {});
@@ -346,6 +370,7 @@ function buildWeek(profile, classes, opts) {
     // The commitments of the routine (work, training, things from the calendar), with a quarter of an hour to get there and back.
     for (const c of arr(o.blocked)) {
       if (Number(obj(c).day) !== d) continue;
+      if (isDate(Str(c, 'date')) && Str(c, 'date') !== date) continue;   // a one-time event takes its own date only
       const a = toMin(Str(c, 'start')), b = toMin(Str(c, 'end'));
       if (Number.isFinite(a) && Number.isFinite(b) && b > a) free2 = cut(free2, a - 15, b + 15);
     }
@@ -398,7 +423,7 @@ function buildWeek(profile, classes, opts) {
       // The tasks from the course folder come first (one per block, in their order); after them, the general goals.
       const mine = arr(obj(o.goals)[ch.course.name]);
       const goal = ch.index < mine.length ? mine[ch.index] : ch.index >= 2 && exam !== null && exam >= 0 && exam <= 30 ? ExamGoal : GoalList[(ch.index - mine.length) % GoalList.length];
-      made.push({ id: 'b' + seq, day: d, start: toHHMM(start), minutes, course: ch.course.name, goal, done: false, doneMinutes: 0 });
+      made.push({ id: 'b' + seq, day: d, start: toHHMM(start), minutes, course: ch.course.name, goal: goal.split('{ex}').join(exercisesFor(minutes)), done: false, doneMinutes: 0 });
       return true;
     }
     return false;
@@ -420,10 +445,10 @@ function buildWeek(profile, classes, opts) {
 // cards due for review, a lecture with material and no summary, a summary with no cards, exercises to try alone, a recording to transcribe.
 // Input per course: { course, folder, level, examDays, pastExams, cardsDue, lectures: [{ num, title, due, files, transcripts, videos, exercises, hasSummary, cards }] }.
 // Every task says why, in words, so the student can see it comes from their own material. Higher score first.
+const lname = (l) => 'הרצאה ' + l.num + (l.title ? ' (' + Trunc(l.title, 40) + ')' : '');
 function recommendTasks(list, today) {
   const out = [];
   const dm = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
-  const lname = (l) => 'הרצאה ' + l.num + (l.title ? ' (' + Trunc(l.title, 40) + ')' : '');
   for (const c0 of arr(list)) {
     const c = obj(c0), course = Str(c, 'course'), level = clamp(Int(c, 'level') || 2, 1, 3), boost = level * 3;
     if (!course) continue;
@@ -460,10 +485,38 @@ function recommendTasks(list, today) {
   return out.sort((a, b) => b.score - a.score || a.course.localeCompare(b.course));
 }
 
-// The tasks of each course, in order, as goals for the blocks of the week (a block's goal is at most 200 characters).
-function goalsFromTasks(tasks) {
+// The goals of the blocks of each course, in order (at most 200 characters each), read from the same folders as the tasks. A block is
+// for studying, not for running the app: homework due soon and a past exam before a close exam come first, then the cards due, and
+// then study methods on the newest lectures that have a summary: the Feynman technique, exercises from the practice sheets, the cards
+// and the quiz of the summary, and recalling a lecture on a blank page. Making a summary or transcribing a recording is not a goal.
+function studyGoals(list, today) {
   const g = {};
-  for (const t of arr(tasks)) { if (t.kind === 'transcribe') continue; (g[t.course] = g[t.course] || []).push(Trunc(t.title, 200)); }
+  for (const c0 of arr(list)) {
+    const c = obj(c0), course = Str(c, 'course');
+    if (!course) continue;
+    const out = [], push = (t) => { if (!out.includes(t)) out.push(Trunc(t, 200)); };
+    const lectures = arr(c.lectures).map(obj).filter(l => Int(l, 'num') >= 1).sort((a, b) => Int(b, 'num') - Int(a, 'num'));
+    const examDays = c.examDays === null || c.examDays === undefined ? null : Number(c.examDays);
+    for (const l of lectures.slice().reverse()) {
+      const due = Str(l, 'due');
+      if (isDate(due) && due >= today && daysBetween(today, due) <= 10) push('פתור את תרגיל הבית של ' + lname(l));
+    }
+    if (examDays !== null && examDays >= 0 && examDays <= 30 && Int(c, 'pastExams') > 0) push(ExamGoal);
+    if (Int(c, 'cardsDue') > 0) push('חזרה מרווחת: עבור על ' + Int(c, 'cardsDue') + ' הכרטיסיות שמחכות לך, ואת אלה שלא ידעת חזור עליהן בסוף');
+    const sum = lectures.filter(l => l.hasSummary), ex = lectures.filter(l => Int(l, 'exercises') > 0 && !isDate(Str(l, 'due')));
+    const methods = (l, k) => [
+      'שיטת פיינמן: בחר רעיון מרכזי מהסיכום של ' + lname(l) + ' והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
+      ex[k] ? 'תרגול: פתור {ex} מדף התרגול של ' + lname(ex[k]) + ' לבד, ורק אז הצץ בפתרון' : '',
+      Int(l, 'cards') ? 'כרטיסיות: עבור על הכרטיסיות של ' + lname(l) + ', ואת אלה שלא ידעת חזור עליהן בסוף'
+        : 'כרטיסיות: צור כרטיסיות מהסיכום של ' + lname(l) + ' (לחיצה אחת בדף הסיכום) ועבור עליהן',
+      'בוחן: ענה על הבוחן של ' + lname(l) + ' בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן',
+      'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מ' + lname(sum[k + 1] || l) + ', ואז השווה לסיכום וסמן מה חסר',
+    ].filter(Boolean);
+    for (let k = 0; k < Math.min(2, sum.length); k++) methods(sum[k], k).forEach(push);
+    // No summary yet: the exercises of the newest lectures, and the general methods.
+    if (!sum.length) ex.slice(0, 2).forEach(l => push('תרגול: פתור {ex} מדף התרגול של ' + lname(l) + ' לבד, ורק אז הצץ בפתרון'));
+    if (out.length) g[course] = out;
+  }
   return g;
 }
 
@@ -525,6 +578,138 @@ function streakInfo(profile, today) {
   return { current, best, todayDone, atRisk: !todayDone && current > 0, freezes, week, next, prev, milestone: todayDone && StreakMilestones.includes(current) ? current : 0 };
 }
 
+// ---------- Sparks (✨): points for studying, more for what takes more thinking ----------
+
+// A block's study method, read from the start of its goal (the goals studyGoals writes). A goal typed by hand is "other".
+const SparkMethods = [   // [key, weight, test]
+  ['exam', 3, /^(תרגיל מבחן קודם|פתור מבחן קודם)/], ['homework', 2.5, /^פתור את תרגיל הבית/], ['practice', 2.5, /^תרגול/],
+  ['feynman', 2, /^שיטת פיינמן/], ['recall', 2, /^שליפה/], ['quiz', 1.5, /^בוחן/], ['cards', 1, /^(כרטיסיות|חזרה מרווחת)/],
+];
+const methodOf = (goal) => { const g = String(goal || '').trim(), m = SparkMethods.find(x => x[2].test(g)); return m ? m[0] : 'other'; };
+const methodWeight = (k) => (SparkMethods.find(x => x[0] === k) || [0, 1])[1];
+// 10 sparks for every quarter of an hour, times the method; a course the student marked hard gives 30% more. At most 3 hours a block.
+const blockSparks = (method, minutes, level) => Math.round(Math.min(180, Number(minutes) || 0) / 15 * 10 * methodWeight(method) * (Number(level) === 3 ? 1.3 : 1));
+// The streak multiplies the sparks of the day: from 3 days ×1.1, from 7 ×1.25, from 14 ×1.5, from 30 ×2. A broken streak starts again at ×1.
+const SparkTiers = [[3, 1.1], [7, 1.25], [14, 1.5], [30, 2]];
+const sparkMult = (streak) => SparkTiers.reduce((m, [d, x]) => (streak >= d ? x : m), 1);
+// What the student only reports (blocks, time logged, topics) gives at most this much a day, before the multiplier.
+const SparkDayCap = 600, TopicSparks = 15;
+const exercisesIn = (note) => { const m = /(\d+) תרגילים/.exec(note || ''); return m ? Number(m[1]) : 1; };
+
+const LevelNames = [[1, 'טירון'], [3, 'סקרן'], [5, 'חוקר'], [7, 'מתרגל'], [10, 'מומחה'], [15, 'מאסטר'], [20, 'אגדה']];
+const levelName = (lv) => LevelNames.filter(x => lv >= x[0]).pop()[1];
+// A level takes 100 sparks, and every level after it 60 more than the one before.
+function levelOf(total) {
+  let level = 1, from = 0, need = 100;
+  while (total >= from + need && level < 99) { from += need; level++; need = 100 + 60 * (level - 1); }
+  return { level, name: levelName(level), from, to: from + need, next: levelName(level + 1) };
+}
+
+// The achievements: each has three tiers (bronze, silver, gold), counted from the log. The hidden ones show only once reached.
+const Awards = [
+  { id: 'flame', group: 'streak', emoji: 'fire', title: 'להבה בוערת', desc: 'ימים ברצף', stat: 'bestStreak', tiers: [3, 7, 14] },
+  { id: 'freeze', group: 'streak', emoji: 'ice', title: 'שומר על הקור', desc: 'הקפאות שהצילו את הרצף', stat: 'frozen', tiers: [1, 3, 10] },
+  { id: 'perfect', group: 'streak', emoji: 'calendar', title: 'שבוע מושלם', desc: 'שבועות שכל הבלוקים בהם בוצעו', stat: 'perfectWeeks', tiers: [1, 5, 15] },
+  { id: 'spread', group: 'streak', emoji: 'books', title: 'פיזור חכם', desc: 'שבועות שבהם כל קורס קיבל בלוק', stat: 'spreadWeeks', tiers: [1, 5, 10] },
+  { id: 'crown', group: 'streak', emoji: 'crown', title: 'מאה ימים', desc: 'רצף ארוך במיוחד', stat: 'bestStreak', tiers: [30, 100, 365] },
+  { id: 'practice', group: 'methods', emoji: 'muscle', title: 'מכונת תרגול', desc: 'תרגילים מדפי התרגול ומתרגילי הבית', stat: 'exercises', tiers: [25, 100, 250] },
+  { id: 'feynman', group: 'methods', emoji: 'speak', title: 'מורה מלידה', desc: 'בלוקים בשיטת פיינמן', stat: 'feynman', tiers: [10, 25, 50] },
+  { id: 'elephant', group: 'methods', emoji: 'elephant', title: 'זיכרון של פיל', desc: 'כרטיסיות שעברת', stat: 'cards', tiers: [100, 500, 1000] },
+  { id: 'recall', group: 'methods', emoji: 'brain', title: 'דף ריק', desc: 'שליפות מהזיכרון', stat: 'recall', tiers: [5, 15, 30] },
+  { id: 'exam', group: 'methods', emoji: 'shield', title: 'מוכן לקרב', desc: 'מבחנים קודמים בשבועיים שלפני המבחן', stat: 'examPrep', tiers: [1, 3, 6] },
+  { id: 'perfectQuiz', group: 'quiz', emoji: 'hundred', title: 'מושלם', desc: '100% בבוחן', stat: 'quizPerfect', tiers: [1, 5, 10] },
+  { id: 'comeback', group: 'quiz', emoji: 'rocket', title: 'קאמבק', desc: 'שיפור של 30% ויותר בבוחן חוזר', stat: 'quizComeback', tiers: [1, 3, 5] },
+  { id: 'early', group: 'quiz', emoji: 'sunrise', title: 'ציפור מוקדמת', desc: 'בלוקים שהתחילו לפני 8:00', stat: 'early', tiers: [1, 5, 15], hidden: true },
+  { id: 'variety', group: 'quiz', emoji: 'gem', title: 'שלוש שיטות ביום', desc: 'ימים עם שלוש שיטות למידה שונות', stat: 'variety', tiers: [1, 5, 10], hidden: true },
+  { id: 'return', group: 'quiz', emoji: 'star', title: 'חוזר לעניינים', desc: 'רצף חדש אחרי שהקודם נשבר', stat: 'restarts', tiers: [1, 3, 5], hidden: true },
+];
+const AwardSparks = [0, 50, 150, 400];   // what each tier adds to the sparks
+const awardBonus = (tier) => AwardSparks.slice(1, tier + 1).reduce((n, x) => n + x, 0);
+
+// Everything about the sparks, from the profile alone (nothing kept but the inputs, so it never drifts): the total, the level,
+// the multiplier of the streak, the week, the sparks a block of the plan is worth, and the achievements.
+function sparksInfo(profile, today) {
+  const levelOfCourse = new Map(profile.courses.map(c => [c.name, c.level])), examOf = new Map(profile.courses.map(c => [c.name, c.examDate]));
+  const byDay = new Map(), day = (d) => { if (!byDay.has(d)) byDay.set(d, { base: 0, verified: 0, methods: new Set() }); return byDay.get(d); };
+  const st = { bestStreak: 0, frozen: 0, restarts: 0, perfectWeeks: arr(obj(profile.awards).perfectWeeks).length, spreadWeeks: 0, exercises: 0, feynman: 0, recall: 0, cards: 0, examPrep: 0, quizPerfect: 0, quizComeback: 0, early: 0, variety: 0 };
+  const weekCourses = new Map();
+  for (const e of profile.log) {
+    if (e.date > today) continue;
+    const d = day(e.date);
+    if (!e.block) { d.base += blockSparks('other', e.minutes, 0); continue; }
+    const k = methodOf(e.note);
+    d.base += blockSparks(k, e.minutes, levelOfCourse.get(e.course));
+    if (k !== 'other') d.methods.add(k);
+    if (k === 'practice' || k === 'homework') st.exercises += k === 'homework' ? 1 : exercisesIn(e.note);
+    if (k === 'feynman') st.feynman++;
+    if (k === 'recall') st.recall++;
+    if (k === 'exam') { const x = examOf.get(e.course); if (x && e.date <= x && daysBetween(e.date, x) <= 14) st.examPrep++; }
+    if (e.start && toMin(e.start) < 480) st.early++;
+    const ws = weekStartOf(e.date); if (!weekCourses.has(ws)) weekCourses.set(ws, new Set()); weekCourses.get(ws).add(e.course);
+  }
+  for (const k of Object.keys(profile.progress || {})) for (const t of arr(obj(profile.progress[k]).topics)) if (t.done && isDate(t.doneDate) && t.doneDate <= today) day(t.doneDate).base += TopicSparks;
+  const vf = obj(profile.verified);
+  for (const [d, n] of Object.entries(obj(vf.cards))) { if (d > today) continue; day(d).verified += Math.min(60, 2 * n); st.cards += n; }
+  for (const q of arr(vf.quizzes)) {
+    if (q.date > today) continue;
+    day(q.date).verified += q.pct >= 100 ? 50 : q.pct >= 80 ? 30 : 15;
+    if (q.pct >= 100) st.quizPerfect++;
+    if (q.prev >= 0 && q.pct - q.prev >= 30) st.quizComeback++;
+  }
+  for (const x of byDay.values()) if (x.methods.size >= 3) st.variety++;
+  if (profile.courses.length >= 2) for (const set of weekCourses.values()) if (profile.courses.every(c => set.has(c.name))) st.spreadWeeks++;
+
+  // Day by day, the way streakInfo walks: the streak on each day sets the multiplier of that day's sparks.
+  const counted = streakDays(profile), dates = Array.from(new Set([...byDay.keys(), ...counted])).filter(d => d <= today).sort();
+  let total = 0, current = 0, freezes = 0, last = 0;
+  const perDay = {};
+  if (dates.length) {
+    for (let d = dates[0], n = 0; d <= today && n < 4000; d = addDays(d, 1), n++) {
+      if (counted.has(d)) {
+        if (current === 0 && last >= 3) st.restarts++;
+        current++; last = current; st.bestStreak = Math.max(st.bestStreak, current);
+        if (current % StreakFreezeEvery === 0) freezes = Math.min(StreakFreezeMax, freezes + 1);
+      } else if (d < today) {
+        if (current > 0 && freezes > 0) { freezes--; st.frozen++; } else current = 0;
+      }
+      const x = byDay.get(d);
+      if (x) { const got = Math.round((Math.min(SparkDayCap, x.base) + x.verified) * sparkMult(current)); total += got; perDay[d] = got; }
+    }
+  }
+  const awards = Awards.map(a => {
+    const value = st[a.stat] || 0, tier = a.tiers.filter(t => value >= t).length;
+    return { id: a.id, group: a.group, emoji: a.emoji, title: a.title, desc: a.desc, hidden: !!a.hidden, tier, value, tiers: a.tiers.slice(), next: a.tiers[tier] || 0 };
+  });
+  const bonus = awards.reduce((n, a) => n + awardBonus(a.tier), 0);
+  total += bonus;
+
+  // Today: a block finished now gets the multiplier of the streak with today in it.
+  const todayIn = counted.has(today), streakNow = current, multNext = sparkMult(todayIn ? current : current + 1);
+  const nextTier = SparkTiers.find(([dd]) => dd > streakNow);
+  const ws = weekStartOf(today), weekEarned = Object.entries(perDay).filter(([d]) => d >= ws).reduce((n, [, v]) => n + v, 0);
+  const blocks = {};
+  for (const b of profile.plan.blocks) blocks[b.id] = blockSparks(methodOf(b.goal), b.done ? b.doneMinutes || b.minutes : b.minutes, levelOfCourse.get(b.course));
+  const planned = profile.plan.weekStart === ws ? profile.plan.blocks.reduce((n, b) => n + Math.round(blocks[b.id] * multNext), 0) : 0;
+  const tiers = [1, 2, 3].map(t => awards.filter(a => a.tier >= t).length);
+  return {
+    total, bonus, level: levelOf(total), streak: streakNow, mult: sparkMult(streakNow), multNext,
+    nextTier: nextTier ? { days: nextTier[0] - streakNow, mult: nextTier[1] } : null, tiers: SparkTiers.map(x => x.slice()),
+    today: perDay[today] || 0, week: { earned: weekEarned, goal: planned || 300 }, blocks, awards,
+    count: { bronze: tiers[0], silver: tiers[1], gold: tiers[2], reached: tiers[0], all: Awards.length, hidden: awards.filter(a => a.hidden && !a.tier).length },
+  };
+}
+
+// The achievements reached since the last time they were announced; the first time ever, everything already reached is taken as known.
+function awardsNew(profile, info) {
+  const aw = profile.awards || (profile.awards = { init: false, seen: {}, perfectWeeks: [] }), out = [];
+  for (const a of info.awards) {
+    const was = aw.seen[a.id] || 0;
+    if (a.tier > was) { if (aw.init) out.push({ id: a.id, title: a.title, desc: a.desc, emoji: a.emoji, tier: a.tier, sparks: AwardSparks[a.tier] }); aw.seen[a.id] = a.tier; }
+  }
+  aw.init = true;
+  return out;
+}
+
 // ---------- The host ----------
 
 module.exports = {
@@ -555,18 +740,47 @@ module.exports = {
     TrackRoutineFromEvents(events, now) { return routineFromEvents(events, now); },
     TrackSuggestRating(n, ctx) { return suggestRating(n, ctx); },
     TrackRecommend(list, today) { return recommendTasks(list, today); },
-    TrackGoals(tasks) { return goalsFromTasks(tasks); },
+    TrackGoals(list, today) { return studyGoals(list, today); },
+    TrackSparks(profile, today) { return sparksInfo(profile, today); },
+    TrackMethod(goal) { return methodOf(goal); },
+    TrackLevel(total) { return levelOf(total); },
+    TrackAwardsNew(profile, info) { return awardsNew(profile, info); },
+
+    // What the rest of the app saw the student do (a memory card rated, a quiz finished) counts for sparks and achievements.
+    // Only once there is a study track; nothing is created for it. The page hears about sparks and achievements it earned.
+    TrackActivity(a) {
+      try {
+        if (!fileExists(this.TrackFile)) return null;
+        const profile = this.TrackLoad(), today = localDate(new Date()), before = sparksInfo(profile, today);
+        if (a.kind === 'card') profile.verified.cards[today] = (profile.verified.cards[today] || 0) + 1;
+        else if (a.kind === 'quiz') profile.verified.quizzes.push({ date: today, pct: clamp(Math.round(Number(a.pct) || 0), 0, 100), prev: Number(a.prev) >= 0 ? clamp(Math.round(Number(a.prev)), 0, 100) : -1 });
+        else return null;
+        const r = this.TrackReward(profile, before, today);
+        this.TrackSave(profile);
+        if (r.sparkGain.points > 0 || r.unlocked.length) this.Send(Object.assign({ type: 'sparks', kind: a.kind }, r));
+        return r;
+      } catch { return null; }
+    },
+    // Before and after something done: the sparks it gave (without the bonus of new achievements), the achievements, a new level.
+    TrackReward(profile, before, today) {
+      const after = sparksInfo(profile, today), unlocked = awardsNew(profile, after);
+      const points = after.total - after.bonus - (before.total - before.bonus);
+      return { sparkGain: { points, mult: after.mult, total: after.total }, unlocked, levelUp: after.level.level > before.level.level ? after.level : null };
+    },
 
     // The study tasks of every course in the profile that has a folder in the app (a course typed by hand has none).
     // Reading every lecture folder is slow on an external or iCloud disk, and the page asks for the tasks, then the week, within seconds:
     // the answer is kept for a minute for the same day and the same courses.
-    TrackTasks(profile, today) {
+    TrackTasks(profile, today) { return recommendTasks(this.TrackStudyList(profile, today), today); },
+    // The goals of the blocks, from the same folders.
+    TrackStudyGoals(profile, today) { return studyGoals(this.TrackStudyList(profile, today), today); },
+    TrackStudyList(profile, today) {
       const key = today + '|' + JSON.stringify(profile.courses.map(c => [c.name, c.level, c.examDate]));
       const hit = this.trackTasksCache;
-      if (hit && hit.key === key && Date.now() - hit.at < TasksCacheMs) return hit.tasks.map(t => Object.assign({}, t));
-      const tasks = this.TrackTasksRead(profile, today);
-      this.trackTasksCache = { key, at: Date.now(), tasks };
-      return tasks.map(t => Object.assign({}, t));
+      if (hit && hit.key === key && Date.now() - hit.at < TasksCacheMs) return JSON.parse(hit.json);
+      const list = this.TrackTasksRead(profile, today);
+      this.trackTasksCache = { key, at: Date.now(), json: JSON.stringify(list) };
+      return list;
     },
 
     TrackTasksRead(profile, today) {
@@ -584,10 +798,10 @@ module.exports = {
         const examDays = c.examDate && c.examDate >= today ? daysBetween(today, c.examDate) : ctx.exam ? ctx.exam.days : null;
         list.push({ course: c.name, folder, level: c.level, examDays, pastExams: ctx.pastExams, cardsDue: ctx.cardsDue, lectures });
       }
-      return recommendTasks(list, today);
+      return list;
     },
 
-    // The connected calendars (calendars.js keeps their text), read with the same iCal reader the page uses, over the last four weeks and the next two.
+    // The connected calendars (calendars.js keeps their text), read with the same iCal reader the page uses, over the next four weeks.
     TrackCalendarScan(now) {
       const list = typeof this.CalendarList === 'function' ? this.CalendarList() : [];
       const t = now instanceof Date ? now.getTime() : Date.now();
@@ -599,7 +813,7 @@ module.exports = {
         let ICal;
         try { ICal = require(path.join(require('../platform').WebDir, 'ical.js')); } catch { ICal = null; }
         for (const c of list) {
-          try { const f = this.CalendarFile(c.id); if (ICal && fileExists(f)) events = events.concat(ICal.expand(readText(f), t - 28 * 86400000, t + 14 * 86400000)); } catch { }
+          try { const f = this.CalendarFile(c.id); if (ICal && fileExists(f)) events = events.concat(ICal.expand(readText(f), t - 86400000, t + 28 * 86400000)); } catch { }
         }
       }
       const res = Object.assign(routineFromEvents(events, t), { calendars: list.length });
@@ -617,7 +831,7 @@ module.exports = {
       const nextWeek = !days.length || !roomLeft;
       return buildWeek(profile, classes, { weekStart: nextWeek ? addDays(weekStartOf(today), 7) : weekStartOf(today), today, nowMin,
         hours: Number(o.hours) || rt.hours, days, from: Str(o, 'from') || win.from, to, blocked: rt.commitments, block: rt.block, peak: rt.peak,
-        goals: goalsFromTasks(this.TrackTasks(profile, today)) });
+        goals: this.TrackStudyGoals(profile, today) });
     },
 
     get TrackFile() { return path.join(this.AppRoot, ProfileFolder, ProfileFile); },
@@ -644,6 +858,7 @@ module.exports = {
       writeText(tmp, JSON.stringify(profile, null, 2));
       try { if (fileExists(file)) { JSON.parse(readText(file)); fs.copyFileSync(file, file + '.bak'); } } catch { }
       fs.renameSync(tmp, file);
+      if (typeof this.BoardSoon === 'function') this.BoardSoon();
       // The Calendar app follows the plan when the student turned that on (calendar-sync.js).
       if (typeof this.CalSyncSchedule === 'function') { try { this.CalSyncSchedule(); } catch { } }
     },
@@ -675,7 +890,7 @@ module.exports = {
         if (x) c.examFromTimetable = Str(x, 'date');
       }
       const calendars = typeof this.CalendarList === 'function' ? this.CalendarList().length : 0;
-      return { type: 'trackState', profile, suggested: this.TrackSuggested(profile, this.trackPageCourses), today, weekStart: weekStartOf(today), stats: progressStats(profile, today), classes: arr(obj(tt).classes).length, calendars, window: routineWindow(profile.routine) };
+      return { type: 'trackState', profile, suggested: this.TrackSuggested(profile, this.trackPageCourses), today, weekStart: weekStartOf(today), stats: progressStats(profile, today), classes: arr(obj(tt).classes).length, calendars, window: routineWindow(profile.routine), sparks: sparksInfo(profile, today) };
     },
 
     StrategySystem(kind) {
@@ -759,7 +974,11 @@ module.exports = {
       const save = () => this.TrackSave(profile);
       const state = () => this.Send(this.TrackSnapshot());
 
-      if (op === 'load') { this.Send(this.TrackSnapshot(arr(m.courses))); return; }
+      if (op === 'load') {
+        // The first time with achievements, what was already reached is known, not announced all at once.
+        if (!profile.awards.init && fileExists(this.TrackFile)) { awardsNew(profile, sparksInfo(profile, today)); save(); }
+        this.Send(this.TrackSnapshot(arr(m.courses))); return;
+      }
 
       if (op === 'name') { profile.name = Trunc(Str(m, 'value').trim(), 60); save(); state(); return; }
 
@@ -824,7 +1043,7 @@ module.exports = {
         // Built after the last study day of the week (say, on a Friday for Sunday to Thursday), the plan is for the next week.
         const nextWeek = !days.length || now.getDay() > Math.max(...days);
         const week = buildWeek(profile, arr(obj(tt).classes), { weekStart: nextWeek ? addDays(weekStartOf(today), 7) : weekStartOf(today), today, nowMin: now.getHours() * 60 + now.getMinutes(),
-          hours: Number(m.hours) || 10, days, from: Str(m, 'from') || '09:00', to: Str(m, 'to') || '20:00', goals: goalsFromTasks(this.TrackTasks(profile, today)) });
+          hours: Number(m.hours) || 10, days, from: Str(m, 'from') || '09:00', to: Str(m, 'to') || '20:00', goals: this.TrackStudyGoals(profile, today) });
         profile.plan = { weekStart: week.weekStart, blocks: week.blocks };
         save();
         this.Send(Object.assign(this.TrackSnapshot(), { built: { unplaced: week.unplaced, blocks: week.blocks.length } }));
@@ -881,12 +1100,19 @@ module.exports = {
 
       if (op === 'done' || op === 'undo') {
         const b = profile.plan.blocks.find(x => x.id === Str(m, 'id')); if (!b) return;
+        const before = sparksInfo(profile, today);
         profile.log = profile.log.filter(e => e.block !== b.id);
         if (op === 'done') {
           const minutes = clamp(Int(m, 'minutes') || b.minutes, 1, 600);
           b.done = true; b.doneMinutes = minutes;
-          profile.log.push({ date: today, course: b.course, minutes, note: Trunc(b.goal, 120), block: b.id });
-        } else { b.done = false; b.doneMinutes = 0; }
+          profile.log.push({ date: today, course: b.course, minutes, note: Trunc(b.goal, 120), block: b.id, start: b.start });
+          // Every block of the week done (three at least): a perfect week, kept for its achievement.
+          const pw = profile.awards.perfectWeeks;
+          if (profile.plan.blocks.length >= 3 && profile.plan.blocks.every(x => x.done) && !pw.includes(profile.plan.weekStart)) pw.push(profile.plan.weekStart);
+          const r = this.TrackReward(profile, before, today);
+          save(); this.Send(Object.assign(this.TrackSnapshot(), r, { sparkBlock: b.id })); return;
+        }
+        b.done = false; b.doneMinutes = 0;
         save(); state(); return;
       }
 
@@ -927,7 +1153,11 @@ module.exports = {
           if (title && row.topics.length < Limits.topics) row.topics.push({ id: 't' + Date.now().toString(36) + row.topics.length, title, done: false });
         } else {
           const t = row.topics.find(x => x.id === Str(m, 'id'));
-          if (t && act === 'toggle') { t.done = !t.done; t.doneDate = t.done ? today : ''; }
+          if (t && act === 'toggle') {
+            const before = sparksInfo(profile, today);
+            t.done = !t.done; t.doneDate = t.done ? today : '';
+            if (t.done) { const r = this.TrackReward(profile, before, today); save(); this.Send(Object.assign(this.TrackSnapshot(), r)); return; }
+          }
           if (t && act === 'remove') row.topics = row.topics.filter(x => x !== t);
         }
         save(); state(); return;

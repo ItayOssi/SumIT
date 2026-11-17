@@ -22,7 +22,13 @@ function trackEvent(m) {
     S.track = m;
     const after = m.stats && m.stats.streakInfo;
     // The first thing finished today lights the flame: a small celebration, a bigger one on a milestone.
-    if (before && after && !before.todayDone && after.todayDone) streakCelebrate(after);
+    const lit = before && after && !before.todayDone && after.todayDone;
+    if (lit) streakCelebrate(after);
+    // Sparks, achievements and a new level earned by what was just done (after the flame, when it just lit).
+    if ((m.sparkGain || (m.unlocked && m.unlocked.length) || m.levelUp) && typeof sparksReward === 'function') {
+      const rect = S.sparkRect; S.sparkRect = null;
+      setTimeout(() => sparksReward(m, rect), lit ? (after.milestone ? 3000 : 2100) : 0);
+    }
     if (m.wizardDone) S.trackTab = 'overview';
     if (m.built && !m.wizardDone) toast(m.built.unplaced ? 'השבוע נבנה. ' + minLabel(m.built.unplaced) + ' לא נכנסו, אפשר להרחיב ימים או שעות.' : 'השבוע נבנה סביב מערכת השעות');
     renderTrack(); window.dispatchEvent(new Event('sumit-track')); if (typeof renderHeroBadges === 'function') renderHeroBadges();
@@ -105,7 +111,8 @@ const trackClock = (hhmm, plus) => { const [a, b] = hhmm.split(':').map(Number),
 const TRACK_DAY_LETTERS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 // Short minutes under a column: "1.5 ש׳" or "45 ד׳".
 const trackShort = (m) => !m ? '' : m >= 60 ? (Math.round(m / 30) / 2) + ' ש׳' : m + ' ד׳';
-const TRACK_TABS = [['overview', 'home', 'סקירה'], ['week', 'calendar', 'השבוע'], ['courses', 'book', 'קורסים'], ['progress', 'chart', 'התקדמות'], ['tools', 'settings', 'כלים']];
+const TRACK_TABS = [['overview', 'home', 'סקירה'], ['week', 'calendar', 'השבוע'], ['courses', 'book', 'קורסים'], ['progress', 'chart', 'התקדמות'], ['awards', 'trophy', 'הישגים'], ['board', 'users', 'חברים'], ['tools', 'settings', 'כלים']];
+const trackTabs = () => TRACK_TABS.filter(x => x[0] !== 'board' || (S.board && S.board.configured));
 S.trackTab = 'overview';
 const trackIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const trackDayIso = (weekStart, d) => { const x = new Date(trackDate(weekStart).getTime()); x.setDate(x.getDate() + d); return trackIso(x); };
@@ -166,7 +173,8 @@ function trackLegend(items) {
 function renderTrack() {
   const box = $('trackPage'); if (!box || !S.track) return;
   const t = S.track, p = t.profile, st = t.stats, plan = trackPlan(t);
-  if (!TRACK_TABS.some(x => x[0] === S.trackTab)) S.trackTab = 'overview';
+  if (!trackTabs().some(x => x[0] === S.trackTab)) S.trackTab = 'overview';
+  if (!S.boardAsked) { S.boardAsked = true; send({ type: 'board', op: 'state' }); }
   const keepY = window.scrollY;
   box.innerHTML = '';
 
@@ -193,15 +201,15 @@ function renderTrack() {
   box.append(hero);
 
   // ---- The tabs
-  const counts = { week: plan.blocks.length ? st.doneBlocks + '/' + st.plannedBlocks : '', courses: p.courses.length || '', overview: S.trackTasks && S.trackTasks.total ? S.trackTasks.total : '' };
+  const counts = { week: plan.blocks.length ? st.doneBlocks + '/' + st.plannedBlocks : '', courses: p.courses.length || '', overview: S.trackTasks && S.trackTasks.total ? S.trackTasks.total : '', awards: t.sparks && t.sparks.count.reached ? t.sparks.count.reached : '' };
   const tabs = h('<div class="tabs track-tabs" role="tablist" aria-label="מסלול הלמידה"></div>');
-  for (const [id, ic, label] of TRACK_TABS) {
+  for (const [id, ic, label] of trackTabs()) {
     const b = h(`<button type="button" role="tab" data-tab="${id}"><span data-ic="${ic}"></span></button>`);
     b.append(document.createTextNode(label));
-    if (counts[id]) { const n = h('<span class="badge"></span>'); n.textContent = counts[id]; b.append(n); }
+    if (counts[id]) { const n = h('<span class="badge"></span>'); n.textContent = counts[id]; if (id === 'awards') n.classList.add('gold'); b.append(n); }
     b.classList.toggle('active', id === S.trackTab); b.setAttribute('aria-selected', String(id === S.trackTab));
     b.onclick = () => {
-      const ids = TRACK_TABS.map(x => x[0]), from = ids.indexOf(S.trackTab), to = ids.indexOf(id);
+      const ids = trackTabs().map(x => x[0]), from = ids.indexOf(S.trackTab), to = ids.indexOf(id);
       if (to !== from) S.trackPaneDx = to > from ? '-28px' : '28px';   // the next pane slides in from that side, once
       S.trackTab = id; renderTrack();
     };
@@ -211,7 +219,7 @@ function renderTrack() {
 
   const pane = h('<div class="track-pane" role="tabpanel"></div>');
   if (S.trackPaneDx) { pane.classList.add('pane-in'); pane.style.setProperty('--pane-dx', S.trackPaneDx); S.trackPaneDx = ''; }
-  ({ overview: trackOverview, week: trackWeekPane, courses: trackCoursesPane, progress: trackProgressPane, tools: trackToolsPane })[S.trackTab](pane, t, p, st, plan);
+  ({ overview: trackOverview, week: trackWeekPane, courses: trackCoursesPane, progress: trackProgressPane, awards: trackAwardsPane, board: trackBoardPane, tools: trackToolsPane })[S.trackTab](pane, t, p, st, plan);
   box.append(pane);
   if (S.trackTab === 'tools') { renderICloud(); renderCalSync(); if (!S.calSyncAsked) { S.calSyncAsked = true; send({ type: 'calSync', action: 'state' }); } }
   icons(box);
@@ -235,7 +243,13 @@ function trackOverview(pane, t, p, st, plan) {
   tile('בלוקים', st.doneBlocks + '/' + st.plannedBlocks, st.plannedBlocks ? 'בוצעו' : 'אין עדיין תוכנית');
   tile('הרצף הכי ארוך', st.streakInfo ? streakDays(st.streakInfo.best) : '0 ימים', 'ימים ברצף שבהם השלמת משהו');
   tile('סך הכל', minLabel(st.totalMinutes), 'מאז שהתחלת');
-  if (st.streakInfo) pane.append(streakCard(st.streakInfo));
+  // The sparks and the streak side by side; the streak card has the multiplier of the sparks.
+  if (t.sparks && typeof sparksCard === 'function') {
+    const row = h('<div class="spark-row"></div>');
+    row.append(sparksCard(t.sparks));
+    if (st.streakInfo) row.append(streakCard(st.streakInfo, t.sparks));
+    pane.append(row);
+  } else if (st.streakInfo) pane.append(streakCard(st.streakInfo));
   pane.append(stats);
 
   const grid = h('<div class="track-grid"></div>');
@@ -276,12 +290,17 @@ function trackBlockRow(p, b, iso, compact) {
   const row = h(`<div class="track-block${b.done ? ' done' : ''}"><span dir="ltr" class="track-time"></span><div class="grow"><b dir="auto"></b><small class="muted" dir="auto"></small></div><div class="track-block-acts"></div></div>`);
   row.querySelector('.track-time').textContent = b.start + '–' + trackClock(b.start, b.minutes);
   row.querySelector('b').textContent = b.course;
-  row.querySelector('small').textContent = b.done ? 'בוצע · ' + minLabel(b.doneMinutes) : b.goal;
+  // A goal that starts with its study method ("שיטת פיינמן: ...") shows the method in bold.
+  const goalEl = row.querySelector('small'), cut = b.done ? -1 : b.goal.indexOf(':');
+  if (cut > 0 && cut <= 24) { const m = document.createElement('b'); m.className = 'track-method'; m.textContent = b.goal.slice(0, cut + 1); goalEl.append(m, ' ' + b.goal.slice(cut + 1).trim()); }
+  else goalEl.textContent = b.done ? 'בוצע · ' + minLabel(b.doneMinutes) : b.goal;
   row.querySelector('small').title = b.goal;
   const acts = row.querySelector('.track-block-acts');
   const btn = (label, cls, fn, ic, iconOnly) => { const x = h(`<button type="button" class="${cls} small${iconOnly ? ' icon-only' : ''}">${ic ? `<span data-ic="${ic}"></span>` : ''}</button>`); if (!iconOnly) x.append(document.createTextNode(label)); x.title = label; x.setAttribute('aria-label', label); x.onclick = fn; acts.append(x); };
+  const chip = typeof sparksChip === 'function' ? sparksChip(S.track && S.track.sparks, b) : null;
+  if (chip) acts.append(chip);
   if (b.done) { btn('בטל', 'ghost', () => trackSend({ op: 'undo', id: b.id }), 'back', true); return row; }
-  btn('בוצע', 'soft', () => trackSend({ op: 'done', id: b.id }), 'check');
+  btn('בוצע', 'soft', () => { S.sparkRect = row.getBoundingClientRect(); trackSend({ op: 'done', id: b.id }); }, 'check');
   if (S.blockOk && typeof openBlock === 'function') btn('מה לעשות בבלוק?', 'ghost', () => {
     const s = new Date(trackDate(iso)); const [hh, mm] = b.start.split(':').map(Number); s.setHours(hh, mm, 0, 0);
     openBlock({ title: (b.course + ' · ' + b.goal.split(':')[0]).slice(0, 110), start: s.getTime(), end: s.getTime() + b.minutes * 60000, uid: 'track-' + b.id });
@@ -545,7 +564,8 @@ function renderTrackTasks(root) {
     row.querySelector('small').textContent = t.course + ' · ' + t.why;
     row.querySelector('.chip').textContent = minLabel(t.minutes);
     const btn = (label, fn, ic) => { const x = h(`<button class="ghost small"><span data-ic="${ic}"></span>${label}</button>`); x.onclick = fn; row.append(x); };
-    if (p.courses.some(c => c.name === t.course)) btn('לבלוק', () => openBlockEditor(p, todayDay, null, { course: t.course, goal: t.title, minutes: Math.max(15, Math.min(240, t.minutes)) }), 'plus');
+    // Making a summary or transcribing is done by the app, not in a study block.
+    if (p.courses.some(c => c.name === t.course) && t.kind !== 'summary' && t.kind !== 'transcribe') btn('לבלוק', () => openBlockEditor(p, todayDay, null, { course: t.course, goal: t.title, minutes: Math.max(15, Math.min(240, t.minutes)) }), 'plus');
     const c = (S.courses || []).find(x => x.name === t.folder || x.name === t.course);
     if (c && typeof openCourse === 'function') btn('לקורס', () => openCourse(c), 'book');
     list.append(row);
@@ -602,7 +622,7 @@ function streakBadge(si) {
 }
 
 // The streak card on the overview: the flame and the number, what to do today, the days of this week, the freezes and the next milestone.
-function streakCard(si) {
+function streakCard(si, sp) {
   const c = h(`<div class="card pad-lg streak-card"><div class="streak-main"><div class="streak-big"><span class="streak-flame"></span><b></b></div>
     <div class="streak-text"><h3></h3><p class="muted"></p></div><div class="streak-side"><span class="streak-freeze" data-freeze></span><small class="muted" data-best></small></div></div>
     <div class="streak-week"></div><div class="streak-goal"><div class="streak-bar"><i></i></div><small class="muted" data-next></small></div></div>`);
@@ -629,6 +649,7 @@ function streakCard(si) {
   const span = Math.max(1, si.next - si.prev);
   c.querySelector('.streak-bar i').style.width = Math.round((si.current - si.prev) / span * 100) + '%';
   setEmo(c.querySelector('[data-next]'), 'עוד ' + streakDays(si.next - si.current) + ' ליעד הבא: ' + si.next + ' 🔥');
+  if (sp && typeof sparksLadder === 'function') c.querySelector('.streak-text').append(sparksLadder(sp));
   return c;
 }
 
