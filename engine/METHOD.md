@@ -19,6 +19,12 @@ Keep the page proportional to what was actually taught, not to a fixed template 
 
 Before saving or revising, check each paragraph: does it explain this lecture, bridge a necessary prerequisite, or support an assigned current exercise? Remove it otherwise. Preserve these choices during review and question-text repairs. A source preference is not a factual contradiction: flag actual mistakes or missing information briefly, without inventing facts or expanding the whole topic.
 
+## Course kind and a calm page
+
+- Decide from the material whether the course is quantitative (math, physics, engineering, programming, statistics) or verbal (history, social sciences, law, literature, philosophy, management).
+- A verbal course has no formulas: no `.fx` cards, no constants table, no formula sheet, no LaTeX, and never a made-up "equation" between words (not "Expansion = Motive + Capability"). Use short definitions, causes and effects, people/places/dates (a timeline only when there are several dates), and arguments with their evidence. Steps 1b and 4 then apply to the course's concepts and readings instead of formulas.
+- The student must not feel flooded. One order with no repeated sections: every idea appears once, where it is learned. At most one colored box per section, bold only for a term's first use, emoji only on the page's main headings, paragraphs of up to 3 sentences, lists of up to 6 items (split into a subsection instead), tables only for real comparisons, short active sentences and one name per term. A rebuild replaces the page; never keep sections of the previous version next to the new ones.
+
 ## 0. Always start from the course log
 
 The course folder holds a log file (e.g. `physics_claude.md`; template: `templates/course_log_template.md`).
@@ -60,7 +66,7 @@ built *from his worked solutions*, not from the topic:
    "small" ones (e.g. `hc = 1240 eV·nm`, the area fraction `πR²/4πD²`, `°C+273`, `eV/c -> kg·m/s`).
 2. Note his notation and sign conventions, and where they are inconsistent (e.g. stopping voltage
    positive in the theory slide but written as `V0 = −4 V` in examples). Show both on the page.
-3. Each reusable relation or technique needed by the selected questions appears as an **explicit formula card** (`.fx`, id `f-*`; techniques `t-*`)
+3. In a quantitative course, each reusable relation or technique needed by the selected questions appears as an **explicit formula card** (`.fx`, id `f-*`; techniques `t-*`)
    **inside the explanation subsection it belongs to** - not in one big separate formula list (the student
    rejected that). Each card explains: the symbols, what it says in words, when to use it, the trap, the
    lecturer's notation, and which questions use it. Concepts the questions ask about a lot get a one-line
@@ -83,9 +89,10 @@ built *from his worked solutions*, not from the topic:
 
 - Copy `templates/body_skeleton.html`, fill it, then
   `python -I scripts/assemble.py body.html "<course>/דפי לימוד/שבוע-N.html" "<Course> – שבוע N" <course>-wN-done`
-- Sections, in order: compact constants/units table (`#cheat`) · must/skip · core explanation
-  (numbered subsections with the formula cards from step 1b) · gaps (`g1..`) · question patterns table (`pat-A..`: recognise -> start from ->
-  trap) · errata · **🎯 שימוש בתרגילים** (`#use`, always last).
+- Sections, in order: one opening sentence (the lecture's idea) · must/skip (up to 5 lines each) · core explanation
+  (numbered subsections, one topic each, with the formula cards from step 1b in a quantitative course; a compact constants table `#cheat` only when the lecturer uses constants) · question patterns table (`pat-A..`: recognise -> start from ->
+  trap; only with two patterns or more) · **🎯 שימוש בתרגילים** (`#use`, always last).
+- Gaps (what the slides don't teach, `g1..`) and errata in the official solutions are small boxes inside the subsection or exercise they belong to, not sections of their own.
 - "שימוש בתרגילים": one collapsed card per exercise, `id="use-<key>"`, class `q`. First show the complete source-faithful question in `<section class="question-statement" data-source="file, page, question/subpart">`, before any hint or solution. Include all givens, units, constraints and what must be found/proved; reproduce necessary diagrams/tables. A short title or a PDF link is not enough. Each subpart includes its necessary common givens. Keep assumptions separate from source facts. If data is missing/unreadable, say exactly what is missing; never invent the question from its answer. Newly authored practice is labeled as such, including `data-source="תרגול שנוצר"`. Deferred questions also need the statement and source, then the reason for deferral. After the statement comes a **hint**:
   numbered steps per sub-question - where to start, which formulas (links to `#f-*`) in which order, the
   trap. Do not leak the final answer in the hint. A nested `<details class="reveal">`, initially closed, holds the full worked solution, reasons for important steps, and a units/sign/substitution check. Add a brief self-check when it helps catch a typical mistake. Keep the small
@@ -117,8 +124,15 @@ Rule: next to each question, in red: first line (bold) **"רמז: שימוש ב�
 ## 5. When exams arrive
 
 Tally topics/patterns per exam question, re-weight must/skip on every weekly page, fill the
-`exam-style` callouts, and build a "לקראת המבחן" page: formula sheet, the lecturer's recurring question
-templates (e.g. "two measurements, subtract to eliminate the unknown"), and practice in their style. Cite actual source questions and distinguish new practice from past-paper questions. Reassess priorities when exams are added without erasing assigned homework or prerequisites.
+`exam-style` callouts, and build the exam prep page. It is a focused review page, not a copy of all the material. Five parts, in this order:
+
+1. **איך נראה המבחן**: up to 4 lines: structure, time, allowed material, points, as published.
+2. **התבניות החוזרות**, the heart of the page: one card per template (`id="tpl-N"`), most frequent first, at most 8 (merge similar ones). Each card has a short name for the question type (e.g. "two measurements, subtract to eliminate the unknown"), how often it appeared and in which exams (counted from what you read), how to recognise it in the wording, a recipe of 3-5 steps, the main trap, and one past question with its full statement, source and a closed `details` solution. A past question appears under one template only.
+3. **דף עזר**: in a quantitative course, the formulas the templates use in one compact table per topic, each row naming its template (with an official formula sheet, only what it lacks); in a verbal course, the key terms, claims and dates, no formulas.
+4. **מבחן תרגול**: one exam only, in the real exam's structure and length; each question names its template; guided solutions in closed `details`; marked as generated practice, not a prediction.
+5. **לפני המבחן**: up to 6 lines: what to review, by the frequent templates and recurring traps.
+
+No list of every past question, no "about this page", no separate gaps/errata sections (an error in an official solution goes in its template). Cite actual source questions and distinguish new practice from past-paper questions. Reassess priorities when exams are added without erasing assigned homework or prerequisites.
 
 ## Reporting to the user
 

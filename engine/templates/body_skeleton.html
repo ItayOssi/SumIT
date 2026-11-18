@@ -19,41 +19,38 @@
 <header class="top">
   <div class="kicker">COURSE (CODE) · שבוע N · דף לימוד ממוקד מבחן</div>
   <h1>TOPIC TITLE</h1>
-  <p class="lede">The one idea behind every question this week, in 2-3 sentences.</p>
+  <p class="lede">The one idea behind this lecture, in ONE sentence.</p>
   <div class="progress"><span id="progText">0 מתוך 0 שאלות סומנו כפתורות</span><div class="bar"><i id="progBar"></i></div></div>
 </header>
 
+<!-- A calm page: one order, every idea once, at most one colored box per section, paragraphs of up to 3 sentences,
+     lists of up to 6 items, emoji only on these main headings. A VERBAL course (history, law, social sciences) has no
+     formulas: no .fx cards, no constants table, no LaTeX, no made-up equations between words. -->
 <nav class="toc">
-  <a href="#cheat">קבועים</a>
   <a href="#must">חובה / לדלג</a>
   <a href="#core">TOPIC</a>
-  <a href="#gaps">השלמות</a>
   <a href="#patterns">תבניות שאלה</a>
-  <a href="#errata">טעויות בפתרונות</a>
   <a href="#use">🎯 שימוש בתרגילים</a>
 </nav>
 
-<!-- 1. CONSTANTS & UNITS the lecturer uses (compact table only - formulas go into their sections) -->
-<h2 id="cheat">⚡ קבועים ויחידות שהמרצה משתמש בהם</h2>
-<div class="card"><div class="tablewrap"><table>
-  <tr><th>מה</th><th>ערך</th><th>הערה</th></tr>
-  <tr id="f-NAME"><td><b>NAME</b></td><td>$VALUE$</td><td>when / trap</td></tr>
-</table></div></div>
-
-<!-- 2. MUST vs SKIP - justified by counting what the exercises/exams actually use -->
+<!-- 1. MUST vs SKIP - justified by counting what the exercises/exams actually use. Up to 5 lines on each side. -->
 <h2 id="must">🎯 מה חובה ומה אפשר לדלג</h2>
 <p>הסיווג מבוסס על X שאלות התרגיל של השבוע: ...</p>
-<div class="callout"><b class="h">📌 שימו לב</b>Decks with no exercises yet / moved to another week.</div>
 <div class="grid2">
   <div class="card"><h3 style="margin-top:0"><span class="tag t-must">חובה</span></h3><ul><li>...</li></ul></div>
   <div class="card"><h3 style="margin-top:0"><span class="tag t-skip">רקע, אפשר לדלג</span></h3><ul class="skiplist"><li>...</li></ul></div>
 </div>
 
-<!-- 3. CORE EXPLANATION - numbered subsections (id topic-N). EVERY formula the lecturer uses in any solution
+<!-- 2. CORE EXPLANATION - numbered subsections (id topic-N). In a quantitative course, EVERY formula the lecturer uses in any solution
      appears here, inside the subsection it belongs to, as a .fx card: the formula, what each symbol means,
      what it says in words, when to use it, the trap, and which questions use it. Key concepts that questions
      ask about a lot get a one-line .big-idea statement (e.g. "λ0 is the MAXIMUM wavelength that still ejects electrons"). -->
 <h2 id="core">TOPIC</h2>
+<!-- Quantitative course, only when the lecturer uses constants: a compact table, formulas stay in their subsections.
+<div class="card" id="cheat"><div class="tablewrap"><table>
+  <tr><th>מה</th><th>ערך</th><th>הערה</th></tr>
+  <tr id="f-NAME"><td><b>NAME</b></td><td>$VALUE$</td><td>when / trap</td></tr>
+</table></div></div> -->
 <div class="card">
   <h3 id="core-1">1. SUBTOPIC</h3>
   <p class="big-idea">The one sentence the student must remember.</p>
@@ -64,16 +61,11 @@
     <dt>שימו לב</dt><dd>trap / sign / units / lecturer's notation and inconsistencies</dd></dl>
     <div class="used">שאלות: Q1, Q2(ב)</div>
   </div>
+  <!-- What the slides don't teach but the exercises need goes HERE, in the subsection it belongs to (id g1, g2...): -->
+  <div class="callout" id="g1"><b class="h">לא במצגת</b>...</div>
 </div>
 
-<!-- 4. GAPS: what the exercises need that the slides don't teach (or teach badly). ids g1, g2, ... -->
-<h2 id="gaps">🧩 השלמות: מה שהמצגות לא מסבירות והתרגילים דורשים</h2>
-<div class="card">
-  <h3 id="g1" style="margin-top:0">1. ... <span class="tag t-gap">לא מופיע במצגת</span></h3>
-  <p>...</p>
-</div>
-
-<!-- 5. QUESTION PATTERNS: recognise -> start from -> trap. Row ids pat-A, pat-B, ... -->
+<!-- 3. QUESTION PATTERNS (only with two or more): recognise -> start from -> trap. Row ids pat-A, pat-B, ... -->
 <h2 id="patterns">🧭 תבניות שאלה: לזהות ← לבחור נוסחה ← לפתור</h2>
 <div class="card"><div class="tablewrap"><table>
   <tr><th>#</th><th>איך מזהים</th><th>מאיפה מתחילים</th><th>מלכודת</th></tr>
@@ -81,11 +73,7 @@
 </table></div></div>
 <div class="callout exam" id="exam-style"><b class="h">🎓 איך נראית שאלת מבחן</b>Only if a question carries points / comes from an exam.</div>
 
-<!-- 6. ERRATA in the official solutions (verify by recomputing!) -->
-<h2 id="errata">⚠️ טעויות בפתרונות הרשמיים</h2>
-<div class="callout err"><ol class="steps" style="margin:0"><li><b>FILE Q:</b> what is written vs what is right.</li></ol></div>
-
-<!-- 7. USE IN EXERCISES - the LAST section. One collapsed card per exercise (id="use-<key>").
+<!-- 4. USE IN EXERCISES - the LAST section. An error in an official solution is a small box inside its exercise (class="callout err"). One collapsed card per exercise (id="use-<key>").
      Visible part = complete source question, then HINT: where to start, which formulas (links to #f-*) in what order, no final answer.
      Inside a second <details>: the full worked solution. PDF pointers link to use-<key>. -->
 <h2 id="use">🎯 שימוש בתרגילים</h2>

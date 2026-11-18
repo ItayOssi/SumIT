@@ -918,7 +918,8 @@ partial class HitStudent
             + StudyLearningPolicy + CompleteQuestionPolicy
             + "קרא את כל המבחנים והפתרונות ב-\"" + Exams + "\", ואת סיכומי ההרצאות (\"" + SummaryName + "/" + SummaryHtmlName + "\" בכל תיקיית הרצאה, ואת התקצירים ב-\"" + SumitDir + "/digests\" - קודם אותם), ורק לפי הצורך את קבצי ההרצאות. המטרה: להבין איך המרצה חושב.\n"
             + "כתוב את \"" + LecturerProfile + "\": איזה נושאים חוזרים ובאיזו תדירות, תבניות השאלות שלו, איך הוא מצפה שיפתרו (שלבים, סימונים, רמת פירוט), מלכודות שהוא אוהב, ומה דפוסי הבחינות הקודמות; אין להבטיח מה יופיע בבחינה הבאה.\n"
-            + "ובנה את דף \"" + Exams + "/" + ExamPrepPage + "\" עם דף נוסחאות, תבניות השאלות החוזרות ושני מבחני תרגול חדשים עם פתרונות מודרכים נפתחים. סמן אותם כמבחנים שנוצרו לתרגול, לא תחזית. התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים." + WorkAlone;
+            + "ובנה מחדש את דף \"" + Exams + "/" + ExamPrepPage + "\" (הוא מחליף את הדף הקודם במלואו). התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים.\n"
+            + StudySubjectPolicy + ExamPrepLayoutPolicy + StudyCalmRules + WorkAlone;
         var result = await CourseTask(key, course, s => Send(new { type = "courseStatus", course = course, text = s, busy = true }), prompt);
         string prepFile = Path.Combine(CourseDir(course), Exams, ExamPrepPage);
         if (File.Exists(prepFile))

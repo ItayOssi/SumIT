@@ -263,6 +263,7 @@ async function run() {
     await runInstitutionTests(app, root, check);
     await runRecordingTests(app, root, check);
     await runQuizTests(app, root, check);
+    await runStudyLayoutTests(app, root, check);
 
     // 8. Summary Share and Study Policy port verification
     const { buildSummaryShare } = require('../lib/modules/summary-share');
@@ -2893,6 +2894,7 @@ async function runRecordingTests(app, root, check) {
   try { await app.LecturePdfCoreAsync(course, 1, 'L1', false, true); }
   finally { Object.assign(app, saved); }
   check('with a transcript the summary is asked to mark what was said only in the lecture', prompt.includes('class="from-lecture"') && prompt.includes('אל תמציא'));
+  check('the summary is asked for one calm order and for no formulas in a verbal course', prompt.includes('בלי סעיפים שחוזרים') && prompt.includes('בקורס מילולי אין נוסחאות') && !prompt.includes('Core Takeaway'));
   check('the summary\'s status says the transcript was read and what it added', statuses[statuses.length - 1].includes('התמלול נקרא (52 דקות)') && statuses[statuses.length - 1].includes('2 נקודות מהשיעור'));
   const L = app.LocalInfo(course, 1);
   check('the lecture\'s info has the sources and the length of the recording', L.sources && L.sources.fromLecture === 2 && L.recordings[0].seconds === 3130 && L.recordings[0].short === '');
@@ -2983,4 +2985,72 @@ async function runQuizTests(app, root, check) {
   check('quiz: a summary of another course is refused', sent.find(m => m.type === 'quizResult').error);
   app.Send = realSend; app.SummaryGemini = realGem; app.HelperMode = realMode;
   app.settings.studyRoot = saved;
+}
+
+// A course without formulas (history, law): its study pages, cards and quiz get no formulas; every page has one calm order.
+async function runStudyLayoutTests(app, root, check) {
+{
+  const P = require('../lib/modules/study-policy');
+  check('study policy: a summary with math is told apart from one without (a history course)',
+    P.summaryHasMath('<p>$q=ne$ ו-$F=ma$ ו-$$E=mc^2$$</p>') && !P.summaryHasMath('<h1>עידן התגליות</h1><p>קולומבוס הגיע ב-1492.</p><script>var a="$x$ $y$ $z$"</script>'));
+  check('study policy: a verbal course gets no formula cards, no LaTeX and no made-up equations between words',
+    P.StudySubjectPolicy.includes('בקורס מילולי אין נוסחאות') && P.StudySubjectPolicy.includes('.fx') && P.StudySubjectPolicy.includes('LaTeX') && P.StudySubjectPolicy.includes('התפשטות = מניע + יכולת'));
+  check('study policy: one order with no repeated sections, gaps and errata inside their section, and a rebuild replaces the page',
+    P.StudyLayoutPolicy.includes('בלי סעיפים שחוזרים') && P.StudyLayoutPolicy.includes('"השלמות"') && P.StudyLayoutPolicy.includes(P.StudyCalmRules) && P.StudyCalmRules.includes('עד 3 משפטים') && P.StudyCalmRules.includes('בנייה מחדש מחליפה'));
+  check('exam prep policy: templates by frequency with their source, one practice exam, and no list of every past question',
+    P.ExamPrepLayoutPolicy.includes('id="tpl-1"') && P.ExamPrepLayoutPolicy.includes('מהשכיחה לנדירה') && P.ExamPrepLayoutPolicy.includes('מבחן אחד בלבד') && P.ExamPrepLayoutPolicy.includes('אל תכלול רשימה של כל שאלות העבר'));
+
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'plain-courses');
+  const course = 'קורס-היסטוריה';
+  app.SaveLecture(course, { num: 1, title: 'הרצאה 1' });
+  const page = app.StudyPagePath(course, 1);
+  mkdirp(path.dirname(page)); writeText(page, '<html><body><h1>עידן התגליות</h1><p>פורטוגל, קולומבוס ב-1492, והכיבוש הספרדי.</p></body></html>');
+  const sent = [], calls = [];
+  const realSend = app.Send, realGem = app.SummaryGemini, realMode = app.HelperMode;
+  app.Send = (m) => sent.push(m);
+  app.HelperMode = () => 'key';
+  const cards = [{ front: 'למה יצאה פורטוגל למסעות?', back: 'בגלל מניע כלכלי ודתי ויכולת ימית.', tag: 'פורטוגל' }];
+  app.SummaryGemini = async (system) => { calls.push(system); return { Text: calls.length % 3 ? 'טיוטה' : JSON.stringify(cards) }; };
+  writeText(app.FlashcardsFile(page), JSON.stringify({ summaryMtime: fs.statSync(page).mtimeMs, cards: [{ front: 'מה התנאי?', back: '$\\text{Expansion} = \\text{Motive} + \\text{Capability}$', tag: 'x' }] }));
+  await app.MakeFlashcards({ requestId: 'p1', course, path: page });
+  const made = sent.find(m => m.type === 'flashcardsResult');
+  check('cards: old cards with LaTeX for a summary without math are made again', made && !made.cached && calls.length === 3 && made.cards[0].back === cards[0].back);
+  check('cards: a summary without math is asked for plain sentences, with no formulas', calls.every(c => c.includes('no LaTeX')) && !calls[0].includes('formulas, definitions'));
+  sent.length = 0; calls.length = 0;
+  await app.MakeFlashcards({ requestId: 'p2', course, path: page });
+  check('cards: the plain cards are kept and open with no AI call', calls.length === 0 && sent.find(m => m.type === 'flashcardsResult').cached);
+
+  const qs = [{ type: 'tf', q: 'קולומבוס הגיע לאמריקה ב-1492', answer: true, why: 'כך', tag: 'קולומבוס' }, { type: 'tf', q: 'פורטוגל הייתה ממלכה גדולה', answer: false, why: 'קטנה', tag: 'פורטוגל' }, { type: 'cloze', q: 'הספרדים כבשו את ____', answer: 'האצטקים', accept: [], why: 'כך', tag: 'כיבוש' }];
+  app.SummaryGemini = async (system) => { calls.push(system); return { Text: calls.length % 3 ? 'טיוטה' : JSON.stringify(qs) }; };
+  writeText(app.QuizFile(page), JSON.stringify({ summaryMtime: fs.statSync(page).mtimeMs, questions: [{ type: 'tf', q: '$a=b$', answer: true }], attempts: [{ date: '2099-01-01', right: 1, total: 1 }] }));
+  sent.length = 0; calls.length = 0;
+  await app.MakeQuiz({ requestId: 'p3', course, path: page });
+  const quiz = sent.find(m => m.type === 'quizResult');
+  check('quiz: an old quiz with LaTeX for a summary without math is made again in plain sentences, and the scores stay',
+    quiz && !quiz.cached && quiz.questions.length === 3 && calls.length === 3 && calls.every(c => c.includes('no LaTeX')) && calls[0].includes('causes and their effects') && quiz.attempts.length === 1);
+
+  writeText(page, '<html><body><p>$v=at$, $x=\\frac12 at^2$ ו-$F=ma$</p></body></html>');
+  fs.utimesSync(page, new Date(), new Date(Date.now() + 5000));
+  sent.length = 0; calls.length = 0;
+  await app.MakeQuiz({ requestId: 'p4', course, path: page });
+  check('quiz: a summary with math still asks for formulas in LaTeX', calls.length === 3 && calls[0].includes('formulas, mechanisms and solution steps') && calls.some(c => c.includes('Use LaTeX')));
+  app.Send = realSend; app.SummaryGemini = realGem; app.HelperMode = realMode;
+  app.settings.studyRoot = saved;
+}
+
+// The exam prep page: asked for the calm structure, with the lecturer's templates, and the course kind.
+{
+  const saved = app.settings.studyRoot;
+  app.settings.studyRoot = path.join(root, 'prep-courses');
+  const course = 'קורס-הכנה';
+  writeText(path.join(app.CourseDir(course), C.Exams, 'מבחן 2024.pdf'), 'x');
+  const keep = { CourseTask: app.CourseTask, AiReadyOrSay: app.AiReadyOrSay, Send: app.Send, Notify: app.Notify };
+  let prompt = '';
+  app.AiReadyOrSay = () => true; app.Send = () => { }; app.Notify = () => { };
+  app.CourseTask = async (key, c, status, p) => { prompt = p; return { Error: false, Text: 'ok' }; };
+  try { await app.ExamPrepCore(course); } finally { Object.assign(app, keep); app.settings.studyRoot = saved; }
+  check('exam prep: the page is rebuilt with templates by frequency, one practice exam and the calm rules',
+    prompt.includes('מחליף את הדף הקודם') && prompt.includes('התבניות החוזרות') && prompt.includes('מבחן אחד בלבד') && prompt.includes('בקורס מילולי אין נוסחאות') && prompt.includes('עד 3 משפטים') && !prompt.includes('שני מבחני תרגול'));
+}
 }

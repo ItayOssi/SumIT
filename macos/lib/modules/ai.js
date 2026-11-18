@@ -12,6 +12,7 @@ const {
 const platform = require('../platform');
 const C = require('../constants');
 const Inst = require('../institution');
+const Policy = require('./study-policy');
 
 const TimetableExt = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.html', '.htm', '.txt']);
 
@@ -1002,7 +1003,8 @@ module.exports = {
         + this.CourseContext(course) + '\n'
         + 'קרא את כל המבחנים והפתרונות ב-"' + C.Exams + '", ואת סיכומי ההרצאות ("' + C.SummaryName + '/' + C.SummaryHtmlName + '" בכל תיקיית הרצאה, ואת התקצירים ב-"' + C.SumitDir + '/digests" - קודם אותם), ורק לפי הצורך את קבצי ההרצאות. המטרה: להבין איך המרצה חושב.\n'
         + 'כתוב את "' + C.LecturerProfile + '": איזה נושאים חוזרים ובאיזו תדירות, תבניות השאלות שלו, איך הוא מצפה שיפתרו (שלבים, סימונים, רמת פירוט), מלכודות שהוא אוהב, ומה דפוסי הבחינות הקודמות; אין להבטיח מה יופיע בבחינה הבאה.\n'
-        + 'ובנה את דף "' + C.Exams + '/' + C.ExamPrepPage + '" עם דף נוסחאות, תבניות השאלות החוזרות ושני מבחני תרגול חדשים עם פתרונות מודרכים נפתחים. סמן אותם כמבחנים שנוצרו לתרגול, לא תחזית. התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים.' + WorkAlone;
+        + 'ובנה מחדש את דף "' + C.Exams + '/' + C.ExamPrepPage + '" (הוא מחליף את הדף הקודם במלואו). התחל מסיכומי ההרצאות הקיימים וחזור למקורות רק להשלמת פערים.\n'
+        + Policy.StudySubjectPolicy + Policy.ExamPrepLayoutPolicy + Policy.StudyCalmRules + WorkAlone;
 
       const result = await this.CourseTask(key, course, s => this.Send({ type: 'courseStatus', course, text: s, busy: true }), prompt);
       const prepFile = path.join(this.CourseDir(course), C.Exams, C.ExamPrepPage);

@@ -17,6 +17,9 @@ partial class HitStudent
             app.settings["studyRoot"] = root;
             Action<string, bool> check = (label, ok) => { if (!ok) throw new Exception(label); Console.WriteLine("PASS: " + label); };
             check("updates default to consent", !app.Option("autoUpdate"));
+            check("study pages: a verbal course gets no formulas, one calm order, and the exam prep page has templates and one practice exam",
+                StudySubjectPolicy.Contains("בקורס מילולי אין נוסחאות") && StudyLayoutPolicy.Contains("בלי סעיפים שחוזרים") && StudyLayoutPolicy.EndsWith(StudyCalmRules)
+                && ExamPrepLayoutPolicy.Contains("id=\"tpl-1\"") && ExamPrepLayoutPolicy.Contains("מבחן אחד בלבד"));
             check("automatic downloads off", !app.Option("autoSync") && !app.Option("autoRecordings"));
             string course = "test-course";
             app.SaveLecture(course, new Dictionary<string, object> { { "num", 1 }, { "title", "Lecture 1" }, { "date", "2026-10-25" }, { "due", "" } });
