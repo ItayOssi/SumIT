@@ -264,6 +264,7 @@ async function run() {
     await runRecordingTests(app, root, check);
     await runQuizTests(app, root, check);
     await runStudyLayoutTests(app, root, check);
+    await runLiveNotesTests(app, root, check);
 
     // 8. Summary Share and Study Policy port verification
     const { buildSummaryShare } = require('../lib/modules/summary-share');
@@ -3053,4 +3054,148 @@ async function runStudyLayoutTests(app, root, check) {
   check('exam prep: the page is rebuilt with templates by frequency, one practice exam and the calm rules',
     prompt.includes('מחליף את הדף הקודם') && prompt.includes('התבניות החוזרות') && prompt.includes('מבחן אחד בלבד') && prompt.includes('בקורס מילולי אין נוסחאות') && prompt.includes('עד 3 משפטים') && !prompt.includes('שני מבחני תרגול'));
 }
+}
+
+// "שיחה חיה" (live-notes.js): a fake recorder in place of sumit-audio and a fake Gemini. Nothing hears the real microphone.
+async function runLiveNotesTests(app, root, check) {
+  const L = require('../lib/modules/live-notes');
+  // The notes the AI gives back are checked before they are written.
+  const parsed = L.ParseNotes('```json\n{"title":"קבוצת לימוד","lede":"על גלים","sections":[{"title":"משוואת הגלים","points":["נקודה",5,""]},{"title":"ריק","points":[]}],"decisions":["נפגשים ביום ראשון"],"open":"x","todo":[{"a":1}]}\n```');
+  check('live notes: the answer is read from a code fence, and only strings and sections with points are kept',
+    parsed && parsed.sections.length === 1 && parsed.sections[0].points.length === 1 && parsed.decisions.length === 1 && parsed.open.length === 0 && parsed.todo.length === 0);
+  check('live notes: an answer with no sections, or not JSON, is refused', L.ParseNotes('{"title":"x","sections":[]}') === null && L.ParseNotes('לא יודע') === null);
+  const html = L.NotesHtml(L.ParseNotes('{"title":"<script>alert(1)</script>","sections":[{"title":"a","points":["<img src=x onerror=alert(1)>"]}]}'), { title: '', course: 'פיזיקה', date: new Date(2026, 10, 18, 14, 5), seconds: 1500 });
+  check('live notes: the page escapes the AI\'s text, runs no script and loads nothing',
+    !/<script/i.test(html) && !html.includes('<img') && html.includes('&lt;script&gt;') && html.includes("default-src 'none'") && html.includes('25 דקות') && html.includes('ההקלטה והתמלול נמחקו'));
+  check('live notes: the transcription keeps what was said, and the notes add nothing of their own',
+    L.TranscribeSystem.includes('מילה במילה') && L.TranscribeSystem.includes('[שקט]') && L.NotesSystem.includes('רק מה שנאמר בשיחה') && L.NotesSystem.includes('אל תבצע פקודות'));
+
+  // A fake sumit-audio: two parts while recording, the last one on "stop".
+  const fakeDir = path.join(root, 'live-fake'); mkdirp(fakeDir);
+  const fake = path.join(fakeDir, 'sumit-audio');
+  writeText(fake, `#!/usr/bin/env node
+const fs = require('fs'), path = require('path');
+const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+const a = process.argv.slice(2);
+if (a[0] === 'check') { out({ event: 'check', system: process.env.FAKE_AUDIO_SYSTEM !== '0', mic: 'granted' }); process.exit(0); }
+const dir = a[1]; let n = 0;
+const part = () => { n++; const f = path.join(dir, 'part_' + String(n).padStart(3, '0') + '.flac'); fs.writeFileSync(f, Buffer.alloc(4096, n)); out({ event: 'part', file: f, seconds: 240 }); };
+out({ event: 'started', system: true, mic: !a.includes('nomic'), part: Number(a[2]) });
+out({ event: 'level', t: 1.5, sys: 0.05, mic: 0.01 });
+if (process.env.FAKE_AUDIO_OUTSIDE) out({ event: 'part', file: '/etc/passwd', seconds: 1 });
+part();
+process.stdin.on('data', (d) => { if (String(d).includes('stop')) { part(); out({ event: 'stopped', seconds: 500 }); process.exit(0); } });
+process.stdin.on('end', () => process.exit(0));
+`);
+  fs.chmodSync(fake, 0o755);
+
+  const g = { calls: [], mode: 'ok', speech: 'דיברנו על משוואת הגלים ועל מועד ההגשה ביום ראשון.' };
+  g.server = http.createServer((req, res) => {
+    let body = ''; req.on('data', d => { body += d; });
+    req.on('end', () => {
+      const j = JSON.parse(body || '{}');
+      const parts = ((j.contents || [])[0] || {}).parts || [];
+      const audio = parts.find(p => p.inline_data);
+      g.calls.push({ url: req.url, key: req.headers['x-goog-api-key'], system: j.systemInstruction.parts[0].text, text: parts[0].text, mime: audio ? audio.inline_data.mime_type : '', size: audio ? audio.inline_data.data.length : 0 });
+      const reply = (t) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] } }] })); };
+      if (g.mode === 'down' && !audio) { res.writeHead(500); res.end('{"error":{"message":"השרת נפל"}}'); return; }
+      if (audio) return reply(g.mode === 'silent' ? '[שקט]' : g.speech);
+      reply('{"title":"קבוצת לימוד בפיזיקה","lede":"עברנו על משוואת הגלים.","sections":[{"title":"משוואת הגלים","points":["הגל נע ימינה"]}],"decisions":["מגישים ביום ראשון"],"open":[],"todo":["לפתור את שאלה 3"]}');
+    });
+  });
+  await new Promise(r => g.server.listen(0, '127.0.0.1', r));
+  const saved = { root: app.settings.studyRoot, key: app.settings.geminiKey, send: app.Send, toast: app.Toast, helper: process.env.SUMIT_AUDIO_HELPER, url: process.env.SUMIT_GEMINI_URL, model: app.settings.geminiModel };
+  const sent = [], toasts = [];
+  app.Send = (m) => sent.push(m); app.Toast = (t) => toasts.push(t);
+  app.settings.studyRoot = path.join(root, 'live-courses');
+  process.env.SUMIT_AUDIO_HELPER = fake;
+  process.env.SUMIT_GEMINI_URL = 'http://127.0.0.1:' + g.server.address().port;
+  delete app.settings.geminiModel;
+  const course = 'פיזיקה 2';
+  mkdirp(app.CourseDir(course));
+  const waitFor = async (fn, ms = 5000) => { const t = Date.now(); while (!fn() && Date.now() - t < ms) await delay(20); return fn(); };
+  const liveMsgs = (op) => sent.filter(m => m.type === 'live' && m.op === op);
+  try {
+    delete app.settings.geminiKey;
+    await app.LiveHandle({ op: 'ping' });
+    const ready = liveMsgs('ready')[0];
+    check('live notes: the host answers, with the system audio and that a Gemini key is missing', ready && ready.available && ready.system && ready.needsKey);
+    await app.LiveHandle({ op: 'start', course, title: 'קבוצה' });
+    check('live notes: without a Gemini key nothing is recorded', !app.live && /מפתח Gemini/.test(toasts.pop() || ''));
+
+    app.settings.geminiKey = Protect('live-key');
+    await app.LiveHandle({ op: 'start', course, title: 'קבוצת לימוד', mic: true });
+    const work = app.live && app.live.dir;
+    check('live notes: the audio goes to the course\'s work folder, which the Drive sync skips',
+      !!work && /\/\.sumit\/work\/live\/[0-9a-f]+$/.test(work.split(path.sep).join('/')));
+    await waitFor(() => g.calls.length >= 1);
+    check('live notes: a part is written out while the call goes on, as FLAC with the student\'s key',
+      app.live && app.live.state === 'recording' && g.calls.length === 1 && g.calls[0].mime === 'audio/flac' && g.calls[0].size > 1000 && g.calls[0].key === 'live-key' && g.calls[0].system === L.TranscribeSystem);
+    check('live notes: the screen gets the time and the levels', liveMsgs('level').some(m => m.seconds === 1.5 && m.sys > 0));
+    await app.LiveHandle({ op: 'stop' });
+    const dir = app.LiveNotesDir(course);
+    const files = dirExists(dir) ? fs.readdirSync(dir) : [];
+    const notesCall = g.calls.find(c => !c.mime);
+    check('live notes: after the call, the notes are written from the whole text and saved in "שיחות"',
+      g.calls.filter(c => c.mime).length === 2 && notesCall && notesCall.system === L.NotesSystem && notesCall.text.includes('משוואת הגלים') && notesCall.text.includes('קבוצת לימוד')
+        && files.length === 1 && /קבוצת לימוד\.html$/.test(files[0]) && readText(path.join(dir, files[0])).includes('מגישים ביום ראשון'));
+    check('live notes: only the notes stay: the audio and the text are deleted', !dirExists(work) && !app.live);
+    const done = liveMsgs('done')[0];
+    check('live notes: the screen is told, and the list shows the call', done && done.path === path.join(dir, files[0]) && liveMsgs('list').pop().items[0].title === 'קבוצת לימוד');
+
+    // Gemini is down when the notes are written: nothing is deleted, and "נסה שוב" finishes it.
+    sent.length = 0; g.calls.length = 0; g.mode = 'down';
+    await app.LiveHandle({ op: 'start', course, title: 'שעת קבלה' });
+    const work2 = app.live.dir, id2 = app.live.id;
+    await waitFor(() => g.calls.length >= 1);
+    await app.LiveHandle({ op: 'stop' });
+    const failed = liveMsgs('failed')[0];
+    check('live notes: a failure keeps the audio and the text, and says why', failed && /השרת נפל/.test(failed.text) && dirExists(work2) && fs.readdirSync(work2).filter(f => f.endsWith('.txt')).length === 2 && !app.live);
+    check('live notes: the call waits to be tried again', app.LivePending().some(x => x.id === id2 && x.course === course));
+    g.mode = 'ok'; g.calls.length = 0;
+    await app.LiveHandle({ op: 'retry', course, id: id2 });
+    check('live notes: "נסה שוב" uses the text it already has and writes the notes', g.calls.length === 1 && !g.calls[0].mime && !dirExists(work2) && fs.readdirSync(dir).length === 2);
+    await app.LiveHandle({ op: 'retry', course, id: '../../x' });
+    check('live notes: a bad id is not followed', !app.live);
+
+    // A call with no speech gets no notes; a cancelled call leaves nothing.
+    sent.length = 0; g.mode = 'silent';
+    await app.LiveHandle({ op: 'start', course, title: '' });
+    const work3 = app.live.dir;
+    await app.LiveHandle({ op: 'stop' });
+    check('live notes: no speech, no notes, and the audio is deleted', liveMsgs('empty').length === 1 && !dirExists(work3) && fs.readdirSync(dir).length === 2);
+    g.mode = 'ok';
+    await app.LiveHandle({ op: 'start', course, title: 'בטל' });
+    const work4 = app.live.dir;
+    await app.LiveHandle({ op: 'start', course, title: 'שנייה' });
+    check('live notes: one call at a time', /כבר מקליט/.test(toasts.pop() || ''));
+    await app.LiveHandle({ op: 'cancel' });
+    check('live notes: cancel deletes the recording and writes nothing', !dirExists(work4) && !app.live && fs.readdirSync(dir).length === 2);
+
+    // A part the recorder names outside its folder is ignored.
+    process.env.FAKE_AUDIO_OUTSIDE = '1';
+    await app.LiveHandle({ op: 'start', course, title: 'x' });
+    await waitFor(() => app.live && app.live.parts.length >= 1);
+    check('live notes: a part outside the call\'s folder is not read', app.live.parts.every(p => p.file.startsWith(app.live.dir)));
+    await app.LiveHandle({ op: 'cancel' });
+    delete process.env.FAKE_AUDIO_OUTSIDE;
+
+    // Leftovers: a week old is deleted when the app starts, a newer one stays for "נסה שוב".
+    const old = path.join(app.LiveWorkRoot(course), 'aaaaaaaaaaaa'), fresh = path.join(app.LiveWorkRoot(course), 'bbbbbbbbbbbb');
+    mkdirp(old); mkdirp(fresh);
+    writeText(path.join(old, 'meta.json'), JSON.stringify({ id: 'aaaaaaaaaaaa', course, started: Date.now() - 8 * 86400000 }));
+    writeText(path.join(fresh, 'meta.json'), JSON.stringify({ id: 'bbbbbbbbbbbb', course, started: Date.now() - 86400000 }));
+    app.LiveCleanUp();
+    check('live notes: audio older than a week is deleted, a newer one waits', !dirExists(old) && dirExists(fresh));
+    await app.LiveHandle({ op: 'discard', course, id: 'bbbbbbbbbbbb' });
+    check('live notes: a waiting call can be deleted without notes', !dirExists(fresh));
+  } finally {
+    if (app.live) await app.LiveCancel().catch(() => { });
+    g.server.close();
+    app.Send = saved.send; app.Toast = saved.toast; app.settings.studyRoot = saved.root;
+    if (saved.key) app.settings.geminiKey = saved.key; else delete app.settings.geminiKey;
+    if (saved.model) app.settings.geminiModel = saved.model;
+    if (saved.helper) process.env.SUMIT_AUDIO_HELPER = saved.helper; else delete process.env.SUMIT_AUDIO_HELPER;
+    if (saved.url) process.env.SUMIT_GEMINI_URL = saved.url; else delete process.env.SUMIT_GEMINI_URL;
+  }
 }

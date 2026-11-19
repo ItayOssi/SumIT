@@ -28,6 +28,9 @@ app.whenReady().then(async () => {
   await host.start();
 });
 
+// A live call being recorded keeps its parts on disk, to be written up next time (live-notes.js).
+app.on('before-quit', () => { if (host && typeof host.LiveShutdown === 'function') host.LiveShutdown(); });
+
 app.on('window-all-closed', () => {
   app.quit();
 });

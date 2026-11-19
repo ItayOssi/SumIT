@@ -24,6 +24,9 @@ node "$SCRIPT_DIR/check.js"
 echo "[3/4] Running offline regression tests..."
 node "$SCRIPT_DIR/offline-tests.js"
 
+echo "[3b/4] Building the call recorder (bin/sumit-audio)..."
+bash "$SCRIPT_DIR/build-audio.sh" "$TARGET_ARCH"
+
 echo "[4/4] Packaging SumIT.app with electron-builder (target: $TARGET_ARCH)..."
 case "$TARGET_ARCH" in
   arm64)
@@ -51,7 +54,9 @@ esac
 for app in "$MACOS_DIR"/dist/mac*/SumIT.app; do
   [[ -d "$app" ]] || continue
   codesign --verify --deep --strict --verbose=2 "$app"
-  codesign -dv "$app" 2>&1 | grep -q "Signature=adhoc" || { echo "Error: $app is not signed ad-hoc" >&2; exit 1; }
+  # Read into a variable: "grep -q" would close the pipe early, and pipefail would count that as a failure.
+  sig="$(codesign -dv "$app" 2>&1 || true)"
+  [[ "$sig" == *"Signature=adhoc"* ]] || { echo "Error: $app is not signed ad-hoc" >&2; exit 1; }
 done
 
 echo "Build complete. Output artifacts in: $MACOS_DIR/dist"

@@ -1279,6 +1279,7 @@ function renderSetup() {
 // ---------- Recordings of the course ----------
 function renderRecs() {
   const p = $('pane-recs'); p.innerHTML = '';
+  if (typeof liveRecsCard === 'function') liveRecsCard(p);   // "שיחה חיה" (macOS only)
   const zoomTool = S.sections.flatMap(s => s.items).find(i => i.mod === 'lti' && /zoom|זום/i.test(i.name));
   if (false && zoomTool) {
     const c = h(`<div class="card pad-lg" style="margin-bottom:14px"><div class="row" style="gap:14px"><span class="ic zoom" data-ic="video"></span>
@@ -2136,6 +2137,7 @@ function askOptionalFeatures() {
   if (!S.blockAsked && typeof askBlocks === 'function') { S.blockAsked = true; askBlocks(); if (typeof askTrack === 'function') askTrack(); }
   if (!S.driveAsked && typeof askDrive === 'function') { S.driveAsked = true; askDrive(); }
   if (!S.ticketAsked && typeof ticketRender === 'function') { S.ticketAsked = true; send({ type: 'ticketPing' }); }
+  if (!S.liveAsked && typeof askLive === 'function') { S.liveAsked = true; askLive(); }
 }
 window.addEventListener('load', askOptionalFeatures);
 
@@ -2362,6 +2364,7 @@ function onMessage(m) {
     case 'blockReady': case 'blockResult': blockEvent(m); break;
     case 'sparks': if (typeof sparksEvent === 'function') sparksEvent(m); break;
     case 'board': if (typeof boardEvent === 'function') boardEvent(m); break;
+    case 'live': if (typeof liveEvent === 'function') liveEvent(m); break;
     case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'quizProgress': case 'quizResult': quizEvent(m); break;
@@ -2436,7 +2439,7 @@ let splashTips = ['מכין את סביבת הלימוד שלך...', 'מתחבר
 const tipTimer = setInterval(() => { const el = $('splashText'); if (el) el.textContent = splashTips[++tipI % splashTips.length]; }, 1400);
 function maybeHideSplash(force) {
   if (!force && !(S.ready.settings && S.ready.ai)) return;
-  const remaining = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 2000 - (performance.now() - launchStarted);
+  const remaining = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : (document.body.classList.contains('poster-splash') ? 3800 : 2000) - (performance.now() - launchStarted);
   if (remaining > 0) { clearTimeout(splashFinishTimer); splashFinishTimer = setTimeout(() => maybeHideSplash(force), remaining); return; }
   clearInterval(tipTimer);
   if ($('splash')) $('splash').classList.add('hide');

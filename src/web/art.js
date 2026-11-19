@@ -33,6 +33,8 @@ const IC = {
   info: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.3"/>'),
   note: svgI('<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>'),
   play: svgI('<path d="M7 5v14l12-7z"/>'),
+  mic: svgI('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>'),
+  stop: svgI('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>'),
   pause: svgI('<path d="M8.5 5v14M15.5 5v14"/>'),
   skip: svgI('<path d="M5 5.5v13l9-6.5z"/><path d="M18.5 5v14"/>'),
   reset: svgI('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),

@@ -293,6 +293,7 @@ class Host {
     sc.wc.on('did-finish-load', () => { if (typeof this.InjectVisualTools === 'function') this.InjectVisualTools(); });
 
     this.CleanUpOldFiles();
+    if (typeof this.LiveCleanUp === 'function') this.LiveCleanUp();
     this.InstallSkill();
     if (this.demo) return;
     if (this.selfTest) { await this.RunSelfTest(); return; }
@@ -758,6 +759,7 @@ class Host {
       case 'calSync': this.CalSyncHandle(m); break;
       case 'driveSync': this.DriveHandle(m); break;
       case 'board': this.BoardHandle(m); break;
+      case 'live': this.LiveHandle(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -1189,7 +1191,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'leaderboard', 'support', 'task-reminders', 'inst-logos'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'leaderboard', 'support', 'task-reminders', 'inst-logos', 'live-notes'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

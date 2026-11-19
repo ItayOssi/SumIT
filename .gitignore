@@ -2,6 +2,8 @@
 macos/dist/
 macos/build/icon.icns
 macos/selftest.json
+# The call recorder, built from macos/native/sumit-audio.swift by scripts/build-audio.sh
+macos/bin/
 
 # Dependencies
 macos/node_modules/

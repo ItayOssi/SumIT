@@ -70,6 +70,7 @@ jobs:
         working-directory: macos
         run: |
           bash scripts/make-icns.sh
+          bash scripts/build-audio.sh arm64
           npx electron-builder --mac --arm64 --publish never
           ls -lh dist
 

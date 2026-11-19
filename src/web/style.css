@@ -2249,3 +2249,66 @@ html[data-theme=dark] .spark-award.tier-2 small { color: #cbd5e1; } html[data-th
 .board-code-in { font: 700 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; }
 @media (max-width: 860px) { .board-add { grid-template-columns: 1fr; } .board-place { width: 96px; } }
 @media (prefers-reduced-motion: reduce) { .board-place { animation: none; } }
+
+/* "שיחה חיה" (live-notes-ui.js): the card in the "הקלטות" tab and the bar while a call is recorded. */
+.live-card .live-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--bad-soft); color: var(--bad); flex: none; }
+.live-card .live-ic svg { width: 22px; height: 22px; }
+.live-card .live-mic { font-size: 13px; color: var(--muted); }
+.live-card .live-note { font-size: 13px; margin: 10px 0 0; }
+.live-card [data-lists] { margin-top: 14px; }
+.live-card [data-lists]:empty { display: none; }
+.live-sub { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 8px; }
+.live-row { width: 100%; text-align: start; font: inherit; color: inherit; }
+.live-row small { display: block; color: var(--muted); font-size: 12px; }
+.live-open { cursor: pointer; }
+.live-open:hover { border-color: var(--accent); }
+.live-bar { position: fixed; bottom: 18px; left: 18px; z-index: 900; display: flex; align-items: center; gap: 12px; max-width: min(620px, calc(100vw - 36px));
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px 10px 14px; box-shadow: var(--shadow-lg); font-family: var(--font-ui); }
+.live-bar small { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px; }
+.live-bar .live-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--bad); flex: none; animation: livePulse 1.4s ease-in-out infinite; }
+.live-bar.working .live-dot { background: var(--accent); }
+.live-bar .live-time { font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
+.live-meters { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
+.live-meters i { width: 5px; height: 0; min-height: 2px; border-radius: 3px; background: var(--ok); transition: height .25s; }
+.live-meters i + i { background: var(--accent); }
+@keyframes livePulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .live-bar .live-dot { animation: none; } }
+body.live-on main { padding-bottom: 84px; }
+
+/* Limited-time poster splash (splash-poster.js): painted panels in a dark frame with slanted cuts, the title over the middle */
+body.poster-splash .splash { display: block; background: #221d3f; }
+.poster-art { position: absolute; inset: 0; overflow: hidden; }
+.poster-grid { position: absolute; inset: 0; display: grid; gap: 10px; padding: 10px; direction: ltr;
+  grid-template-columns: .95fr 1.2fr 1.2fr .95fr; grid-template-rows: repeat(4, 1fr);
+  grid-template-areas: "a b b h" "a e e h" "f e e g" "f c d g"; }
+.pp { position: relative; overflow: hidden; background: #3a3266; opacity: 0; animation: posterIn .8s cubic-bezier(.2,.8,.2,1) forwards; }
+.pp img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: posterDrift 16s ease-in-out infinite alternate; }
+.pp::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.1), inset 0 0 36px rgba(34,29,63,.45); }
+.pp-a { grid-area: a; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 96%); }
+.pp-b { grid-area: b; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 88%); }
+.pp-h { grid-area: h; clip-path: polygon(0 0, 100% 0, 100% 94%, 0 100%); }
+.pp-e { grid-area: e; clip-path: polygon(0 6%, 100% 0, 100% 96%, 0 100%); }
+.pp-e img { filter: brightness(.82) saturate(1.08); }
+.pp-f { grid-area: f; clip-path: polygon(0 4%, 100% 0, 100% 100%, 0 100%); }
+.pp-g { grid-area: g; clip-path: polygon(0 6%, 100% 0, 100% 100%, 0 100%); }
+.pp-c { grid-area: c; clip-path: polygon(0 0, 100% 8%, 100% 100%, 0 100%); }
+.pp-d { grid-area: d; clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%); }
+@keyframes posterIn { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+@keyframes posterDrift { from { transform: scale(1.04) translateX(1%); } to { transform: scale(1.12) translateX(-1.5%); } }
+.poster-title { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.poster-mark { position: relative; display: grid; place-items: center; opacity: 0; animation: posterSlam .9s cubic-bezier(.2,1.4,.4,1) 2s forwards; }
+.poster-logo { width: min(40vh, 26vw); height: min(40vh, 26vw); border-radius: 50%;
+  box-shadow: 0 0 0 6px #221d3f, 0 0 0 11px #ffc58a, 0 0 0 16px #221d3f, 0 24px 50px rgba(0,0,0,.5); }
+.poster-word { width: min(74vh, 46vw); margin-top: calc(min(40vh, 26vw) * -.1); position: relative; filter: drop-shadow(0 14px 24px rgba(0,0,0,.45)); }
+.splash .poster-sub { white-space: nowrap; margin-top: 6px; font: 400 min(5vh, 3vw)/1 Karantina; letter-spacing: .14em; color: #fff;
+  -webkit-text-stroke: 2px #221d3f; paint-order: stroke fill; text-shadow: 3px 3px 0 #221d3f; }
+.poster-mark { display: flex; flex-direction: column; align-items: center; }
+@keyframes posterSlam { from { opacity: 0; transform: scale(1.5) rotate(-4deg); } to { opacity: 1; transform: none; } }
+/* the usual splash box becomes the loading strip at the bottom, like a game's */
+body.poster-splash .splash .box { position: absolute; inset: auto 0 0 0; height: 74px; display: flex; align-items: center; gap: 18px; padding: 0 32px;
+  text-align: start; background: linear-gradient(0deg, rgba(26,21,52,.97), rgba(26,21,52,.78) 65%, transparent); }
+body.poster-splash .splash .logo, body.poster-splash .splash .box > b { display: none; }
+body.poster-splash .splash .box small { flex: 1; margin: 0; color: #f1e9ff; font-size: 15px; }
+body.poster-splash .splash .track { width: 160px; margin: 0; background: rgba(255,255,255,.18); }
+body.poster-splash .splash .track i { background: linear-gradient(90deg, #ff7eb6, #ffc58a); }
+@media (prefers-reduced-motion: reduce) { .pp, .pp img, .poster-mark { animation: none; opacity: 1; transform: none; } }
