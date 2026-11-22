@@ -2083,6 +2083,9 @@ nav.side .nav-item.active svg { animation: navIconPop .45s var(--ease) both; }
 /* A block's goal: up to two lines, with the study method in bold. */
 .track-block .grow small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45; }
 .track-block .grow small b.track-method { display: inline; font-size: inherit; font-weight: 700; color: var(--text); }
+/* The cards due at the end of a block: a line of their own under the goal. */
+.track-block .grow small.track-cards { display: flex; align-items: center; gap: 5px; margin-top: 3px; -webkit-line-clamp: unset; white-space: normal; color: var(--accent); font-weight: 600; }
+.track-block .grow small.track-cards [data-ic], .track-block .grow small.track-cards svg { width: 13px; height: 13px; flex: none; }
 
 /* ===== SumIT 2.0: sparks (✨) and achievements of the study track (sparks-ui.js) ===== */
 .spark-row { display: grid; grid-template-columns: 1fr 1.2fr; gap: 16px; margin-bottom: 16px; align-items: stretch; }

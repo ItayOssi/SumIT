@@ -19,7 +19,11 @@ function trackEvent(m) {
   if (m.type === 'trackReady') { S.trackOk = true; const n = $('navTrack'); if (n) n.hidden = false; return; }
   if (m.type === 'trackState') {
     const before = S.track && S.track.stats && S.track.stats.streakInfo;
+    // The tasks leave out what the week already has as a goal, so a change in the blocks asks for them again.
+    const planSig = (t) => JSON.stringify(((t && t.profile && t.profile.plan) || {}).blocks || []);
+    const replan = S.track && S.trackTasks && planSig(S.track) !== planSig(m);
     S.track = m;
+    if (replan) trackSend({ op: 'tasks' });
     const after = m.stats && m.stats.streakInfo;
     // The first thing finished today lights the flame: a small celebration, a bigger one on a milestone.
     const lit = before && after && !before.todayDone && after.todayDone;
@@ -291,10 +295,13 @@ function trackBlockRow(p, b, iso, compact) {
   row.querySelector('.track-time').textContent = b.start + '–' + trackClock(b.start, b.minutes);
   row.querySelector('b').textContent = b.course;
   // A goal that starts with its study method ("שיטת פיינמן: ...") shows the method in bold.
-  const goalEl = row.querySelector('small'), cut = b.done ? -1 : b.goal.indexOf(':');
-  if (cut > 0 && cut <= 24) { const m = document.createElement('b'); m.className = 'track-method'; m.textContent = b.goal.slice(0, cut + 1); goalEl.append(m, ' ' + b.goal.slice(cut + 1).trim()); }
-  else goalEl.textContent = b.done ? 'בוצע · ' + minLabel(b.doneMinutes) : b.goal;
-  row.querySelector('small').title = b.goal;
+  // A few cards due go at the end of a block (study-track.js adds them after ", ובסוף הבלוק: "): they get a line of their own.
+  const tailAt = b.goal.indexOf(', ובסוף הבלוק: '), goal = tailAt > 0 ? b.goal.slice(0, tailAt) : b.goal;
+  const goalEl = row.querySelector('small'), cut = b.done ? -1 : goal.indexOf(':');
+  if (cut > 0 && cut <= 24) { const m = document.createElement('b'); m.className = 'track-method'; m.textContent = goal.slice(0, cut + 1); goalEl.append(m, ' ' + goal.slice(cut + 1).trim()); }
+  else goalEl.textContent = b.done ? 'בוצע · ' + minLabel(b.doneMinutes) : goal;
+  goalEl.title = b.goal;
+  if (tailAt > 0 && !b.done) { const t = h(`<small class="track-cards" dir="auto"><span data-ic="${TRACK_TASK_IC.review}"></span><span></span></small>`); const n = (/\d+/.exec(b.goal.slice(tailAt)) || [''])[0]; t.lastChild.textContent = n ? 'בסוף: ' + n + ' כרטיסיות לחזרה' : b.goal.slice(tailAt + 2); goalEl.after(t); if (typeof icons === 'function') icons(t); }
   const acts = row.querySelector('.track-block-acts');
   const btn = (label, cls, fn, ic, iconOnly) => { const x = h(`<button type="button" class="${cls} small${iconOnly ? ' icon-only' : ''}">${ic ? `<span data-ic="${ic}"></span>` : ''}</button>`); if (!iconOnly) x.append(document.createTextNode(label)); x.title = label; x.setAttribute('aria-label', label); x.onclick = fn; acts.append(x); };
   const chip = typeof sparksChip === 'function' ? sparksChip(S.track && S.track.sparks, b) : null;

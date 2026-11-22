@@ -1774,11 +1774,12 @@ async function runStudyTrackTests(app, root, check) {
     { course: 'ריק', level: 1, lectures: [] }];
   const goals = app.TrackGoals(studyList, '2026-11-10');
   const gDS = goals['מבני נתונים'] || [];
-  check('the goals of the blocks start with homework due soon, the past exam and the cards due', gDS[0] === 'פתור את תרגיל הבית של הרצאה 3 (עצי AVL)' && gDS[1].includes('מבחן קודם') && gDS[2].includes('12 הכרטיסיות'));
-  check('then study methods on the newest summary: Feynman, exercises from the practice sheet, the cards, the quiz and recall on a blank page',
-    gDS[3].startsWith('שיטת פיינמן') && gDS[3].includes('הרצאה 2 (ערימות)') && gDS.some(g => g.startsWith('תרגול') && g.includes('{ex}') && g.includes('הרצאה 2')) && gDS.some(g => g.startsWith('כרטיסיות: צור') && g.includes('הרצאה 2'))
-    && gDS.some(g => g.startsWith('כרטיסיות: עבור') && g.includes('הרצאה 1')) && gDS.some(g => g.startsWith('בוחן')) && gDS.some(g => g.startsWith('שליפה') && g.includes('הרצאה 1')) && gDS.every(g => g.length <= 200));
-  check('making a summary or transcribing a recording is never the goal of a block', !Object.values(goals).flat().some(g => /צור סיכום|תמלל/.test(g)));
+  check('the goals of the blocks start with homework due soon and the past exam, and fewer than 15 cards due go at the end of the first block',
+    gDS[0] === 'פתור את תרגיל הבית של הרצאה 3 (עצי AVL), ובסוף הבלוק: 12 כרטיסיות שמחכות לחזרה' && gDS[1].includes('מבחן קודם') && gDS.filter(g => g.includes('כרטיסיות שמחכות')).length === 1);
+  check('then one study method for each of the newest lectures, in the order of the kind of course (theory: Feynman first, then exercises)',
+    gDS.length === 4 && gDS[2].startsWith('שיטת פיינמן') && gDS[2].includes('הרצאה 2 (ערימות)') && gDS[3].startsWith('תרגול') && gDS[3].includes('{ex}') && gDS[3].includes('הרצאה 1 (מבוא)')
+    && !gDS.some(g => g.startsWith('כרטיסיות:')) && gDS.every(g => g.length <= 200));
+  check('making a summary, making cards or transcribing a recording is never the goal of a block', !Object.values(goals).flat().some(g => /צור סיכום|צור כרטיסיות|תמלל/.test(g)));
   check('a course without summaries gets the exercises of its practice sheets, and a course with nothing in its folder gets no goals of its own',
     goals['פיזיקה'].length === 1 && goals['פיזיקה'][0].includes('דף התרגול של הרצאה 1 (קינמטיקה)') && !goals['ריק'] && Object.keys(app.TrackGoals(null, '2026-11-10')).length === 0);
   const gp = app.TrackClean({ courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 6 }, { name: 'פיזיקה', level: 2, hoursPerWeek: 2 }] });
@@ -1789,6 +1790,57 @@ async function runStudyTrackTests(app, root, check) {
     && exBlocks.every(b => b.goal.includes(b.minutes <= 30 ? 'תרגיל אחד' : b.minutes <= 60 ? '2 תרגילים' : '3 תרגילים')));
   const gGen = app.TrackBuildWeek(app.TrackClean({ courses: [{ name: 'בלי תיקייה', level: 2, hoursPerWeek: 3 }] }), [], { weekStart: '2026-11-01', today: '2026-10-30', days: [0, 1, 2, 3, 4], block: 30 });
   check('without a folder, the blocks get the general study methods', gGen.blocks.length >= 3 && gGen.blocks.some(b => b.goal.startsWith('שיטת פיינמן')) && gGen.blocks.some(b => b.goal.includes('תרגיל אחד')));
+
+  // One method a lecture, by the kind of course; the cards due as one goal.
+  const gl = (n, o) => Object.assign({ num: n, title: 'נושא ' + n, hasSummary: true, cards: 10, files: 1, exercises: 2 }, o || {});
+  const kindGoals = app.TrackGoals([
+    { course: 'חדו"א 1', level: 3, cardsDue: 20, lectures: [1, 2, 3, 4, 5, 6].map(n => gl(n)) },
+    { course: 'מבוא לכלכלה', level: 1, cardsDue: 0, lectures: [1, 2].map(n => gl(n, { exercises: 0 })) },
+    { course: 'אינפי 2', level: 2, cardsDue: 0, lectures: [gl(1, { exercises: 0 })] },
+    { course: 'סוציולוגיה', level: 1, cardsDue: 4, lectures: [] }], '2026-11-10');
+  const gMath = kindGoals['חדו"א 1'], lecOf = (g) => (/הרצאה (\d+)/.exec(g) || [])[1];
+  check('15 cards due or more are a goal of their own, once', gMath[0].startsWith('חזרה מרווחת') && gMath[0].includes('20 הכרטיסיות שמחכות') && gMath.filter(g => g.includes('כרטיסיות שמחכות')).length === 1);
+  check('a math course: exercises, Feynman, the quiz and recall, each on another of the four newest lectures',
+    gMath.length === 5 && gMath[1].startsWith('תרגול') && gMath[2].startsWith('שיטת פיינמן') && gMath[3].startsWith('בוחן') && gMath[4].startsWith('שליפה')
+    && gMath.slice(1).map(lecOf).join() === '6,5,4,3' && !gMath.some(g => /הרצאה [12] /.test(g)));
+  check('a course of concepts starts with the quiz, and a lecture with no practice sheet gets the next method instead of exercises',
+    kindGoals['מבוא לכלכלה'][0].startsWith('בוחן') && kindGoals['מבוא לכלכלה'][1].startsWith('שליפה') && kindGoals['אינפי 2'].length === 1 && kindGoals['אינפי 2'][0].startsWith('שיטת פיינמן'));
+  check('a few cards due with nothing else to study are a goal of their own', kindGoals['סוציולוגיה'].length === 1 && kindGoals['סוציולוגיה'][0].includes('4 הכרטיסיות שמחכות'));
+
+  // Building the week again does not give again a goal already done this week.
+  const rgGoals = { 'חדו"א 1': gMath };
+  const rgProf = app.TrackClean({ courses: [{ name: 'חדו"א 1', level: 3, hoursPerWeek: 4 }] });
+  const rg1 = app.TrackBuildWeek(rgProf, [], { weekStart: '2026-11-08', today: '2026-11-08', days: [0, 1, 2, 3, 4], goals: rgGoals, block: 60 });
+  rg1.blocks.slice(0, 2).forEach(b => { b.done = true; b.doneMinutes = b.minutes; });
+  rgProf.plan = { weekStart: rg1.weekStart, blocks: rg1.blocks };
+  const rg2 = app.TrackBuildWeek(rgProf, [], { weekStart: '2026-11-08', today: '2026-11-10', days: [0, 1, 2, 3, 4], goals: rgGoals, block: 60 });
+  const rgDone = rg2.blocks.filter(b => b.done).map(b => b.goal), rgNew = rg2.blocks.filter(b => !b.done);
+  check('building the week again keeps the done blocks, and gives none of their goals again', rgDone.length === 2 && rgNew.length >= 2 && !rgNew.some(b => rgDone.includes(b.goal)) && rgNew[0].goal.startsWith('שיטת פיינמן'));
+  const exOnce = app.TrackBuildWeek(app.TrackClean({ courses: [{ name: 'בלי תיקייה', level: 3, hoursPerWeek: 6, examDate: '2026-11-20' }] }), [], { weekStart: '2026-11-08', today: '2026-11-08', days: [0, 1, 2, 3, 4], block: 60 });
+  check('a close exam with no goals from the folder gives a past exam once in the week, not in every block', exOnce.blocks.length >= 4 && exOnce.blocks.filter(b => b.goal.includes('מבחן קודם')).length === 1);
+
+  // The tasks: one of each kind, and nothing the week already has as a goal.
+  const tl = [{ course: 'מבני נתונים', level: 2, examDays: 6, pastExams: 2, cardsDue: 8, lectures: [
+    { num: 1, title: 'מבוא', hasSummary: true, cards: 0, files: 1, exercises: 2 },
+    { num: 2, title: 'ערימות', hasSummary: true, cards: 0, files: 1 },
+    { num: 3, title: 'עצים', hasSummary: false, files: 2 },
+    { num: 4, title: 'גרפים', hasSummary: false, files: 1 },
+    { num: 5, title: 'מיון', hasSummary: false, files: 3, due: '2026-11-12' }] }];
+  const tAll = app.TrackRecommend(tl, '2026-11-10');
+  const tSum = tAll.filter(t => t.kind === 'summary'), tCards = tAll.filter(t => t.kind === 'cards');
+  check('one task to make a summary and one to make cards, for the newest lecture, saying how many more wait',
+    tSum.length === 1 && tSum[0].lecture === 5 && tSum[0].why.includes('ועוד 2 הרצאות בלי סיכום') && tCards.length === 1 && tCards[0].lecture === 2 && tCards[0].why.includes('ועוד סיכום אחד בלי כרטיסים'));
+  const tPlan = (blocks, ws) => ({ weekStart: ws || '2026-11-08', blocks: blocks.map((b, i) => Object.assign({ id: 'b' + i, course: 'מבני נתונים', start: '10:00', minutes: 60, done: false, doneMinutes: 0 }, b)) });
+  const kindsWith = (plan) => app.TrackRecommend(tl, '2026-11-10', plan).map(t => t.kind);
+  const hwGoal = 'פתור את תרגיל הבית של הרצאה 5 (מיון)', exGoal = 'תרגול: פתור 2 תרגילים מדף התרגול של הרצאה 1 (מבוא) לבד, ורק אז הצץ בפתרון';
+  const kPlanned = kindsWith(tPlan([{ day: 3, goal: hwGoal + ', ובסוף הבלוק: 8 כרטיסיות שמחכות לחזרה' }, { day: 1, done: true, goal: 'תרגיל מבחן קודם בתנאי מבחן, ובדיקה של מה לקח הכי הרבה זמן' }, { day: 4, goal: exGoal }]));
+  check('a task the week already has as a goal (homework, a past exam done, exercises, the cards in a block ahead) is not shown again',
+    ['homework', 'exam', 'review', 'practice'].every(k => kindsWith(null).includes(k)) && !['homework', 'exam', 'review', 'practice'].some(k => kPlanned.includes(k)) && kPlanned.includes('summary') && kPlanned.includes('cards'));
+  check('the cards of a block already done, a block missed earlier in the week, another course or another week hide nothing',
+    kindsWith(tPlan([{ day: 1, done: true, goal: 'חזרה מרווחת: עבור על 8 הכרטיסיות שמחכות לך' }])).includes('review')
+    && kindsWith(tPlan([{ day: 1, goal: hwGoal }])).includes('homework')
+    && kindsWith(tPlan([{ day: 3, goal: hwGoal, course: 'אחר' }])).includes('homework')
+    && kindsWith(tPlan([{ day: 3, goal: hwGoal }], '2026-10-25')).includes('homework'));
 
   // Through the host, from a real folder: lecture 1 with material and no summary, lecture 2 with a summary and no cards, a past exam.
   const tCourse = 'אלגוריתמים - תשפז';

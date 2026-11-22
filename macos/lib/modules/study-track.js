@@ -421,8 +421,13 @@ function buildWeek(profile, classes, opts) {
       seq++;
       const exam = examIn(ch.course);
       // The tasks from the course folder come first (one per block, in their order); after them, the general goals.
-      const mine = arr(obj(o.goals)[ch.course.name]);
-      const goal = ch.index < mine.length ? mine[ch.index] : ch.index >= 2 && exam !== null && exam >= 0 && exam <= 30 ? ExamGoal : GoalList[(ch.index - mine.length) % GoalList.length];
+      // A goal a block already did this week is not given again when the week is built again.
+      const doneGoals = kept.filter(b => b.course === ch.course.name).map(b => baseGoal(b.goal));
+      const isDone = (t) => { const base = baseGoal(t); return doneGoals.some(g => g === base || (base.includes('{ex}') && ['תרגיל אחד', '2 תרגילים', '3 תרגילים'].some(x => g === base.split('{ex}').join(x)))); };
+      const mine = arr(obj(o.goals)[ch.course.name]).filter(t => !isDone(t));
+      // A close exam brings a past exam once a week when the goals of the folder ran out; after that, the general methods.
+      const hadExam = kept.concat(made).some(b => b.course === ch.course.name && baseGoal(b.goal) === ExamGoal);
+      const goal = ch.index < mine.length ? mine[ch.index] : ch.index >= 2 && !hadExam && exam !== null && exam >= 0 && exam <= 30 ? ExamGoal : GoalList[(ch.index - mine.length) % GoalList.length];
       made.push({ id: 'b' + seq, day: d, start: toHHMM(start), minutes, course: ch.course.name, goal: goal.split('{ex}').join(exercisesFor(minutes)), done: false, doneMinutes: 0 });
       return true;
     }
@@ -446,13 +451,13 @@ function buildWeek(profile, classes, opts) {
 // Input per course: { course, folder, level, examDays, pastExams, cardsDue, lectures: [{ num, title, due, files, transcripts, videos, exercises, hasSummary, cards }] }.
 // Every task says why, in words, so the student can see it comes from their own material. Higher score first.
 const lname = (l) => 'הרצאה ' + l.num + (l.title ? ' (' + Trunc(l.title, 40) + ')' : '');
-function recommendTasks(list, today) {
+function recommendTasks(list, today, plan) {
   const out = [];
   const dm = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
   for (const c0 of arr(list)) {
     const c = obj(c0), course = Str(c, 'course'), level = clamp(Int(c, 'level') || 2, 1, 3), boost = level * 3;
     if (!course) continue;
-    const add = (kind, num, title, why, minutes, score) => out.push({ id: kind + '-' + (num || 0) + '-' + course, course, folder: Str(c, 'folder'), kind, lecture: num || null, title, why, minutes, score: Math.round(score + boost) });
+    const add = (kind, num, title, why, minutes, score, goal) => out.push({ id: kind + '-' + (num || 0) + '-' + course, course, folder: Str(c, 'folder'), kind, lecture: num || null, title, why, minutes, score: Math.round(score + boost), goal: goal || '' });
     const lectures = arr(c.lectures).map(obj).filter(l => Int(l, 'num') >= 1).sort((a, b) => Int(b, 'num') - Int(a, 'num'));   // the newest first
     const examDays = c.examDays === null || c.examDays === undefined ? null : Number(c.examDays);
 
@@ -461,63 +466,98 @@ function recommendTasks(list, today) {
       if (!isDate(due) || due < today) continue;
       const days = daysBetween(today, due);
       if (days > 10) continue;
-      add('homework', l.num, 'פתור את תרגיל הבית של ' + lname(l), (days === 0 ? 'ההגשה היום' : days === 1 ? 'ההגשה מחר' : 'ההגשה בעוד ' + days + ' ימים, ב-' + dm(due)) + (l.exercises ? ', והתרגיל בתיקייה' : ''), 60, 110 - days * 6);
+      add('homework', l.num, homeworkGoal(l), (days === 0 ? 'ההגשה היום' : days === 1 ? 'ההגשה מחר' : 'ההגשה בעוד ' + days + ' ימים, ב-' + dm(due)) + (l.exercises ? ', והתרגיל בתיקייה' : ''), 60, 110 - days * 6, homeworkGoal(l));
     }
     if (examDays !== null && examDays >= 0 && examDays <= 30 && Int(c, 'pastExams') > 0)
       add('exam', 0, 'פתור מבחן קודם בתנאי מבחן, ורשום מה לקח הכי הרבה זמן', 'המבחן בעוד ' + examDays + ' ימים, ויש ' + Int(c, 'pastExams') + ' מבחנים קודמים בתיקייה', 90, 100 - examDays * 2);
     if (Int(c, 'cardsDue') > 0) { const n = Int(c, 'cardsDue'); add('review', 0, 'חזור על ' + n + ' כרטיסי זיכרון', 'הגיע הזמן לחזור עליהם, לפי החזרה המרווחת', clamp(Math.ceil(n * 0.75 / 5) * 5, 10, 30), 60 + Math.min(n, 30)); }
-    let k = 0;
-    for (const l of lectures) {
-      if (k >= 2) break;
-      const material = Int(l, 'files') + Int(l, 'transcripts');
-      if (!l.hasSummary && material > 0) { k++; add('summary', l.num, 'צור סיכום ל' + lname(l) + ' ולמד ממנו', 'יש ' + material + (material === 1 ? ' קובץ' : ' קבצים') + ' בתיקייה של ההרצאה, ועדיין אין סיכום', 30, 72 - k * 4); }
-    }
-    k = 0;
-    for (const l of lectures) {
-      if (k >= 2) break;
-      if (l.hasSummary && !Int(l, 'cards')) { k++; add('cards', l.num, 'צור כרטיסי זיכרון מהסיכום של ' + lname(l), 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה', 15, 52 - k * 4); }
-    }
+    // One task of each kind, for the newest lecture that needs it, saying how many more wait.
+    const more = (n, one, many) => (n === 1 ? ', ועוד ' + one : n > 1 ? ', ועוד ' + n + ' ' + many : '');
+    const noSum = lectures.filter(l => !l.hasSummary && Int(l, 'files') + Int(l, 'transcripts') > 0);
+    if (noSum.length) { const l = noSum[0], material = Int(l, 'files') + Int(l, 'transcripts'); add('summary', l.num, 'צור סיכום ל' + lname(l) + ' ולמד ממנו', 'יש ' + material + (material === 1 ? ' קובץ' : ' קבצים') + ' בתיקייה של ההרצאה, ועדיין אין סיכום' + more(noSum.length - 1, 'הרצאה אחת בלי סיכום', 'הרצאות בלי סיכום'), 30, 68); }
+    const noCards = lectures.filter(l => l.hasSummary && !Int(l, 'cards'));
+    if (noCards.length) add('cards', noCards[0].num, 'צור כרטיסי זיכרון מהסיכום של ' + lname(noCards[0]), 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה' + more(noCards.length - 1, 'סיכום אחד בלי כרטיסים', 'סיכומים בלי כרטיסים'), 15, 48);
     const ex = lectures.find(l => l.hasSummary && Int(l, 'exercises') > 0 && !isDate(Str(l, 'due')));
-    if (ex) add('practice', ex.num, 'פתור לבד את התרגילים של ' + lname(ex) + ', לפני שאתה מסתכל בפתרון', 'יש ' + Int(ex, 'exercises') + ' קבצים בתיקיית התרגילים של ההרצאה', 45, 55);
+    if (ex) add('practice', ex.num, 'פתור לבד את התרגילים של ' + lname(ex) + ', לפני שאתה מסתכל בפתרון', 'יש ' + Int(ex, 'exercises') + ' קבצים בתיקיית התרגילים של ההרצאה', 45, 55, practiceGoal(ex));
     const rec = lectures.find(l => !l.hasSummary && Int(l, 'videos') > Int(l, 'transcripts'));
     if (rec) add('transcribe', rec.num, 'תמלל את ההקלטה של ' + lname(rec), 'הקלטה בלי תמלול לא נכנסת לסיכום', 10, 40);
   }
-  return out.sort((a, b) => b.score - a.score || a.course.localeCompare(b.course));
+  return out.filter(t => !plannedTask(t, plan, today)).sort((a, b) => b.score - a.score || a.course.localeCompare(b.course));
 }
 
+// The texts shared by the goals and the tasks, so a task can tell that the week already has it as the goal of a block.
+const homeworkGoal = (l) => 'פתור את תרגיל הבית של ' + lname(l);
+const practiceGoal = (l) => 'תרגול: פתור {ex} מדף התרגול של ' + lname(l) + ' לבד, ורק אז הצץ בפתרון';
+const CardsMark = 'כרטיסיות שמחכות';
+const reviewGoal = (n) => 'חזרה מרווחת: עבור על ' + n + ' ה' + CardsMark + ' לך, ואת אלה שלא ידעת חזור עליהן בסוף';
+// Fewer cards than this are not a block of their own: they go at the end of the first block of the course.
+const CardsOwnBlock = 15, CardsTail = ', ובסוף הבלוק: ';
+// A goal without the cards added at its end.
+const baseGoal = (g) => String(g || '').split(CardsTail)[0];
+// The study method of each lecture, by the kind of course: the first lecture gets the first method, the next one the next, and so on,
+// so a lecture is one block of the week and not five. Exercises only for a lecture with a practice sheet.
+const MethodOrder = { math: ['practice', 'feynman', 'quiz', 'recall'], code: ['practice', 'recall', 'quiz', 'feynman'], theory: ['feynman', 'practice', 'recall', 'quiz'], general: ['quiz', 'recall', 'feynman', 'practice'] };
+const MethodLectures = 4;
+const methodGoal = (m, l) => ({
+  feynman: 'שיטת פיינמן: בחר רעיון מרכזי מהסיכום של ' + lname(l) + ' והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
+  practice: practiceGoal(l),
+  quiz: 'בוחן: ענה על הבוחן של ' + lname(l) + ' בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן',
+  recall: 'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מ' + lname(l) + ', ואז השווה לסיכום וסמן מה חסר',
+}[m]);
+
 // The goals of the blocks of each course, in order (at most 200 characters each), read from the same folders as the tasks. A block is
-// for studying, not for running the app: homework due soon and a past exam before a close exam come first, then the cards due, and
-// then study methods on the newest lectures that have a summary: the Feynman technique, exercises from the practice sheets, the cards
-// and the quiz of the summary, and recalling a lecture on a blank page. Making a summary or transcribing a recording is not a goal.
+// for studying, not for running the app: homework due soon and a past exam before a close exam come first, then the cards due (one
+// goal for all of them), and then one study method for each of the newest lectures: the Feynman technique, exercises from its practice
+// sheet, its quiz, or recalling it on a blank page, in the order that suits the kind of course. A lecture with exercises and no summary
+// gets the exercises. Making a summary, making cards or transcribing a recording is not a goal.
 function studyGoals(list, today) {
   const g = {};
   for (const c0 of arr(list)) {
     const c = obj(c0), course = Str(c, 'course');
     if (!course) continue;
-    const out = [], push = (t) => { if (!out.includes(t)) out.push(Trunc(t, 200)); };
+    const out = [], push = (t) => { t = Trunc(t, 200); if (!out.includes(t)) out.push(t); };
     const lectures = arr(c.lectures).map(obj).filter(l => Int(l, 'num') >= 1).sort((a, b) => Int(b, 'num') - Int(a, 'num'));
     const examDays = c.examDays === null || c.examDays === undefined ? null : Number(c.examDays);
     for (const l of lectures.slice().reverse()) {
       const due = Str(l, 'due');
-      if (isDate(due) && due >= today && daysBetween(today, due) <= 10) push('פתור את תרגיל הבית של ' + lname(l));
+      if (isDate(due) && due >= today && daysBetween(today, due) <= 10) push(homeworkGoal(l));
     }
     if (examDays !== null && examDays >= 0 && examDays <= 30 && Int(c, 'pastExams') > 0) push(ExamGoal);
-    if (Int(c, 'cardsDue') > 0) push('חזרה מרווחת: עבור על ' + Int(c, 'cardsDue') + ' הכרטיסיות שמחכות לך, ואת אלה שלא ידעת חזור עליהן בסוף');
-    const sum = lectures.filter(l => l.hasSummary), ex = lectures.filter(l => Int(l, 'exercises') > 0 && !isDate(Str(l, 'due')));
-    const methods = (l, k) => [
-      'שיטת פיינמן: בחר רעיון מרכזי מהסיכום של ' + lname(l) + ' והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
-      ex[k] ? 'תרגול: פתור {ex} מדף התרגול של ' + lname(ex[k]) + ' לבד, ורק אז הצץ בפתרון' : '',
-      Int(l, 'cards') ? 'כרטיסיות: עבור על הכרטיסיות של ' + lname(l) + ', ואת אלה שלא ידעת חזור עליהן בסוף'
-        : 'כרטיסיות: צור כרטיסיות מהסיכום של ' + lname(l) + ' (לחיצה אחת בדף הסיכום) ועבור עליהן',
-      'בוחן: ענה על הבוחן של ' + lname(l) + ' בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן',
-      'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מ' + lname(sum[k + 1] || l) + ', ואז השווה לסיכום וסמן מה חסר',
-    ].filter(Boolean);
-    for (let k = 0; k < Math.min(2, sum.length); k++) methods(sum[k], k).forEach(push);
-    // No summary yet: the exercises of the newest lectures, and the general methods.
-    if (!sum.length) ex.slice(0, 2).forEach(l => push('תרגול: פתור {ex} מדף התרגול של ' + lname(l) + ' לבד, ורק אז הצץ בפתרון'));
+    const cardsDue = Int(c, 'cardsDue');
+    if (cardsDue >= CardsOwnBlock) push(reviewGoal(cardsDue));
+    const order = MethodOrder[courseKind(course)] || MethodOrder.general;
+    const sheet = (l) => Int(l, 'exercises') > 0 && !isDate(Str(l, 'due'));
+    const study = lectures.filter(l => l.hasSummary || sheet(l)).slice(0, MethodLectures);
+    study.forEach((l, k) => {
+      if (!l.hasSummary) { push(practiceGoal(l)); return; }
+      const m = [0, 1, 2, 3].map(i => order[(k + i) % order.length]).find(x => x !== 'practice' || sheet(l));
+      push(methodGoal(m, l));
+    });
+    if (cardsDue > 0 && cardsDue < CardsOwnBlock) {
+      const tail = CardsTail + cardsDue + ' ' + CardsMark + ' לחזרה';
+      if (out.length) out[0] = Trunc(out[0], 200 - tail.length) + tail; else push(reviewGoal(cardsDue));
+    }
     if (out.length) g[course] = out;
   }
   return g;
+}
+
+// A task that the plan of this week already has as the goal of a block, done or still ahead, is not shown again in the tasks.
+// The cards due count only for a block still ahead: new cards come due after a review.
+function plannedTask(t, plan, today) {
+  const p = obj(plan), ws = Str(p, 'weekStart');
+  if (!isDate(ws) || !isDate(today) || daysBetween(weekStartOf(today), ws) < 0 || daysBetween(weekStartOf(today), ws) > 7) return false;
+  return arr(p.blocks).some(b0 => {
+    const b = obj(b0), goal = Str(b, 'goal');
+    if (Str(b, 'course') !== t.course || !goal) return false;
+    const ahead = !b.done && addDays(ws, Int(b, 'day')) >= today;
+    if (!ahead && !b.done) return false;
+    if (t.kind === 'homework') return baseGoal(goal) === t.goal;
+    if (t.kind === 'exam') return baseGoal(goal) === ExamGoal;
+    if (t.kind === 'review') return ahead && goal.includes(CardsMark);
+    if (t.kind === 'practice') return goal.includes(t.goal.split('{ex}')[1]);
+    return false;
+  });
 }
 
 // ---------- Progress ----------
@@ -739,7 +779,7 @@ module.exports = {
     TrackRoutineWindow(rt) { return routineWindow(cleanRoutine(rt)); },
     TrackRoutineFromEvents(events, now) { return routineFromEvents(events, now); },
     TrackSuggestRating(n, ctx) { return suggestRating(n, ctx); },
-    TrackRecommend(list, today) { return recommendTasks(list, today); },
+    TrackRecommend(list, today, plan) { return recommendTasks(list, today, plan); },
     TrackGoals(list, today) { return studyGoals(list, today); },
     TrackSparks(profile, today) { return sparksInfo(profile, today); },
     TrackMethod(goal) { return methodOf(goal); },
@@ -771,7 +811,7 @@ module.exports = {
     // The study tasks of every course in the profile that has a folder in the app (a course typed by hand has none).
     // Reading every lecture folder is slow on an external or iCloud disk, and the page asks for the tasks, then the week, within seconds:
     // the answer is kept for a minute for the same day and the same courses.
-    TrackTasks(profile, today) { return recommendTasks(this.TrackStudyList(profile, today), today); },
+    TrackTasks(profile, today) { return recommendTasks(this.TrackStudyList(profile, today), today, profile.plan); },
     // The goals of the blocks, from the same folders.
     TrackStudyGoals(profile, today) { return studyGoals(this.TrackStudyList(profile, today), today); },
     TrackStudyList(profile, today) {

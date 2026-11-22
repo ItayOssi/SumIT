@@ -2,11 +2,20 @@
 (function () {
   const listeners = [];
   // The goals of the demo blocks: study methods, as study-track.js makes them from the course folders.
-  const DEMO_GOALS = ['שיטת פיינמן: בחר רעיון מרכזי מהסיכום של הרצאה 3 (ערימות) והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
-    'תרגול: פתור 2 תרגילים מדף התרגול של הרצאה 4 (עצי AVL) לבד, ורק אז הצץ בפתרון',
-    'כרטיסיות: עבור על הכרטיסיות של הרצאה 5 (ערכים עצמיים), ואת אלה שלא ידעת חזור עליהן בסוף',
-    'בוחן: ענה על הבוחן של הרצאה 2 בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן',
-    'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מהרצאה 2, ואז השווה לסיכום וסמן מה חסר'];
+  // Each course has its own goals: homework and a past exam first, then one method a lecture (theory: Feynman first; math: exercises
+  // first), and fewer than 15 cards due at the end of the first block.
+  const DEMO_GOALS = {
+    'מבני נתונים': ['פתור את תרגיל הבית של הרצאה 4 (עצי AVL)',
+      'תרגיל מבחן קודם בתנאי מבחן, ובדיקה של מה לקח הכי הרבה זמן',
+      'שיטת פיינמן: בחר רעיון מרכזי מהסיכום של הרצאה 3 (ערימות) והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
+      'תרגול: פתור 2 תרגילים מדף התרגול של הרצאה 2 לבד, ורק אז הצץ בפתרון'],
+    'אלגברה לינארית 2': ['תרגול: פתור 2 תרגילים מדף התרגול של הרצאה 5 (ערכים עצמיים) לבד, ורק אז הצץ בפתרון, ובסוף הבלוק: 14 כרטיסיות שמחכות לחזרה',
+      'שיטת פיינמן: בחר רעיון מרכזי מהסיכום של הרצאה 4 והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לסיכום',
+      'בוחן: ענה על הבוחן של הרצאה 3 בלי להציץ בסיכום, וחזור רק לשאלות שטעית בהן'],
+  };
+  const DEMO_OTHER = ['שיטת פיינמן: בחר רעיון אחד מההרצאה האחרונה והסבר אותו בקול במילים פשוטות, כאילו אתה מלמד חבר. איפה שנתקעת, חזור לחומר',
+    'שליפה מהזיכרון: כתוב על דף ריק כל מה שאתה זוכר מההרצאה האחרונה, ואז השווה לחומר וסמן מה חסר'];
+  const demoGoal = (course, k) => (DEMO_GOALS[course] || DEMO_OTHER)[k % (DEMO_GOALS[course] || DEMO_OTHER).length];
   // A calendar for the screenshots: a meeting today, one tomorrow, and a weekly one.
   const demoCalendar = () => {
     const d = new Date(), p = (n) => String(n).padStart(2, '0'), stamp = (x, h, m) => '' + x.getFullYear() + p(x.getMonth() + 1) + p(x.getDate()) + 'T' + p(h) + p(m) + '00';
@@ -94,12 +103,19 @@
     }
     if (m.op === 'removeBlock') p.plan.blocks = p.plan.blocks.filter(x => x.id !== m.id);
     // The wizard: two weekly commitments "from the calendar", ratings by the course name, and a plan built like the demo build.
-    if (m.op === 'tasks') return emit({ type: 'trackTasks', total: 5, tasks: [
-      { id: 'h', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'homework', lecture: 4, title: 'פתור את תרגיל הבית של הרצאה 4 (עצי AVL)', why: 'ההגשה בעוד 2 ימים, והתרגיל בתיקייה', minutes: 60 },
-      { id: 'e', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'exam', lecture: null, title: 'פתור מבחן קודם בתנאי מבחן, ורשום מה לקח הכי הרבה זמן', why: 'המבחן בעוד 12 ימים, ויש 3 מבחנים קודמים בתיקייה', minutes: 90 },
-      { id: 's', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'summary', lecture: 5, title: 'צור סיכום להרצאה 5 (ערכים עצמיים) ולמד ממנו', why: 'יש 3 קבצים בתיקייה של ההרצאה, ועדיין אין סיכום', minutes: 30 },
-      { id: 'r', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'review', lecture: null, title: 'חזור על 14 כרטיסי זיכרון', why: 'הגיע הזמן לחזור עליהם, לפי החזרה המרווחת', minutes: 15 },
-      { id: 'c', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'cards', lecture: 3, title: 'צור כרטיסי זיכרון מהסיכום של הרצאה 3 (ערימות)', why: 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה', minutes: 15 }] }, 700);
+    // The tasks, one of each kind, without what the week already has as a goal (as study-track.js does).
+    if (m.op === 'tasks') {
+      const all = [
+        { id: 'h', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'homework', lecture: 4, title: 'פתור את תרגיל הבית של הרצאה 4 (עצי AVL)', why: 'ההגשה בעוד 2 ימים, והתרגיל בתיקייה', minutes: 60 },
+        { id: 'e', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'exam', lecture: null, title: 'פתור מבחן קודם בתנאי מבחן, ורשום מה לקח הכי הרבה זמן', why: 'המבחן בעוד 12 ימים, ויש 3 מבחנים קודמים בתיקייה', minutes: 90 },
+        { id: 's', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'summary', lecture: 5, title: 'צור סיכום להרצאה 5 (ערכים עצמיים) ולמד ממנו', why: 'יש 3 קבצים בתיקייה של ההרצאה, ועדיין אין סיכום, ועוד הרצאה אחת בלי סיכום', minutes: 30 },
+        { id: 'r', course: 'אלגברה לינארית 2', folder: 'אלגברה לינארית 2', kind: 'review', lecture: null, title: 'חזור על 14 כרטיסי זיכרון', why: 'הגיע הזמן לחזור עליהם, לפי החזרה המרווחת', minutes: 15 },
+        { id: 'c', course: 'מבני נתונים', folder: 'מבני נתונים', kind: 'cards', lecture: 3, title: 'צור כרטיסי זיכרון מהסיכום של הרצאה 3 (ערימות)', why: 'יש סיכום, ועוד אין ממנו כרטיסים לחזרה, ועוד 2 סיכומים בלי כרטיסים', minutes: 15 }];
+      const planned = (t) => p.plan.blocks.some(b => b.course === t.course && (t.kind === 'homework' ? b.goal.startsWith(t.title)
+        : t.kind === 'exam' ? b.goal.startsWith('תרגיל מבחן קודם') : t.kind === 'review' ? !b.done && b.goal.includes('כרטיסיות שמחכות') : false));
+      const tasks = all.filter(t => !planned(t));
+      return emit({ type: 'trackTasks', total: tasks.length, tasks }, 700);
+    }
     if (m.op === 'routineScan') return emit({ type: 'trackRoutineScan', calendars: 1, events: 23, firstStart: '08:30', lastEnd: '19:00', busyByDay: [180, 420, 120, 390, 60, 0, 0],
       commitments: [{ title: 'עבודה', day: 1, start: '15:00', end: '20:00', weeks: 4, source: 'calendar' }, { title: 'אימון כושר', day: 3, start: '18:00', end: '19:30', weeks: 3, source: 'calendar' }],
       upcoming: [{ title: 'תור לרופא שיניים', date: iso(new Date(Date.now() + 3 * 86400000)), day: new Date(Date.now() + 3 * 86400000).getDay(), start: '10:00', end: '11:00', source: 'calendar' }] }, 900);
@@ -112,12 +128,12 @@
       p.routine = Object.assign({}, m.routine, { done: true, updated: iso(new Date()) });
       p.courses = (m.courses || []).map(c => Object.assign({ hoursPerWeek: 0, notes: '' }, p.courses.find(x => x.name === c.name) || {}, c));
       const ws = trackSnapshot().weekStart;
-      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: x.level * x.energy >= 6 ? '09:00' : '16:30', minutes: m.routine.block || 45, course: x.name, goal: DEMO_GOALS[(i + k) % DEMO_GOALS.length], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day || a.start.localeCompare(b.start)) };
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: x.level * x.energy >= 6 ? '09:00' : '16:30', minutes: m.routine.block || 45, course: x.name, goal: demoGoal(x.name, k), done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day || a.start.localeCompare(b.start)) };
       return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length }, wizardDone: true }), 1100);
     }
     if (m.op === 'build') {
-      const ws = trackSnapshot().weekStart, goals = DEMO_GOALS;
-      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: goals[(i + k) % goals.length], done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
+      const ws = trackSnapshot().weekStart;
+      p.plan = { weekStart: ws, blocks: p.courses.flatMap((x, i) => [0, 1].map(k => ({ id: 'b' + (i * 2 + k + 1), day: (i + k * 2) % 5, start: i ? '14:00' : '10:00', minutes: 60, course: x.name, goal: demoGoal(x.name, k), done: false, doneMinutes: 0 }))).sort((a, b) => a.day - b.day) };
       return emit(trackSnapshot({ built: { unplaced: 0, blocks: p.plan.blocks.length } }), 500);
     }
     if (m.op === 'strategy') {
