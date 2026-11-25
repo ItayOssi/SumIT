@@ -567,6 +567,7 @@ partial class HitStudent : Form
             // AI tasks
             case "getNewMaterial": GetNewMaterial(course, m["sections"] as System.Collections.ArrayList, m["nums"] as System.Collections.ArrayList); break;
             case "lecturePdf": StartLectureSummary(m); break;
+            case "deleteExtraSummary": DeleteExtraSummary(course, Int(m, "num"), Str(m, "name")); break;
             case "summarize": Summarize(course, Int(m, "num"), Str(m, "title")); break;
             case "analyzeCourse": AnalyzeCourse(course); break;
             case "examPrep": ExamPrep(course); break;

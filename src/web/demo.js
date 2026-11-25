@@ -178,7 +178,7 @@
   const lec = (num, title, items, local) => ({ num, title, items, local: Object.assign({ dir: 'D:\\HIT\\Courses\\x\\שיעור ' + num, exists: false, files: 0, videos: 0, transcripts: 0, studyPage: null }, local || {}) });
   const sections = [
     lec(0, 'מידע כללי', [{ mod: 'resource', name: 'סילבוס הקורס תשפ"ו' }, { mod: 'forum', name: 'הודעות' }]),
-    lec(1, 'אינטגרל רימן', [{ mod: 'resource', name: 'הרצאה 1 - אינטגרל רימן' }, { mod: 'assign', name: 'תרגיל בית 1', dates: 'הגשה: 12 בנובמבר' }, { mod: 'zoom', name: 'הקלטת ההרצאה' }], { exists: true, files: 4, videos: 1, transcripts: 1, studyPage: 'x', lecturePdf: 'x' }),
+    lec(1, 'אינטגרל רימן', [{ mod: 'resource', name: 'הרצאה 1 - אינטגרל רימן' }, { mod: 'assign', name: 'תרגיל בית 1', dates: 'הגשה: 12 בנובמבר' }, { mod: 'zoom', name: 'הקלטת ההרצאה' }], { exists: true, files: 4, videos: 1, transcripts: 1, studyPage: 'x', lecturePdf: 'x', extraSummaries: [{ name: 'תמציתי · הכנה למבחן', page: 'x', pdf: 'x', notes: 'לכתוב סיכום תמציתי: רק העיקר, בלי הרחבות.' }] }),
     lec(2, 'המשפט היסודי', [{ mod: 'resource', name: 'הרצאה 2 - המשפט היסודי' }, { mod: 'resource', name: 'תרגול 2' }, { mod: 'zoom', name: 'הקלטה' }], { exists: true, files: 3, studyPage: 'x' }),
     lec(3, 'שיטות אינטגרציה', [{ mod: 'resource', name: 'הרצאה 3' }, { mod: 'assign', name: 'תרגיל בית 3' }], { exists: true, files: 2 }),
     lec(4, 'אינטגרלים מוכללים', [{ mod: 'resource', name: 'הרצאה 4' }, { mod: 'url', name: 'קישור להקלטה' }])
@@ -322,7 +322,7 @@
         case 'lecturePdf': {
           const steps = ['קורא את חומרי הקורס', 'כותב את הסיכום', 'מסמן רמזים בדפי התרגיל', 'מכין את קובץ ה-PDF...'];
           steps.forEach((t, i) => emit({ type: 'sectionStatus', course: m.course, num: m.num, text: t, busy: true }, 300 + i * 700));
-          emit({ type: 'sectionStatus', course: m.course, num: m.num, text: 'קובץ ה-PDF של ההרצאה מוכן ✨', busy: false }, 3300);
+          emit({ type: 'sectionStatus', course: m.course, num: m.num, text: m.extra ? 'הסיכום הנוסף "' + m.extra + '" מוכן ✨' : 'קובץ ה-PDF של ההרצאה מוכן ✨', busy: false }, 3300);
           break;
         }
         case 'chat':

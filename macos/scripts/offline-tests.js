@@ -358,6 +358,27 @@ async function runLifecycleTests(app, root, check) {
   app.StartLectureSummary(notesMessage);
   check('summary notes can be cleared', app.SummaryNotes('queue-a', 1) === '');
   await delay(10);
+
+  // An extra summary: its own name and notes in its own folder; the main summary's notes stay as they were.
+  {
+    const xm = app.LoadMeta('extra-a'); xm.summaryNotes = { '1': 'הערה של הסיכום הראשי' }; app.SaveMeta('extra-a', xm);
+    let ran = null;
+    const savedOverride = app.summaryWorkOverride;
+    app.summaryWorkOverride = async (c, n, extra) => { if (extra) ran = extra; return { Error: false }; };
+    app.StartLectureSummary({ course: 'extra-a', num: 1, title: 'one', extra: 'תמציתי/למבחן. ', notes: 'לכתוב סיכום תמציתי' });
+    for (let i = 0; i < 300 && !ran; i++) await delay(10);
+    check('an extra summary runs with its own name and notes and leaves the main notes', ran && ran.name === 'תמציתי_למבחן' && ran.notes === 'לכתוב סיכום תמציתי' && app.SummaryNotes('extra-a', 1) === 'הערה של הסיכום הראשי');
+    ran = null;
+    const toasts = [], savedToast = app.Toast;
+    app.Toast = (t) => toasts.push(t);
+    app.StartLectureSummary({ course: 'extra-a', num: 1, title: 'one', extra: 'ריק', notes: '  ' });
+    app.StartLectureSummary({ course: 'extra-a', num: 1, title: 'one', extra: '  ', notes: 'משהו' });
+    await delay(10);
+    app.Toast = savedToast;
+    app.summaryWorkOverride = savedOverride;
+    check('an extra summary needs a name and notes', ran === null && toasts.length === 2);
+    check('an extra summary\'s name is a safe folder name of up to 40 letters', app.ExtraSummaryName('a/b\\c:'.repeat(10)).length <= 40 && !/[\/\\:.]/.test(app.ExtraSummaryName('../x.y/z')));
+  }
   app.summaryWorkOverride = null;
 
   const fixture = path.join(root, 'math', 'lesson.html');
@@ -2949,6 +2970,28 @@ async function runRecordingTests(app, root, check) {
   check('with a transcript the summary is asked to mark what was said only in the lecture', prompt.includes('class="from-lecture"') && prompt.includes('אל תמציא'));
   check('the summary is asked for one calm order and for no formulas in a verbal course', prompt.includes('בלי סעיפים שחוזרים') && prompt.includes('בקורס מילולי אין נוסחאות') && !prompt.includes('Core Takeaway'));
   check('the summary\'s status says the transcript was read and what it added', statuses[statuses.length - 1].includes('התמלול נקרא (52 דקות)') && statuses[statuses.length - 1].includes('2 נקודות מהשיעור'));
+  {
+    // The extra summary's pipeline: the prompt writes to its own folder, with no digest and no pointer PDFs, and the main page is untouched.
+    const mainBefore = readText(app.StudyPagePath(course, 1));
+    const saved2 = { CourseTask: app.CourseTask, AiReadyOrSay: app.AiReadyOrSay, BuildLecturePdf: app.BuildLecturePdf, SectionStatus: app.SectionStatus, SecondOpinion: app.SecondOpinion };
+    let xprompt = '', pdfArgs = null, opinion = false;
+    const xpage = path.join(app.ExtraSummaryDir(course, 1, 'למבחן'), C.SummaryHtmlName);
+    app.AiReadyOrSay = () => true;
+    app.SectionStatus = () => { };
+    app.SecondOpinion = async () => { opinion = true; return ''; };
+    app.BuildLecturePdf = async (c, n, page, out) => { pdfArgs = [page, out]; writeText(out, 'pdf'); app.pdfFailure = ''; return out; };
+    app.CourseTask = async (key, c, status, p) => { xprompt = p; writeText(xpage, '<html><body>ממוקד</body></html>'); return { Error: false, Text: 'ok', Provider: 'claude' }; };
+    try { await app.LecturePdfCoreAsync(course, 1, 'L1', false, true, { name: 'למבחן', notes: 'רק מה שיהיה במבחן' }); }
+    finally { Object.assign(app, saved2); }
+    const rel = app.LectureFolderName(1) + '/' + C.SummaryName + '/' + C.ExtraSummaries + '/למבחן/' + C.SummaryHtmlName;
+    check('an extra summary\'s prompt writes to its own folder with its notes, and no digest or pointer PDFs', xprompt.includes(rel) && xprompt.includes('רק מה שיהיה במבחן') && xprompt.includes('זה סיכום נוסף') && !xprompt.includes(app.DigestRel(1)) && !xprompt.includes('צור גם את קבצי ה-PDF עם המפנים'));
+    check('an extra summary is printed to its own PDF and leaves the main page and the second opinion alone', pdfArgs && pdfArgs[0] === xpage && pdfArgs[1] === path.join(path.dirname(xpage), C.SummaryPdfName) && readText(app.StudyPagePath(course, 1)) === mainBefore && !opinion);
+    const xs = app.LocalInfo(course, 1).extraSummaries;
+    check('the lecture lists its extra summaries with the notes they were made with', xs.length === 1 && xs[0].name === 'למבחן' && xs[0].page === xpage && xs[0].pdf && xs[0].notes === 'רק מה שיהיה במבחן');
+    const files = app.LocalInfo(course, 1).materialFiles.map(f => f.name);
+    check('an extra summary is not counted as lecture material', !files.some(f => f.includes(C.ExtraSummaries)));
+    check('deleting an extra summary removes only its folder', app.DeleteExtraSummary(course, 1, 'למבחן') && app.ExtraSummaries(course, 1).length === 0 && fileExists(app.StudyPagePath(course, 1)) && !app.DeleteExtraSummary(course, 1, 'אין כזה'));
+  }
   const L = app.LocalInfo(course, 1);
   check('the lecture\'s info has the sources and the length of the recording', L.sources && L.sources.fromLecture === 2 && L.recordings[0].seconds === 3130 && L.recordings[0].short === '');
   writeText(path.join(recDir, 'הרצאה מספר 1 ' + C.TranscriptSuffix + '.txt'), VttToText('WEBVTT\n\n00:00:03.000 --> 00:00:05.000\nא: ממשיכים\n', 'T'));

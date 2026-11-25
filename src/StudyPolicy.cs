@@ -16,9 +16,9 @@ partial class HitStudent
         + "לפני שמירה מחק כל פסקה שאינה מסבירה נקודה שנלמדה, ממלאת פער הכרחי או עוזרת לפתור תרגיל נוכחי. שמור את נוסחי השאלות והנימוקים החיוניים; השתמש בדוגמה פתורה משיעורי הבית גם להדגמת השיטה במקום לשכפל אותה.\n"
         + "העדפת מקור אינה סתירה עובדתית. אם יש טעות, מקור חסר או סתירה אמיתית, ציין זאת בקצרה והשלם בזהירות מהמקור המתאים; אל תציג טעות כנכונה ואל תמציא חומר בשם הקיצור.\n";
 
-    string SummaryScopeInstructions(string course, int num)
+    string SummaryScopeInstructions(string course, int num, string notesOverride = null)
     {
-        string notes = SummaryNotes(course, num);
+        string notes = notesOverride ?? SummaryNotes(course, num);
         return StudyScopePolicy + (notes.Length == 0 ? "" : "הערות הסטודנט שנשמרו להרצאה זו:\n" + notes + "\nסוף הערות הסטודנט. החל אותן גם בביקורת ובתיקון, בלי להרחיב מחדש את הסיכום.\n");
     }
 

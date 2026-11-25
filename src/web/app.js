@@ -1369,13 +1369,100 @@ function renderCourseNow() {
 // A summary that is being made: kept on the app's side, so it is still there when the student comes back to the course.
 const lectureState = (row) => ({ aiBusy: !!row.running, pct: row.progress ? row.progress.pct : null, eta: row.progress ? row.progress.eta : null, pctText: row.progress ? row.progress.text : '' });
 
-function requestLectureSummary(course, lecture, force=false) {
+// Buttons above the notes of a summary: each one writes a fixed line into the notes, which reach the AI as they are.
+// A group with `one` lets only one of its buttons be on. `ask` writes the start of a line and leaves the cursor after it.
+const SUMMARY_PRESETS = [
+  { group: 'דגש על', items: [
+    { label: 'מה שהמרצה אומר', text: 'לתת דגש על מה שהמרצה אומר ומדגיש בהקלטה: דברים שהוא חוזר עליהם, "זה חשוב" או "זה יהיה במבחן", טיפים וטעויות נפוצות שהוא מזהיר מהן, ולסמן אותם בבירור.' },
+    { label: 'שיעורי הבית', text: 'לתת את רוב המקום לשאלות של שיעורי הבית ולדרך הפתרון שלהן.' },
+    { label: 'הכנה למבחן', text: 'לתת דגש על מה שסביר שיופיע במבחן, לפי מבחני העבר, ולציין סוגי שאלות שחוזרים.' },
+    { label: 'הגדרות ומשפטים', text: 'לרכז את ההגדרות והמשפטים של ההרצאה בניסוח מדויק, כל אחד עם משפט הסבר קצר.' },
+    { label: 'דוגמאות פתורות', text: 'להוסיף דוגמאות פתורות צעד אחר צעד מתוך ההרצאה והתרגול.' },
+    { label: 'נוסחאות', text: 'לסיים בדף נוסחאות מרוכז של ההרצאה, עם מתי משתמשים בכל נוסחה.' },
+    { label: 'נושא מסוים…', text: 'לתת דגש מיוחד על הנושא: ', ask: true },
+  ] },
+  { group: 'אורך', one: true, items: [
+    { label: 'תמציתי', text: 'לכתוב סיכום תמציתי: רק העיקר, בלי הרחבות.' },
+    { label: 'מפורט', text: 'לכתוב סיכום מפורט, עם הסבר מלא לכל שלב.' },
+  ] },
+  { group: 'סגנון', items: [
+    { label: 'הסבר פשוט', text: 'להסביר בשפה פשוטה ואינטואיטיבית, כאילו לסטודנט שלא היה בהרצאה, ורק אחר כך את הניסוח הפורמלי.' },
+    { label: 'עם הוכחות', text: 'לכלול את ההוכחות שהוצגו בהרצאה, עם הרעיון המרכזי של כל הוכחה.' },
+    { label: 'בלי הוכחות', text: 'לדלג על הוכחות, ולהשאיר רק את הטענות ואיך משתמשים בהן.' },
+  ] },
+  { group: 'מקורות', one: true, items: [
+    { label: 'בעיקר ההקלטה', text: 'להתבסס בעיקר על ההקלטה ועל מה שנאמר בה.' },
+    { label: 'בעיקר המצגות', text: 'להתבסס בעיקר על המצגות והקבצים של המרצה.' },
+    { label: 'בעיקר המחברות', text: 'להתבסס בעיקר על מחברות התלמיד והמרצה.' },
+  ] },
+];
+const summaryPresetLines = (notes) => String(notes || '').split('\n');
+const summaryPresetHas = (notes, it) => summaryPresetLines(notes).some(l => it.ask ? l.startsWith(it.text) : l.trim() === it.text);
+// Turns a preset on or off in the notes; a group with `one` turns its other buttons off. "with proofs" and "without proofs" also exclude each other.
+function summaryPresetToggle(notes, group, it) {
+  const off = (lines, x) => lines.filter(l => x.ask ? !l.startsWith(x.text) : l.trim() !== x.text);
+  let lines = summaryPresetLines(notes);
+  if (summaryPresetHas(notes, it)) return off(lines, it).join('\n').replace(/^\n+|\n+$/g, '');
+  const rivals = group.one ? group.items : group.items.filter(x => /הוכחות/.test(x.label) && /הוכחות/.test(it.label));
+  for (const x of rivals) if (x !== it) lines = off(lines, x);
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.concat(it.text).join('\n').replace(/^\n+/, '');
+}
+
+// The summary dialog. With a main summary already made, "סיכום נוסף" builds another one of the same lecture, with its own name
+// and notes, next to the main one (which it never replaces). opts.extra opens it in that mode.
+function summaryExtraName(notes) {
+  const on = [];
+  for (const g of SUMMARY_PRESETS) for (const it of g.items) {
+    if (!summaryPresetHas(notes, it)) continue;
+    if (it.ask) { const line = summaryPresetLines(notes).find(l => l.startsWith(it.text)); const topic = (line || '').slice(it.text.length).trim(); if (topic) on.unshift(topic.split(/[(,.]/)[0].trim()); }
+    else on.push(it.label);
+  }
+  return on.join(' · ').slice(0, 40).trim();
+}
+
+function requestLectureSummary(course, lecture, force=false, opts={}) {
   if (document.querySelector('.summary-options')) return;
-  const dialog=h(`<dialog class="summary-options" dir="rtl" aria-labelledby="summaryOptionsTitle"><form method="dialog"><h2 id="summaryOptionsTitle">${force?'בנייה מחדש':'יצירת סיכום'} · הרצאה ${esc(String(lecture.num))}</h2><p class="muted">הסיכום יתמקד בפתרון שיעורי הבית: השאלות המלאות, ההסברים הנחוצים והפתרונות המודרכים. מבחני עבר ופתרונות שתוסיפו באזור המבחנים יעזרו למקד את ההכנה למבחן. ההערות שלך קובעות על אילו מקורות להתבסס וכמה לפרט; הסיכום יישאר בגבולות ההרצאה.</p><label>הערות לסיכום <small class="muted">(לא חובה)</small><textarea name="notes" rows="6" maxlength="4000" placeholder="למשל: להתבסס בעיקר על מחברות התלמיד והמרצה; לסכם רק מה שנלמד בהרצאה ולהשלים רק מה שחיוני לתרגילים."></textarea></label><p class="muted">ההערות נשמרות להרצאה. שינוי בהן יילקח בחשבון גם אם קבצי ההרצאה לא השתנו.</p><div class="row"><button type="submit" class="primary">${force?'בנה מחדש':'צור סיכום'}</button><button type="button" class="ghost" data-cancel>ביטול</button></div></form></dialog>`);
-  dialog.querySelector('textarea').value=lecture.summaryNotes||'';
+  const L = lecture.local || {};
+  const hasMain = !!(L.studyPage || L.lecturePdf);
+  const dialog=h(`<dialog class="summary-options" dir="rtl" aria-labelledby="summaryOptionsTitle"><form method="dialog"><h2 id="summaryOptionsTitle"></h2><p class="muted">הסיכום יתמקד בפתרון שיעורי הבית: השאלות המלאות, ההסברים הנחוצים והפתרונות המודרכים. מבחני עבר ופתרונות שתוסיפו באזור המבחנים יעזרו למקד את ההכנה למבחן. ההערות שלך קובעות על אילו מקורות להתבסס וכמה לפרט; הסיכום יישאר בגבולות ההרצאה.</p>${hasMain ? `<div class="summary-extra"><label class="check"><input type="checkbox" data-extra> סיכום נוסף <small class="muted">(לא חובה) הסיכום הראשי נשאר כמו שהוא, וזה נשמר לצידו במיקוד אחר</small></label><label class="extra-name" hidden>שם הסיכום הנוסף<input data-name maxlength="40" placeholder="למשל: תמציתי למבחן"></label></div>` : ''}<div class="summary-presets">${SUMMARY_PRESETS.map((g,gi)=>`<div class="preset-row"><span class="preset-group">${esc(g.group)}</span><div class="preset-chips">${g.items.map((it,ii)=>`<button type="button" class="preset" data-g="${gi}" data-i="${ii}" aria-pressed="false">${esc(it.label)}</button>`).join('')}</div></div>`).join('')}</div><label>הערות לסיכום <small class="muted" data-hint>(לא חובה)</small><textarea name="notes" rows="6" maxlength="4000" placeholder="למשל: להתבסס בעיקר על מחברות התלמיד והמרצה; לסכם רק מה שנלמד בהרצאה ולהשלים רק מה שחיוני לתרגילים."></textarea></label><p class="muted" data-foot></p><div class="row"><button type="submit" class="primary"></button><button type="button" class="ghost" data-cancel>ביטול</button></div></form></dialog>`);
+  const ta=dialog.querySelector('textarea');
+  const extraBox=dialog.querySelector('[data-extra]'), nameIn=dialog.querySelector('[data-name]');
+  let mainNotes=lecture.summaryNotes||'', extraNotes='', nameTouched=false;
+  const isExtra=()=>!!(extraBox&&extraBox.checked);
+  const syncPresets=()=>{
+    dialog.querySelectorAll('.preset').forEach(b=>b.setAttribute('aria-pressed',String(summaryPresetHas(ta.value,SUMMARY_PRESETS[b.dataset.g].items[b.dataset.i]))));
+    if(isExtra()&&!nameTouched) nameIn.value=summaryExtraName(ta.value);
+  };
+  const syncMode=()=>{
+    const x=isExtra();
+    dialog.querySelector('#summaryOptionsTitle').textContent=(x?'סיכום נוסף':force?'בנייה מחדש':'יצירת סיכום')+' · הרצאה '+lecture.num;
+    dialog.querySelector('[data-hint]').textContent=x?'(על מה הסיכום הזה יתמקד)':'(לא חובה)';
+    dialog.querySelector('[data-foot]').textContent=x?'הסיכום הנוסף נשמר בתיקייה "סיכומים נוספים" של ההרצאה, ונפתח מכרטיס ההרצאה. הכרטיסיות, הבוחן וההערות של הסיכום הראשי לא משתנים.':'ההערות נשמרות להרצאה. שינוי בהן יילקח בחשבון גם אם קבצי ההרצאה לא השתנו.';
+    dialog.querySelector('button[type=submit]').textContent=x?'צור סיכום נוסף':force?'בנה מחדש':'צור סיכום';
+    if(nameIn) nameIn.closest('label').hidden=!x;
+    syncPresets();
+  };
+  ta.value=mainNotes;
+  if(extraBox){
+    extraBox.checked=!!opts.extra;
+    if(extraBox.checked) ta.value='';
+    extraBox.onchange=()=>{ if(isExtra()){mainNotes=ta.value;ta.value=extraNotes;} else {extraNotes=ta.value;ta.value=mainNotes;} syncMode(); ta.focus(); };
+    nameIn.addEventListener('input',()=>{nameTouched=nameIn.value.trim()!=='';});
+  }
+  dialog.querySelectorAll('.preset').forEach(b=>b.onclick=()=>{const g=SUMMARY_PRESETS[b.dataset.g],it=g.items[b.dataset.i];ta.value=summaryPresetToggle(ta.value,g,it);syncPresets();if(it.ask&&summaryPresetHas(ta.value,it)){ta.focus();const at=ta.value.indexOf(it.text)+it.text.length;const end=ta.value.indexOf('\n',at);ta.setSelectionRange(end<0?ta.value.length:end,end<0?ta.value.length:end);}});
+  ta.addEventListener('input',syncPresets);syncMode();
   dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
-  dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const notes=dialog.querySelector('textarea').value.trim();lecture.summaryNotes=notes;send({type:'lecturePdf',course:course.name,num:lecture.num,title:lecture.title,force,notes});dialog.close();};
-  dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();dialog.querySelector('textarea').focus();
+  dialog.querySelector('form').onsubmit=e=>{e.preventDefault();const notes=ta.value.trim();
+    if(isExtra()){
+      const name=nameIn.value.trim()||summaryExtraName(notes);
+      if(!notes){toast('כתוב או בחר על מה הסיכום הנוסף יתמקד',{error:true});ta.focus();return;}
+      if(!name){toast('תן שם לסיכום הנוסף',{error:true});nameIn.focus();return;}
+      if((L.extraSummaries||[]).some(x=>x.name===name)&&!confirm('כבר יש סיכום נוסף בשם "'+name+'". לבנות אותו מחדש?'))return;
+      send({type:'lecturePdf',course:course.name,num:lecture.num,title:lecture.title,extra:name,notes});dialog.close();return;
+    }
+    lecture.summaryNotes=notes;send({type:'lecturePdf',course:course.name,num:lecture.num,title:lecture.title,force,notes});dialog.close();};
+  dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();ta.focus();
 }
 
 function renderLectures() {
@@ -1499,6 +1586,16 @@ function fillLecture(el, s) {
     // Another AI (ChatGPT / Gemini on the student's account) checks every solution in the summary and adds its notes at the end.
     if (helpersConnected()) btn('check', 'בדיקה שנייה עם AI נוסף', 'soft', () => send({ type: 'secondOpinion', course: course.name, num: s.num }), s.busy);
     btn('refresh', 'בנה מחדש מההתחלה', 'ghost', () => requestLectureSummary(course, s, true), s.busy);
+    btn('plus', 'סיכום נוסף במיקוד אחר', 'ghost', () => requestLectureSummary(course, s, false, { extra: true }), s.busy);
+    // Extra summaries of the lecture, each with its own focus: open, PDF, and delete (a second click confirms).
+    (L.extraSummaries || []).forEach(x => {
+      btn('book', 'סיכום: ' + esc(x.name), 'soft', () => openViewer(x.page || x.pdf, `הרצאה ${s.num} · ${x.name}`, x.pdf, s.num)).title = x.notes || '';
+      const del = btn('x', '', 'ghost small icon-only', () => {
+        if (del.dataset.armed) { send({ type: 'deleteExtraSummary', course: course.name, num: s.num, name: x.name }); return; }
+        del.dataset.armed = '1'; del.lastChild.textContent = ' למחוק?'; setTimeout(() => { delete del.dataset.armed; del.lastChild.textContent = ''; }, 3000);
+      }, s.busy);
+      del.append(document.createTextNode('')); del.title = 'מחק את הסיכום הנוסף "' + x.name + '"'; del.setAttribute('aria-label', del.title);
+    });
   } else if (s.num > 0) btn('sparkles', 'צור סיכום PDF של ההרצאה', L.files || L.transcripts ? 'primary' : 'soft',
     () => requestLectureSummary(course, s), s.busy || !(L.files || L.transcripts));
   if (L.exists) btn('folder', 'תיקייה', 'ghost', () => send({ type: 'openPath', path: L.dir }));
@@ -2327,7 +2424,7 @@ function onMessage(m) {
     case 'chatDone': if(!S.course || S.course.name!==m.course || S.chatScope!==(m.scope||'course'))break; if (thinking) { thinking.remove(); thinking = null; } S.chatBusy = false; $('chatSend').disabled = false; addCheckButton(); break;
     case 'summaryReady':
       // The summary is not opened in a browser: a button opens its interactive version inside the app (the PDF is already in the lecture's folder).
-      toast(`הסיכום של הרצאה ${m.num} מוכן`, { action: 'פתח את הסיכום', ms: 20000, onAction: () => openViewer(m.page, `הרצאה ${m.num} · סיכום`, m.pdf, m.num) });
+      toast(m.title ? `הסיכום הנוסף "${m.title}" מוכן` : `הסיכום של הרצאה ${m.num} מוכן`, { action: 'פתח את הסיכום', ms: 20000, onAction: () => openViewer(m.page, `הרצאה ${m.num} · ${m.title || 'סיכום'}`, m.pdf, m.num) });
       break;
     case 'authCode': S.authCode = m.state === 'wait' ? { kind: m.kind, url: m.url, phase:m.phase } : null; renderProviders(); break;
     case 'loginUrl':

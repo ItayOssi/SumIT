@@ -29,6 +29,8 @@ partial class HitStudent
     const string SummaryHtmlName = "סיכום הרצאה - גרסה אינטראקטיבית.html";
     const string SummaryPdfName = "סיכום הרצאה.pdf";
     const string SumitDir = ".sumit";                          // the app's own helper files (digests, logs), hidden
+    const string ExtraSummaries = "סיכומים נוספים";             // inside the summary folder: one folder per extra summary, with its own focus
+    const string ExtraFocusName = "מיקוד.txt";                    // the notes an extra summary was made with
     const string SummaryName = "סיכום הרצאה";                  // the lecture summary (.pdf / .html), inside the lecture folder                                         // מחברת
     const string LecturerProfile = "מבחנים\\פרופיל המרצה.md"; // פרופיל המרצה.md
     const string ExamPrepPage = "הכנה למבחן.html";   // לקראת המבחן.html
@@ -388,6 +390,28 @@ return out;";
         return Path.Combine(LectureDir(course, num), SummaryName, SummaryHtmlName);
     }
 
+    // An extra summary of a lecture, made with its own focus next to the main one, which it never replaces.
+    static string ExtraSummaryName(string name)
+    {
+        string n = (name ?? "").Replace('.', ' ').Trim();
+        if (n.Length == 0) return "";
+        n = SafeName(n);
+        return (n.Length > 40 ? n.Substring(0, 40) : n).Trim();
+    }
+    string ExtraSummaryDir(string course, int num, string name) { return Path.Combine(LectureDir(course, num), SummaryName, ExtraSummaries, ExtraSummaryName(name)); }
+    List<Dictionary<string, object>> ExtraSummaryList(string course, int num)
+    {
+        string root = Path.Combine(LectureDir(course, num), SummaryName, ExtraSummaries);
+        if (!Directory.Exists(root)) return new List<Dictionary<string, object>>();
+        return Directory.GetDirectories(root).Select(d =>
+        {
+            string page = Path.Combine(d, SummaryHtmlName), pdf = Path.Combine(d, SummaryPdfName), focus = Path.Combine(d, ExtraFocusName);
+            string notes = "";
+            try { if (File.Exists(focus)) notes = File.ReadAllText(focus, Encoding.UTF8).Trim(); } catch { }
+            return new Dictionary<string, object> { { "name", Path.GetFileName(d) }, { "page", File.Exists(page) ? page : null }, { "pdf", File.Exists(pdf) ? pdf : null }, { "notes", notes } };
+        }).Where(x => x["page"] != null || x["pdf"] != null).OrderBy(x => (string)x["name"], StringComparer.Create(new System.Globalization.CultureInfo("he-IL"), false)).ToList();
+    }
+
     // Files the app writes into a lecture folder itself (the summary and its helpers): not the student's material.
     static bool IsSummaryFile(string path)
     {
@@ -437,6 +461,7 @@ return out;";
             dir = dir, exists = Directory.Exists(dir), files = files, videos = recordingFiles.Count, transcripts = transcripts, recordings = recordingFiles,
             studyPage = File.Exists(page) ? page : null, exercises = exercises, pointers = pointers, materialFiles = materialFiles,
             lecturePdf = File.Exists(LecturePdfPath(course, num)) ? LecturePdfPath(course, num) : null,
+            extraSummaries = ExtraSummaryList(course, num),
             sources = Dict(Dict(LoadMeta(course), "summarySources"), num.ToString())
         };
     }

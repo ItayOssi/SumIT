@@ -2315,3 +2315,17 @@ body.poster-splash .splash .box small { flex: 1; margin: 0; color: #f1e9ff; font
 body.poster-splash .splash .track { width: 160px; margin: 0; background: rgba(255,255,255,.18); }
 body.poster-splash .splash .track i { background: linear-gradient(90deg, #ff7eb6, #ffc58a); }
 @media (prefers-reduced-motion: reduce) { .pp, .pp img, .poster-mark { animation: none; opacity: 1; transform: none; } }
+
+/* The buttons above the notes of a summary (SUMMARY_PRESETS in app.js): each writes a line into the notes. */
+.summary-presets { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; }
+.summary-presets .preset-row { display: flex; align-items: baseline; gap: 10px; }
+.summary-presets .preset-group { flex: none; width: 52px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.summary-presets .preset-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.summary-presets .preset { font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.summary-presets .preset:hover { border-color: var(--accent); }
+.summary-presets .preset[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+/* "סיכום נוסף" in the summary dialog: another summary of the lecture, with its own name and notes, next to the main one. */
+.summary-extra { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.summary-extra label.check { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.summary-extra label.check small { font-weight: 400; }
+.summary-extra .extra-name { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }

@@ -664,6 +664,7 @@ class Host {
       // AI tasks
       case 'getNewMaterial': this.GetNewMaterial(course, Arr(m, 'sections'), Arr(m, 'nums')); break;
       case 'lecturePdf': this.StartLectureSummary(m); break;
+      case 'deleteExtraSummary': this.DeleteExtraSummary(Str(m, 'course'), Int(m, 'num'), Str(m, 'name')); break;
       case 'summarize': this.Summarize(course, Int(m, 'num'), Str(m, 'title')); break;
       case 'analyzeCourse': this.AnalyzeCourse(course); break;
       case 'examPrep': this.ExamPrep(course); break;

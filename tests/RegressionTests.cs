@@ -185,6 +185,24 @@ partial class HitStudent
         notesMessage["notes"] = ""; app.StartLectureSummary(notesMessage);
         check("summary notes can be cleared", app.SummaryNotes("queue-a",1) == "");
         app.summaryWorkOverride = null;
+        // An extra summary: its own name and notes in its own folder; the main summary's notes stay as they were.
+        app.StartLectureSummary(new Dictionary<string, object> { { "course", "queue-a" }, { "num", 1 }, { "title", "one" }, { "notes", "הערה של הסיכום הראשי" } });
+        ExtraSummary ran = null;
+        app.extraWorkOverride = (course, num, extra) => { ran = extra; return System.Threading.Tasks.Task.FromResult(new AiResult { Provider = "claude" }); };
+        app.StartLectureSummary(new Dictionary<string, object> { { "course", "queue-a" }, { "num", 1 }, { "title", "one" }, { "extra", "תמציתי/למבחן. " }, { "notes", "לכתוב סיכום תמציתי" } });
+        for (int i = 0; i < 50 && ran == null; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(10); }
+        check("an extra summary runs with its own name and notes and leaves the main notes", ran != null && ran.Name == "תמציתי_למבחן" && ran.Notes == "לכתוב סיכום תמציתי" && app.SummaryNotes("queue-a",1) == "הערה של הסיכום הראשי");
+        ran = null;
+        app.StartLectureSummary(new Dictionary<string, object> { { "course", "queue-a" }, { "num", 1 }, { "title", "one" }, { "extra", "ריק" }, { "notes", "  " } });
+        app.StartLectureSummary(new Dictionary<string, object> { { "course", "queue-a" }, { "num", 1 }, { "title", "one" }, { "extra", "  " }, { "notes", "משהו" } });
+        check("an extra summary needs a name and notes", ran == null);
+        check("an extra summary's name is a safe folder name of up to 40 letters", ExtraSummaryName(string.Concat(Enumerable.Repeat("a/b\\c:", 10))).Length <= 40 && !System.Text.RegularExpressions.Regex.IsMatch(ExtraSummaryName("../x.y/z"), "[/\\\\:.]"));
+        app.extraWorkOverride = null;
+        string xdir = app.ExtraSummaryDir("queue-a", 1, "למבחן"); Directory.CreateDirectory(xdir);
+        File.WriteAllText(Path.Combine(xdir, SummaryHtmlName), "<html>ממוקד</html>"); File.WriteAllText(Path.Combine(xdir, ExtraFocusName), "רק מה שיהיה במבחן");
+        var xs = app.ExtraSummaryList("queue-a", 1);
+        check("the lecture lists its extra summaries with the notes they were made with", xs.Count == 1 && (string)xs[0]["name"] == "למבחן" && (string)xs[0]["notes"] == "רק מה שיהיה במבחן");
+        check("deleting an extra summary removes only its folder", app.DeleteExtraSummary("queue-a", 1, "למבחן") && app.ExtraSummaryList("queue-a", 1).Count == 0 && !app.DeleteExtraSummary("queue-a", 1, "אין כזה"));
         string fixture = Path.Combine(root, "math", "lesson.html"); Directory.CreateDirectory(Path.GetDirectoryName(fixture));
         File.WriteAllText(fixture, "<html><head><script src='https://cdn.example/katex.min.js'></script></head><body dir='rtl'>מהירות $v^2-v_0^2=2a\\Delta x$ וגם \\(x+1\\) <details><summary>פתרון</summary>עברית ואנגלית</details></body></html>");
         app.PrepareStudyPage(fixture); app.PrepareStudyPage(fixture);

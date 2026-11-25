@@ -468,6 +468,20 @@ module.exports = {
     LectureDir(course, num) { return path.join(this.CourseDir(course), LectureFolderName(num)); },
     StudyPagePath(course, num) { return path.join(this.LectureDir(course, num), C.SummaryName, C.SummaryHtmlName); },
 
+    // An extra summary of a lecture, made with its own focus next to the main one, which it never replaces.
+    ExtraSummaryName(name) { const n = String(name || '').replace(/[.]/g, ' ').trim(); return n ? SafeName(n).slice(0, 40).trim() : ''; },
+    ExtraSummaryDir(course, num, name) { return path.join(this.LectureDir(course, num), C.SummaryName, C.ExtraSummaries, this.ExtraSummaryName(name)); },
+    ExtraSummaries(course, num) {
+      const root = path.join(this.LectureDir(course, num), C.SummaryName, C.ExtraSummaries);
+      if (!dirExists(root)) return [];
+      return listDirs(root).map(dir => {
+        const page = path.join(dir, C.SummaryHtmlName), pdf = path.join(dir, C.SummaryPdfName), focus = path.join(dir, C.ExtraFocusName);
+        let notes = '';
+        try { if (fileExists(focus)) notes = readText(focus).trim(); } catch { }
+        return { name: path.basename(dir), page: fileExists(page) ? page : null, pdf: fileExists(pdf) ? pdf : null, notes };
+      }).filter(x => x.page || x.pdf).sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    },
+
     LocalInfo(course, num) {
       const dir = this.LectureDir(course, num);
       let files = 0, videos = 0, transcripts = 0;
@@ -518,6 +532,7 @@ module.exports = {
         dir, exists: dirExists(dir), files, videos: recordingFiles.length, transcripts, recordings: recordingFiles,
         studyPage: fileExists(page) ? page : null, exercises, pointers, materialFiles,
         sharedSummaries: shared,
+        extraSummaries: this.ExtraSummaries(course, num),
         sources: Dict(Dict(this.LoadMeta(course), 'summarySources'), String(num)),
         lecturePdf: fileExists(this.LecturePdfPath(course, num)) ? this.LecturePdfPath(course, num) : null,
       };

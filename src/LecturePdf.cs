@@ -34,12 +34,49 @@ partial class HitStudent
     {
         string course = Str(message, "course"); int num = Int(message, "num");
         if (string.IsNullOrWhiteSpace(course) || num < 1 || num > 200 || summaryQueued.Contains(course + "|" + num)) return;
+        // An extra summary: its own name and notes, in its own folder; the main summary and its saved notes stay as they are.
+        if (message.ContainsKey("extra")) {
+            string name = ExtraSummaryName(Str(message, "extra")), extraNotes = Str(message, "notes").Trim();
+            if (name.Length == 0) { Toast("תן שם לסיכום הנוסף", true); return; }
+            if (extraNotes.Length == 0) { Toast("כתוב על מה הסיכום הנוסף יתמקד", true); return; }
+            if (extraNotes.Length > 4000) { Toast("אפשר להוסיף עד 4,000 תווים של הערות", true); return; }
+            var _ = ExtraSummaryAsync(course, num, Str(message, "title"), new ExtraSummary { Name = name, Notes = extraNotes });
+            return;
+        }
         if (message.ContainsKey("notes")) {
             string notes = Str(message, "notes").Trim(); if (notes.Length > 4000) { Toast("אפשר להוסיף עד 4,000 תווים של הערות", true); return; }
             var meta = LoadMeta(course); var all = Dict(meta, "summaryNotes") ?? new Dictionary<string, object>();
             all[num.ToString()] = notes; meta["summaryNotes"] = all; SaveMeta(course, meta);
         }
         LecturePdf(course, num, Str(message, "title"), Bool(message, "force"));
+    }
+
+    // An extra summary of a lecture: a name (its folder) and the notes it was made with.
+    class ExtraSummary { public string Name; public string Notes; }
+    Func<string, int, ExtraSummary, Task<AiResult>> extraWorkOverride; // Offline regression seam.
+
+    // Extra summaries wait in the same line as the main ones (one summary is built at a time).
+    async Task<AiResult> ExtraSummaryAsync(string course, int num, string title, ExtraSummary extra)
+    {
+        string key = course + "|" + num;
+        if (summaryRunning.Contains(key)) { Toast("כבר נבנה סיכום להרצאה הזו. אפשר להוסיף סיכום נוסף כשהוא יסתיים", true); return null; }
+        summaryQueued.Add(key);
+        SectionStatus(course, num, "בתור להכנת הסיכום הנוסף \"" + extra.Name + "\"", true, false);
+        await summaryGate.WaitAsync();
+        summaryQueued.Remove(key);
+        try { return extraWorkOverride != null ? await extraWorkOverride(course, num, extra) : await LecturePdfCoreAsync(course, num, title, true, true, extra); }
+        catch (Exception ex) { SectionStatus(course, num, "הסיכום הנוסף לא הושלם; אפשר לנסות שוב: " + Trunc(ex.Message, 120), false, true); return new AiResult { Error = true, Text = ex.Message }; }
+        finally { summaryGate.Release(); }
+    }
+
+    // Removes one extra summary (its folder). The main summary is never touched here.
+    bool DeleteExtraSummary(string course, int num, string name)
+    {
+        string dir = ExtraSummaryDir(course, num, name);
+        if (string.IsNullOrWhiteSpace(name) || ExtraSummaryName(name).Length == 0 || !Directory.Exists(dir) || summaryRunning.Contains(course + "|" + num)) return false;
+        try { Directory.Delete(dir, true); } catch { return false; }
+        SendSectionLocal(course, num);
+        return true;
     }
 
     // ---------- Progress: a percentage and a rough time left, from how long this course's earlier summaries took ----------
@@ -81,19 +118,24 @@ partial class HitStudent
         }
     }
 
-    async Task<AiResult> LecturePdfCoreAsync(string course, int num, string title, bool open = false, bool force = false)
+    // extra builds an extra summary in its own folder (ExtraSummaryDir) instead of the main one.
+    async Task<AiResult> LecturePdfCoreAsync(string course, int num, string title, bool open = false, bool force = false, ExtraSummary extra = null)
     {
         string key = "sum|" + course + "|" + num;
         if (aiRuns.ContainsKey(key)) return null;
         if (num < 1 || num > 200) return null;
-        string notes = SummaryNotes(course, num);
+        string notes = extra != null ? extra.Notes : SummaryNotes(course, num);
+        string xdir = extra != null ? ExtraSummaryDir(course, num, extra.Name) : "";
+        string pagePath = extra != null ? Path.Combine(xdir, SummaryHtmlName) : StudyPagePath(course, num);
+        string pdfPath = extra != null ? Path.Combine(xdir, SummaryPdfName) : LecturePdfPath(course, num);
+        if (extra != null) { Directory.CreateDirectory(xdir); File.WriteAllText(Path.Combine(xdir, ExtraFocusName), notes, new UTF8Encoding(false)); }
         string fingerprint = LectureFingerprint(course, num) + title + (notes.Length > 0 ? "\nnotes:" + notes : "");
         string cache = Path.Combine(CourseDir(course), SumitDir, "fingerprints", num + ".txt");
         Directory.CreateDirectory(Path.GetDirectoryName(cache));
         Directory.CreateDirectory(Path.Combine(CourseDir(course), SumitDir, "digests"));
         Directory.CreateDirectory(Path.GetDirectoryName(StudyPagePath(course, num)));
         HideSumit(course);
-        if (!force && File.Exists(cache) && File.ReadAllText(cache) == fingerprint && File.Exists(StudyPagePath(course, num)))
+        if (extra == null && !force && File.Exists(cache) && File.ReadAllText(cache) == fingerprint && File.Exists(StudyPagePath(course, num)))
         {
             SectionStatus(course, num, "הסיכום מעודכן - החומר לא השתנה, אז לא הייתה צורך לעבוד שוב", false, false);
             SendSectionLocal(course, num);
@@ -118,15 +160,16 @@ partial class HitStudent
         string prompt = SkillInstruction() + " בנה את חומר הלימוד של הרצאה " + num + " (נושא: \"" + title + "\"). התוצר יודפס ל-PDF אחד שהסטודנט ילמד ממנו.\n"
             + CourseContext(course) + "\n" + StudyLearningPolicy + CompleteQuestionPolicy
             + StudySubjectPolicy + StudyLayoutPolicy
-            + SummaryScopeInstructions(course, num)
+            + (extra != null ? "זה סיכום נוסף של ההרצאה בשם \"" + extra.Name + "\", לצד הסיכום הראשי (\"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\"), ובמיקוד שהסטודנט בחר בהערות שלמטה. אל תשנה את הסיכום הראשי ואל תכתוב תקציר. ההערות קובעות מה נכנס ובאיזה פירוט, גם אם זה סוטה מהמבנה הרגיל שלמטה.\n" : "")
+            + SummaryScopeInstructions(course, num, extra != null ? notes : null)
             + "החומר מצטבר: השתמש בהרצאות 1 עד " + num + " בלבד ואל תכלול הרצאות מאוחרות."
             + (earlier.Count > 0 ? " לכל הרצאה קודמת יש תקציר קצר: " + string.Join(", ", earlier.Select(k => "\"" + DigestRel(k) + "\"")) + ". קרא אותם קודם (זה חוסך זמן), ופתח קובץ מקור של הרצאה קודמת רק כשחסר פרט לשאלה." : "")
             + (noDigest.Count > 0 ? " להרצאות " + string.Join(", ", noDigest) + " אין עדיין תקציר - הצץ בחומר שלהן רק לפי הצורך." : "")
-            + " בסוף כתוב גם תקציר \"" + DigestRel(num) + "\" (עד 60 שורות: הנושאים, כל נוסחה ב-LaTeX אם יש, הגדרות, שיטות פתרון ושמות הסעיפים בדף) לשימוש ההרצאות הבאות.\n"
+            + (extra != null ? "\n" : " בסוף כתוב גם תקציר \"" + DigestRel(num) + "\" (עד 60 שורות: הנושאים, כל נוסחה ב-LaTeX אם יש, הגדרות, שיטות פתרון ושמות הסעיפים בדף) לשימוש ההרצאות הבאות.\n")
             + "החומר של ההרצאה: התיקייה \"" + folder + "\"" + (hasTranscript ? ", התמלול \"" + folder + "/" + RecordingFolder + "\"" : "")
             + ", מצגות ומחברת המרצה ב-\"" + folder + "/" + LecturerNotes + "\", והמחברת של הסטודנט ב-\"" + folder + "/" + Notebook + "\" אם יש.\n"
             + (hasTranscript ? "קרא את התמלול. הוסף לסיכום מה שהמרצה אמר בעל פה ולא כתוב במצגות (הסברים, דגשים, דוגמאות, מה שאמר שיהיה במבחן), וסמן כל נקודה כזו ב-<span class=\"from-lecture\">מהשיעור</span> בתחילתה. אם התמלול קצר או לא מוסיף דבר, אל תמציא נקודות כאלה.\n" : "")
-            + "כתוב את דף הלימוד \"" + folder + "/" + SummaryName + "/" + SummaryHtmlName + "\" לפי הסקיל (אל תיצור קבצים אחרים בתיקיית הסיכום), ובו:\n"
+            + "כתוב את דף הלימוד \"" + (extra != null ? folder + "/" + SummaryName + "/" + ExtraSummaries + "/" + extra.Name : folder + "/" + SummaryName) + "/" + SummaryHtmlName + "\" לפי הסקיל (אל תיצור קבצים אחרים בתיקיית הסיכום), ובו:\n"
             + "0. בראש הדף: משפט הפתיחה, ואז מה חובה לדעת מההרצאה ומה אפשר לדלג עליו, לפי מה ששיעורי הבית והמבחנים בודקים.\n"
             + "1. החומר של ההרצאה: כל נושא שנלמד, מוסבר היטב ובקצרה, עם הדוגמה של המרצה כשהיא מלמדת את השיטה, כרטיסי נוסחאות רק בקורס כמותי, ומה שהמצגות לא מסבירות בתוך הסעיף שלו. בלי לסכם אוטומטית כל שקף ובלי לשכפל דוגמאות.\n"
             + (homework
@@ -134,7 +177,7 @@ partial class HitStudent
                   + (hasSolutions
                       ? "בתיקיית שיעורי הבית יש גם פתרונות רשמיים של המרצה או המתרגל (קבצים עם \"פתרון\" או Sol בשם): הם מקור האמת. התאם אליהם כל פתרון שאתה כותב, ואם מצאת טעות בפתרון הרשמי - ציין זאת במפורש. "
                       : "לא זוהו קבצי פתרונות לפי השם. אם בתיקיית שיעורי הבית יש בכל זאת קבצים שהם פתרונות של המרצה או המתרגל (גם בלי המילה פתרון בשם), הם מקור האמת והתאם אליהם. אחרת פתור בזהירות, בדוק כל שלב פעמיים, וסמן ליד כל פתרון שהוא לא אומת מול פתרון רשמי. ")
-                  + "צור גם את קבצי ה-PDF עם המפנים ב-\"" + folder + "/" + Exercises + "/" + PointersFolder + "\".\n"
+                  + (extra != null ? "\n" : "צור גם את קבצי ה-PDF עם המפנים ב-\"" + folder + "/" + Exercises + "/" + PointersFolder + "\".\n")
                 : "2. אין עדיין שיעורי בית להרצאה הזו - במקום החלק \"שימוש בתרגילים\" תן 2-3 שאלות תרגול בסגנון של המרצה (מהמבחנים הקודמים, אם יש).\n")
             + "כתוב תמציתי: בלי הערות מנהליות, חזרות, הסברים על איך נבנה הסיכום או ציטוטים מיותרים. כל שורה צריכה לעזור ללמוד. את שם המרצה ופרטי הקורס אפשר להזכיר פעם אחת בלבד.\n"
             + "עברית, אנגלית, מספרים ונוסחאות מופיעים יחד בדף: כל נוסחה ב-KaTeX, וטקסט באנגלית בתוך משפט בעברית נשאר קריא ובסדר הנכון.\n"
@@ -153,7 +196,13 @@ partial class HitStudent
         try
         {
             result = await CourseTask(key, course, s => { phaseText = s; SectionStatus(course, num, s, true, false); }, prompt);
-            if (!result.Error && File.Exists(StudyPagePath(course, num)))
+            if (extra != null && !result.Error && File.Exists(pagePath))
+            {
+                printing = true; phaseText = "מכין את קובץ ה-PDF...";
+                SectionStatus(course, num, phaseText, true, false);
+                pdf = await BuildLecturePdf(course, num, pagePath, pdfPath); warning = pdfFailure;
+            }
+            else if (!result.Error && File.Exists(StudyPagePath(course, num)))
             {
                 var authorMeta = LoadMeta(course);
                 var writers = Dict(authorMeta, "summaryWriters") ?? new Dictionary<string, object>();
@@ -183,16 +232,22 @@ partial class HitStudent
         if (!result.Error) RememberSummarySeconds(course, (DateTime.UtcNow - started).TotalSeconds);
         Send(new { type = "sectionProgress", course = course, num = num, pct = 100, eta = 0, text = "" });
 
-        bool pageReady = File.Exists(StudyPagePath(course, num));
+        bool pageReady = File.Exists(pagePath);
         string status = result.Error ? "נכשל: " + Trunc(result.Text, 160)
+            : extra != null && pageReady ? "הסיכום הנוסף \"" + extra.Name + "\" מוכן ✨" + (pdf != null ? "" : " (בלי PDF: " + warning + ")")
             : pdf != null && warning.Length == 0 ? "הסיכום של ההרצאה מוכן ✨"
             : pdf != null ? "הסיכום מוכן ✨ (" + warning + ")"
             : pageReady ? "הסיכום מוכן, אבל קובץ ה-PDF לא נוצר (" + warning + "). אפשר לפתוח את הסיכום, ולנסות שוב אחר כך."
             : "הסתיים בלי סיכום - נסה שוב";
-        string sourcesNote = pageReady && !result.Error ? SourcesNote(Dict(Dict(LoadMeta(course), "summarySources"), num.ToString())) : "";
+        string sourcesNote = extra == null && pageReady && !result.Error ? SourcesNote(Dict(Dict(LoadMeta(course), "summarySources"), num.ToString())) : "";
         SectionStatus(course, num, status + (sourcesNote.Length > 0 ? " · " + sourcesNote : ""), false, result.Error || !pageReady);
         SendSectionLocal(course, num);
-        if (pageReady && !result.Error)
+        if (extra != null && pageReady && !result.Error)
+        {
+            Notify("הסיכום הנוסף \"" + extra.Name + "\" של הרצאה " + num + " מוכן", course);
+            if (open) Send(new { type = "summaryReady", course = course, num = num, page = pagePath, pdf = pdf, title = extra.Name });
+        }
+        else if (pageReady && !result.Error)
         {
             File.WriteAllText(cache, fingerprint);
             Notify("הסיכום של הרצאה " + num + " מוכן", course);
@@ -231,16 +286,16 @@ partial class HitStudent
     }
 
     // Study page (+ the homework sheets) -> one PDF. Returns its path, or null (and says why in pdfFailure).
-    async Task<string> BuildLecturePdf(string course, int num)
+    async Task<string> BuildLecturePdf(string course, int num, string page = null, string outPdf = null)
     {
         await printGate.WaitAsync();
-        try { return await BuildLecturePdfCore(course, num); } finally { printGate.Release(); }
+        try { return await BuildLecturePdfCore(course, num, page, outPdf); } finally { printGate.Release(); }
     }
-    async Task<string> BuildLecturePdfCore(string course, int num)
+    async Task<string> BuildLecturePdfCore(string course, int num, string page = null, string outPdf = null)
     {
         pdfFailure = "";
-        string page = StudyPagePath(course, num);
-        string outPdf = LecturePdfPath(course, num);
+        page = page ?? StudyPagePath(course, num);
+        outPdf = outPdf ?? LecturePdfPath(course, num);
         string work = Path.Combine(Path.GetTempPath(), "SumIT-pdf-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         // A printable copy next to the original (so relative links still work): every card open, no buttons.

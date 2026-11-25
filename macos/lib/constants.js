@@ -45,6 +45,8 @@ module.exports = {
   SummaryPdfName: 'סיכום הרצאה.pdf',
   SumitDir: '.sumit',                // the app's own helper files (digests, logs), hidden
   SummaryName: 'סיכום הרצאה',
+  ExtraSummaries: 'סיכומים נוספים',  // inside the summary folder: one folder per extra summary, with its own focus
+  ExtraFocusName: 'מיקוד.txt',       // the notes an extra summary was made with
   LecturerProfile: path.join('מבחנים', 'פרופיל המרצה.md'),   // was "מבחנים\\פרופיל המרצה.md"
   ExamPrepPage: 'הכנה למבחן.html',
   CourseJson: '.hit-student-course.json',
