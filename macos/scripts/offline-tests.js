@@ -248,6 +248,7 @@ async function run() {
 
     // 6g. Study track (beta): the profile, the strategy, the week of blocks and the progress
     await runStudyTrackTests(app, root, check);
+    await runTopicLightTests(app, root, check);
 
     // 6h. Study tools: iCal for the blocks, a NotebookLM bundle, Anki cards
     await runStudyExportTests(app, root, check);
@@ -265,6 +266,7 @@ async function run() {
     await runQuizTests(app, root, check);
     await runStudyLayoutTests(app, root, check);
     await runLiveNotesTests(app, root, check);
+    await runMoodleNewsTests(app, root, check);
 
     // 8. Summary Share and Study Policy port verification
     const { buildSummaryShare } = require('../lib/modules/summary-share');
@@ -1467,6 +1469,110 @@ async function runOfflineCoursesTests(app, root, check) {
   app.settings.studyRoot = saved.studyRoot; app.Send = saved.send; app.EnsureMoodle = saved.ensure; app.lastCourses = saved.last; app.coursesFresh = saved.fresh; app.bringToFront = saved.toFront;
 }
 
+// The traffic light of the topics: the colors, the hints from quizzes and cards, the suggestions, and the goals they give.
+async function runTopicLightTests(app, root, check) {
+  const clean = app.TrackClean({ courses: [{ name: 'מד"ח' }], progress: { 'מד"ח': { topics: [
+    { id: 'a', title: 'מסדר ראשון', done: true, doneDate: '2026-11-01', lectures: [1, 1, 'x', 300, 2] },
+    { id: 'b', title: 'לפלס', light: 'red', rated: '2026-11-20', history: [{ date: '2026-11-20', light: 'red' }, { date: 'x', light: 'red' }, { date: '2026-11-21', light: 'blue' }] },
+    { id: 'c', title: 'טורים', light: 'purple' }] } } });
+  const [ta, tb, tc] = clean.progress['מד"ח'].topics;
+  check('the traffic light: a topic ticked "done" before is green, a color must be one of three, lectures are whole numbers, the history is clean',
+    ta.light === 'green' && ta.done && ta.lectures.join() === '1,2' && tb.light === 'red' && !tb.done && tb.rated === '2026-11-20' && tb.history.length === 1 && tc.light === '' && tc.rated === '' && ta.source === 'manual');
+
+  const ev = { 1: { quiz: 50, quizDate: '2026-11-22' }, 2: { quiz: 90, quizDate: '2026-11-10', cards: 12, hard: 5 }, 3: { quiz: 95, quizDate: '2026-11-22' } };
+  const hGreen = app.TrackTopicHint({ light: 'green', rated: '2026-11-15', lectures: [1, 2] }, ev);
+  check('rated green with a weak quiz after the rating: a hint to red, with the reason', hGreen && hGreen.light === 'red' && /50%/.test(hGreen.text) && /סימנת ירוק/.test(hGreen.text));
+  check('a quiz from before the rating does not argue with it', app.TrackTopicHint({ light: 'green', rated: '2026-11-25', lectures: [1] }, ev) === null);
+  check('cards failed again and again point to yellow; a strong quiz on a red topic says it may be better',
+    app.TrackTopicHint({ light: 'green', rated: '2026-11-01', lectures: [2] }, { 2: { quiz: null, cards: 12, hard: 5 } }).light === 'yellow'
+    && /נראה שכבר/.test(app.TrackTopicHint({ light: 'red', rated: '2026-11-01', lectures: [3] }, ev).text));
+  check('no hint without evidence, or when it agrees, and an unrated topic gets a suggested color', app.TrackTopicHint({ light: 'red', lectures: [9] }, ev) === null
+    && app.TrackTopicHint({ light: 'green', rated: '2026-11-01', lectures: [3] }, ev) === null && app.TrackTopicHint({ light: '', lectures: [3] }, ev).light === 'green');
+
+  const lecs = [{ num: 1, title: 'מסדר ראשון' }, { num: 2, title: 'הומוגניות' }, { num: 3, title: '' }, { num: 0, title: 'x' }];
+  const sugg = app.TrackLectureTopics(lecs, [{ title: 'מסדר ראשון', lectures: [] }, { title: 'משהו', lectures: [2] }]);
+  check('suggestions from the lectures: one for each lecture not covered and not by the same title, a lecture with no title by its number', sugg.length === 1 && sugg[0].title === 'הרצאה 3' && sugg[0].lectures.join() === '3' && sugg[0].source === 'lecture');
+
+  const tps = [{ title: 'לפלס', light: 'red' }, { title: 'טורים', light: 'red' }, { title: 'פורייה', light: 'yellow' }, { title: 'מסדר ראשון', light: 'green' }];
+  const far = app.TrackLightGoals(tps, 40), near = app.TrackLightGoals(tps, 10);
+  check('the colors give goals: far from the exam one red (Feynman) and one yellow (recall), near it more; green gives none',
+    far.length === 2 && app.TrackMethod(far[0]) === 'feynman' && far[0].includes('"לפלס"') && app.TrackMethod(far[1]) === 'recall' && near.length === 3 && !near.some(g => g.includes('מסדר ראשון')));
+  const goals = app.TrackGoalsOf([{ course: 'מד"ח', examDays: 10, pastExams: 0, cardsDue: 0, lectures: [{ num: 1, hasSummary: true, title: 'x' }], topics: tps }], '2026-11-26')['מד"ח'];
+  check('in the goals of the week, the red topics come before the lectures', goals && goals[0].includes('"לפלס"') && goals.some(g => g.includes('הרצאה 1')));
+
+  // Toward the exam: the colors, what got better in a week, and the quick round two weeks before.
+  const lp = app.TrackClean({ courses: [{ name: 'מד"ח', examDate: '2026-12-05' }, { name: 'C', examDate: '2027-02-01' }, { name: 'כללי' }], progress: {
+    'מד"ח': { topics: [{ id: 'a', title: 'לפלס', light: 'green', rated: '2026-11-25', history: [{ date: '2026-11-15', light: 'red' }, { date: '2026-11-25', light: 'green' }] },
+      { id: 'b', title: 'טורים', light: 'yellow', rated: '2026-11-10' }, { id: 'c', title: 'פורייה' }] },
+    C: { topics: [{ id: 'd', title: 'מצביעים' }] } } });
+  const li = app.TrackLights(lp, '2026-11-26'), ld = li[0];
+  check('toward each exam: the nearest first, the colors, a topic that got better this week, and the old or unrated ones',
+    li.map(x => x.course).join() === 'מד"ח,C,כללי' && ld.examDays === 9 && ld.green === 1 && ld.yellow === 1 && ld.none === 1 && ld.better === 1 && ld.stale === 2 && li[2].examDays === null);
+  check('the quick round only within two weeks of the exam and with something to rate', ld.round && !li[1].round && !li[2].round
+    && !app.TrackLights(app.TrackClean({ courses: [{ name: 'x', examDate: '2026-12-01' }] }), '2026-11-26')[0].round);
+  check('stuck: start from the easiest yellow topic (fewest lectures), else a red one, none when nothing is rated',
+    app.TrackEasiestTopic([{ title: 'א', light: 'yellow', lectures: [1, 2] }, { title: 'ב', light: 'yellow', lectures: [3] }, { title: 'ג', light: 'red', lectures: [] }]).title === 'ב'
+    && app.TrackEasiestTopic([{ title: 'ג', light: 'red' }, { title: 'ד', light: 'green' }]).title === 'ג' && app.TrackEasiestTopic([{ title: 'ד', light: '' }]) === null);
+  const cctx = { course: 'מדח', reason: 'exam', note: '', minutes: 60, today: '2026-11-26', lectures: [{ num: 3, title: 'x', hasSummary: true }], cardsDue: 0, exam: { date: '2026-12-05', days: 9 }, pastExams: 1, deadlines: [], tasks: [],
+    topics: [{ title: 'טורים', light: 'yellow', lectures: [3] }, { title: 'לפלס', light: 'red', lectures: [9] }] };
+  const cs = app.CoachFallback(cctx);
+  check('"I\'m stuck" with the traffic light: a small first step on the yellow topic, then Feynman on the red one, a lecture only when it exists',
+    cs[0].title.includes('"טורים"') && cs[0].minutes <= 5 && cs[0].lecture === 3 && cs.some(x => x.title.includes('"לפלס"') && x.lecture === null) && cs.length <= 6);
+  check('words of the student\'s own still come first', app.CoachFallback(Object.assign({}, cctx, { note: 'לא מבין את משפט הקונבולוציה' }))[0].title.includes('קונבולוציה'));
+
+  // Through the page's messages, with a fake Send and a profile file of its own.
+  const file = path.join(root, 'topics-profile.json');
+  writeText(file, JSON.stringify({ courses: [{ name: 'מד"ח', level: 3 }], progress: { 'מד"ח': { topics: [{ id: 'a', title: 'לפלס', lectures: [4] }, { id: 'b', title: 'טורים', lectures: [5] }] } } }));
+  const saved = {};
+  for (const k of ['Send', 'ToolsFolder', 'LoadMeta', 'TrackTopicEvidence', 'TrackSyllabusTopics']) saved[k] = Object.getOwnPropertyDescriptor(app, k);
+  const prevFile = Object.getOwnPropertyDescriptor(app, 'TrackFile');
+  const sent = [];
+  try {
+    Object.defineProperty(app, 'TrackFile', { value: file, configurable: true });
+    app.Send = (m) => sent.push(m);
+    app.ToolsFolder = () => 'מדח';
+    app.LoadMeta = () => ({ lectures: [{ num: 4, title: 'לפלס' }, { num: 5, title: 'טורים' }, { num: 6, title: 'פורייה' }] });
+    app.TrackTopicEvidence = () => ({ 4: { quiz: 40, quizDate: '2026-11-25' } });
+    let sylCalls = 0;
+    app.TrackSyllabusTopics = async () => { sylCalls++; return [{ title: 'התמרת פורייה', lectures: [6], source: 'syllabus' }, { title: 'לפלס', lectures: [4], source: 'syllabus' }]; };
+    const course = 'מד"ח', topics = () => app.TrackLoad().progress[course].topics;
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'light', id: 'a', light: 'green' });
+    const a1 = topics().find(t => t.id === 'a');
+    check('green from the page: the topic counts as finished today, with its date in the history', a1.light === 'green' && a1.done && a1.doneDate && a1.history.length === 1 && a1.rated === a1.doneDate);
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'light', id: 'a', light: 'red' });
+    const a2 = topics().find(t => t.id === 'a');
+    check('red after green: not finished any more, and both colors in the history', a2.light === 'red' && !a2.done && a2.doneDate === '' && a2.history.map(x => x.light).join() === 'green,red');
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'light', id: 'a', light: '' });
+    check('a color taken off leaves the topic unrated', topics().find(t => t.id === 'a').light === '' && topics().find(t => t.id === 'a').rated === '');
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'light', id: 'b', light: 'yellow' });
+    const hb = topics().find(t => t.id === 'b').history.length;
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'light', id: 'b', light: 'yellow', again: true });
+    check('the same color again in a round on the same day keeps one rating; without "again" nothing changes', topics().find(t => t.id === 'b').history.length === hb && topics().find(t => t.id === 'b').light === 'yellow');
+    sent.length = 0;
+    await app.TrackHandle({ type: 'track', op: 'topicsSuggest', course, syllabus: false });
+    const ans = sent.find(m => m.type === 'trackTopics');
+    check('the suggestions without the syllabus: the lecture not covered, a hint for the weak quiz, and the syllabus not read',
+      ans && ans.lectures.length === 1 && ans.lectures[0].title === 'פורייה' && ans.hints.a && ans.hints.a.light === 'red' && !ans.syllabus && sylCalls === 0);
+    sent.length = 0;
+    await app.TrackHandle({ type: 'track', op: 'topicsSuggest', course, syllabus: true });
+    const two = sent.filter(m => m.type === 'trackTopics');
+    check('with the syllabus: first an answer that says it is reading, then its topics without the ones already there',
+      two.length === 2 && two[0].reading && !two[1].reading && two[1].syllabus.length === 1 && two[1].syllabus[0].title === 'התמרת פורייה');
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'addMany', items: [{ title: 'התמרת פורייה', lectures: [6, 6, 'z'], source: 'syllabus' }, { title: 'לפלס' }, { title: '' }] });
+    const added = topics().find(t => t.title === 'התמרת פורייה');
+    check('topics added from the suggestions: no duplicate title, no empty one, their lectures and source kept', topics().length === 3 && added && added.lectures.join() === '6' && added.source === 'syllabus' && added.light === '');
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'merge', ids: ['b', added.id] });
+    const merged = topics().find(t => t.id === 'b');
+    check('joined topics: one left, with the lectures of both and the weakest color', topics().length === 2 && merged.lectures.join() === '5,6' && merged.light === 'yellow');
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'rename', id: 'b', title: '  טורים ופורייה ' });
+    await app.TrackHandle({ type: 'track', op: 'topic', course, act: 'lectures', id: 'b', lectures: [7, 5, 5, -1] });
+    check('a topic renamed and given its lectures', topics().find(t => t.id === 'b').title === 'טורים ופורייה' && topics().find(t => t.id === 'b').lectures.join() === '5,7');
+  } finally {
+    for (const [k, d] of Object.entries(saved)) { if (d) Object.defineProperty(app, k, d); else delete app[k]; }
+    if (prevFile) Object.defineProperty(app, 'TrackFile', prevFile); else delete app.TrackFile;
+  }
+}
+
 async function runStudyTrackTests(app, root, check) {
   const sumMin = (blocks) => blocks.reduce((n, b) => n + b.minutes, 0);
   const mins = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
@@ -1529,8 +1635,11 @@ async function runStudyTrackTests(app, root, check) {
   check('without a freeze, a missed day ends the streak; the best stays', app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6, 8, 9]), dayN(11)).current === 0 && app.TrackStreak(run([0, 1, 2, 3, 4, 5, 6, 8, 9]), dayN(11)).best === 9
     && app.TrackStreak(run([0, 1, 2, 4]), dayN(4)).current === 1);
   const risk = app.TrackStreak(run([0, 1, 2]), dayN(3));
-  check('a streak that waits for today is "at risk", and the week shows each day',
-    risk.current === 3 && risk.atRisk && !risk.todayDone && risk.week.length === 7 && risk.week[0].date === '2026-11-01' && risk.week.map(d => d.state).join(',') === 'done,done,done,today,future,future,future');
+  check('a streak that waits for today is "at risk", and the row is the last seven days with today last',
+    risk.current === 3 && risk.atRisk && !risk.todayDone && risk.week.length === 7 && risk.week[0].date === '2026-10-29' && risk.week[6].date === dayN(3) && risk.week[6].dow === 3
+    && risk.week.map(d => d.state).join(',') === 'missed,missed,missed,done,done,done,today');
+  const rolled = app.TrackStreak(run([0, 1, 2, 3]), dayN(4));
+  check('the next day the row moves on by one, and never shows a day after today', rolled.week[0].date === '2026-10-30' && rolled.week[6].date === dayN(4) && rolled.week.every(d => d.date <= dayN(4) && d.state !== 'future'));
   const remFile = path.join(root, 'streak-profile.json'); writeText(remFile, JSON.stringify(run([0, 1, 2])));
   Object.defineProperty(app, 'TrackFile', { value: remFile, configurable: true });
   const said = [], note = (t, b) => said.push(t + ' ' + b);
@@ -1907,6 +2016,13 @@ async function runStudyTrackTests(app, root, check) {
   const spGap = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-06'].map(d => spLog(d, 'שיטת פיינמן: הסבר')) });
   const sGap = app.TrackSparks(spGap, '2026-11-06');
   check('a broken streak starts again at ×1, and a new streak after one of 3 days is the hidden "return" achievement', sGap.streak === 1 && sGap.mult === 1 && sGap.today === 60 && sGap.awards.find(a => a.id === 'return').tier === 1);
+  check('a day with nothing done and no freeze costs 20 sparks, shown as lost yesterday', sGap.lost.total === 40 && sGap.lost.date === '2026-11-05' && sGap.lost.yesterday === 20
+    && sGap.week.lost === 40 && sGap.total === 60 + 66 + 60 + 60 + sGap.bonus - 40 && sGap.week.earned === 60 + 66 + 60 + 60 - 40);
+  check('a freeze keeps the sparks too, and today costs nothing until it is over', s8.lost.total === 0 && app.TrackSparks(spGap, '2026-11-04').lost.total === 0
+    && app.TrackSparks(app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: [0, 1, 2, 3, 4, 5, 6, 8].map(i => spLog(spDay('2026-11-01', i), 'שיטת פיינמן: הסבר')) }), '2026-11-09').lost.total === 0);
+  const spLong = app.TrackSparks(app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: [spLog('2026-11-01', 'שיטת פיינמן: הסבר', 180)] }), '2026-11-20');
+  check('a long break costs at most 5 days (100), and the total never goes under 0', spLong.lost.total === 100 && spLong.total === 240 - 100 + spLong.bonus
+    && app.TrackSparks(app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: [spLog('2026-11-01', 'לימוד', 15)] }), '2026-11-10').lost.total === 10);
   check('a block finished today gets the multiplier of the streak with today in it', app.TrackSparks(sp8, '2026-11-09').multNext === 1.25 && app.TrackSparks(spGap, '2026-11-07').multNext === 1);
   const spCap = app.TrackClean({ courses: [{ name: 'קורס', level: 2 }], log: Array.from({ length: 6 }, (_, i) => spLog('2026-11-01', 'תרגול: פתור 3 תרגילים', 180, { block: 'c' + i })) });
   const sCap = app.TrackSparks(spCap, '2026-11-01');
@@ -3292,5 +3408,77 @@ process.stdin.on('end', () => process.exit(0));
     if (saved.model) app.settings.geminiModel = saved.model;
     if (saved.helper) process.env.SUMIT_AUDIO_HELPER = saved.helper; else delete process.env.SUMIT_AUDIO_HELPER;
     if (saved.url) process.env.SUMIT_GEMINI_URL = saved.url; else delete process.env.SUMIT_GEMINI_URL;
+  }
+}
+
+// The lecturers' announcements (moodle-news.js): a fake Moodle answers the forum read; nothing reaches the real one.
+async function runMoodleNewsTests(app, root, check) {
+  const K = (s, t) => app.NewsKind(s, t);
+  check('news: a cancelled lecture is a cancellation', K('ההרצאה ביום שלישי בוטלה', '') === 'cancel' && K('הודעה', 'התרגול מחר לא יתקיים') === 'cancel');
+  check('news: a move to Zoom or another room is a change', K('עדכון', 'השיעור יתקיים בזום') === 'change' && K('שינוי חדר', '') === 'change' && K('המבחן נדחה', '') === 'change');
+  check('news: an exam or a submission', K('מבדק שני - קבוצה 81', '') === 'exam' && K('תזכורת', 'יש להגיש את התרגיל עד יום חמישי') === 'exam');
+  check('news: anything else is general', K('שעת קבלה לקבוצות 1 ו-4', 'שעת הקבלה בחדר 312') === 'general');
+  check('news: Moodle HTML becomes short plain text', app.NewsPlain('<p>שלום&nbsp;לכולם</p><p>ההרצאה <b>בוטלה</b></p>') === 'שלום לכולם\nההרצאה בוטלה');
+  const M = 'https://md.hit.ac.il';
+  const sections = [{ num: 0, items: [{ mod: 'forum', name: 'פורום כללי', url: M + '/mod/forum/view.php?id=5' }, { mod: 'forum', name: 'לוח הודעות פורום', url: M + '/mod/forum/view.php?id=7' }] }];
+  check('news: the announcements forum is picked by its name', app.NewsPickForum(sections).url.endsWith('id=7'));
+  check('news: otherwise the first forum of the first section', app.NewsPickForum([{ num: 0, items: [{ mod: 'forum', name: 'x', url: M + '/mod/forum/view.php?id=9' }] }]).url.endsWith('id=9') && app.NewsPickForum([]) === null);
+  const js = app.NewsForumJs().replace('FORUM_URL', JSON.stringify(M + '/mod/forum/view.php?id=7')).replace('KNOWN_IDS', '["1"]').replace('MAX_NEW', '6');
+  let compiles = true; try { new (Object.getPrototypeOf(async function () { }).constructor)(js); } catch { compiles = false; }
+  check('news: the forum script compiles with its values filled in', compiles && !/FORUM_URL|KNOWN_IDS|MAX_NEW/.test(js));
+
+  const course = 'קורס הודעות';
+  const saved = { demo: app.demo, meta: app.LoadMeta, quiet: app.WithMoodleQuiet, evalA: app.EvalAsync, courses: app.lastCourses, send: app.Send, ai: app.NewsAskAi, path: app.newsPath };
+  const sent = [];
+  let answer = null, evals = 0, aiCalls = 0;
+  try {
+    app.demo = false;
+    app.newsPath = path.join(root, 'moodle-news.json');
+    app.lastCourses = [{ name: course, id: 1 }, { name: 'לא הוגדר', id: 2 }];
+    app.LoadMeta = (n) => n === course ? { setupDone: true, sectionsCache: sections } : { setupDone: false };
+    app.WithMoodleQuiet = (f) => f();
+    app.EvalAsync = async (_v, body) => { evals++; check('news: only the Moodle forum page is read', body.includes(JSON.stringify(M + '/mod/forum/view.php?id=7'))); return JSON.stringify(answer); };
+    app.Send = (m) => sent.push(m);
+    app.NewsAskAi = async (subject) => { aiCalls++; return subject === 'עדכון' ? 'change' : 'general'; };
+    const row = (id, subject, when) => ({ id: String(id), subject, when, url: M + '/mod/forum/discuss.php?d=' + id });
+    const post = (text) => ({ html: '<p>' + text + '</p>', author: 'ד"ר כהן', when: 0 });
+    const t0 = Date.now() - 86400000;
+    answer = { rows: [1, 2, 3, 4, 5].map(i => row(i, 'הודעה ' + i, t0 + i * 1000)), posts: { 5: post('a'), 4: post('b'), 3: post('c') } };
+    const told = [];
+    const notify = (it) => told.push(it);
+    let r = await app.BackgroundNewsCheck(true, notify);
+    let st = app.NewsLoad();
+    check('news: the first read only remembers, and says nothing', r.length === 0 && told.length === 0 && evals === 1 && st.seen[course].length === 5);
+    check('news: the first read keeps the latest three, already read', st.items.length === 3 && st.items.every(x => x.read) && st.items[0].id === 'md:5');
+
+    answer = { rows: answer.rows.concat([row(6, 'ההרצאה מחר בוטלה', Date.now()), row(7, 'שעת קבלה', Date.now() - 1000), row(8, 'עדכון', Date.now() - 2000), row(9, 'אין טקסט', Date.now() - 3000)]),
+      posts: { 6: post('ההרצאה של מחר לא תתקיים'), 7: post('שעת הקבלה בחדר 312'), 8: post('השיעור ביום שני ב-10:00, שימו לב') } };
+    r = await app.BackgroundNewsCheck(true, notify);
+    st = app.NewsLoad();
+    const by = (id) => st.items.find(x => x.id === 'md:' + id);
+    check('news: a new cancellation is kept unread and notified', by(6) && by(6).kind === 'cancel' && !by(6).read && told.some(x => x.id === 'md:6'));
+    check('news: a general announcement is kept but not notified', by(7) && by(7).kind === 'general' && !told.some(x => x.id === 'md:7'));
+    check('news: the AI is asked only when the words do not decide and a date, an hour or a room is mentioned', aiCalls === 2 && by(8).kind === 'change' && by(7).kind === 'general' && !by(6).kind.includes('general'));
+    check('news: one whose text did not arrive is read again next time', !by(9) && !st.seen[course].includes('9'));
+    check('news: the text and the author are kept', by(6).text === 'ההרצאה של מחר לא תתקיים' && by(6).author === 'ד"ר כהן' && by(6).url.endsWith('d=6'));
+    check('news: the page gets the new list', sent.some(m => m.type === 'news' && m.op === 'list' && m.items.some(x => x.id === 'md:6')));
+
+    told.length = 0;
+    r = await app.BackgroundNewsCheck(true, notify);
+    check('news: nothing is announced twice', r.length === 0 && told.length === 0 && app.NewsLoad().items.filter(x => x.id === 'md:6').length === 1);
+    check('news: without "now" the check waits two hours', (await app.BackgroundNewsCheck(false, notify)).length === 0 && evals === 3);
+
+    await app.NewsHandle({ op: 'read', id: 'md:6' });
+    check('news: an announcement can be marked as read', app.NewsLoad().items.find(x => x.id === 'md:6').read === true);
+    await app.NewsHandle({ op: 'readAll' });
+    check('news: all can be marked as read', app.NewsLoad().items.every(x => x.read));
+
+    app.LoadMeta = () => ({ setupDone: true, sectionsCache: [{ num: 0, items: [{ mod: 'forum', name: 'לוח הודעות', url: 'https://evil.example/mod/forum/view.php?id=7' }] }] });
+    const before = evals;
+    await app.BackgroundNewsCheck(true, notify);
+    check('news: a forum outside Moodle is never read', evals === before);
+  } finally {
+    app.demo = saved.demo; app.LoadMeta = saved.meta; app.WithMoodleQuiet = saved.quiet; app.EvalAsync = saved.evalA;
+    app.lastCourses = saved.courses; app.Send = saved.send; app.NewsAskAi = saved.ai; app.newsPath = saved.path;
   }
 }

@@ -745,6 +745,7 @@ function thisSemester(courses) {
 function renderHome() {
   renderHeroBadges();
   if (typeof ticketRender === 'function') ticketRender();
+  if (typeof newsHome === 'function') newsHome();   // the lecturers' announcements (macOS only)
   renderStats(); renderNextUp(); if (typeof renderToday === 'function') renderToday();
   const name = firstName(S.userName || S.settings.userName);
   $('today').textContent = dayFmt.format(new Date());
@@ -2235,6 +2236,7 @@ function askOptionalFeatures() {
   if (!S.driveAsked && typeof askDrive === 'function') { S.driveAsked = true; askDrive(); }
   if (!S.ticketAsked && typeof ticketRender === 'function') { S.ticketAsked = true; send({ type: 'ticketPing' }); }
   if (!S.liveAsked && typeof askLive === 'function') { S.liveAsked = true; askLive(); }
+  if (!S.newsAsked && typeof askNews === 'function') { S.newsAsked = true; askNews(); }
 }
 window.addEventListener('load', askOptionalFeatures);
 
@@ -2301,6 +2303,7 @@ function onMessage(m) {
       // Once a course is set up, new material on Moodle shows up as a question (the app sends newMaterial).
       // Moodle categories are available through the source browser.
       restoreCourseRuntime(true);
+      if (typeof newsCourseBanner === 'function') newsCourseBanner();   // an important announcement not read yet (macOS only)
       break;
     }
     case 'operationStatus':
@@ -2462,7 +2465,8 @@ function onMessage(m) {
     case 'sparks': if (typeof sparksEvent === 'function') sparksEvent(m); break;
     case 'board': if (typeof boardEvent === 'function') boardEvent(m); break;
     case 'live': if (typeof liveEvent === 'function') liveEvent(m); break;
-    case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'calSync': trackEvent(m); break;
+    case 'news': if (typeof newsEvent === 'function') newsEvent(m); break;
+    case 'trackReady': case 'trackState': case 'trackStrategy': case 'icloudExport': case 'trackRoutineScan': case 'trackRatings': case 'trackWizard': case 'trackTasks': case 'trackTopics': case 'calSync': trackEvent(m); break;
     case 'flashcardsProgress': case 'flashcardsResult': flashcardsEvent(m); break;
     case 'quizProgress': case 'quizResult': quizEvent(m); break;
     case 'summaryShareProgress': case 'summaryShareResult': summaryShareStatus(m); break;

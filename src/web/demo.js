@@ -34,15 +34,18 @@
   const now = Math.floor(Date.now() / 1000);
   // The study track (track-ui.js): a small profile kept in memory, so that every button of the page does something in the demo.
   const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  const trackProfile = { version: 1, name: '', created: iso(new Date()), strategies: {}, plan: { weekStart: '', blocks: [] }, progress: {}, log: [],
+  const trackProfile = { version: 1, name: '', created: iso(new Date()), strategies: {}, plan: { weekStart: '', blocks: [] }, log: [],
+    progress: { 'מבני נתונים': { topics: [['מבוא וסיבוכיות', [1], 'green'], ['רשימות מקושרות', [2], 'green'], ['מחסנית ותור', [3], 'yellow'], ['עצי חיפוש בינאריים', [4], 'yellow'], ['עצי AVL', [5], 'green']]
+      .map(([title, lectures, light], i) => ({ id: 'dt' + i, title, lectures, light, rated: iso(new Date(Date.now() - (i < 2 ? 3 : 9) * 86400000)), source: 'lecture', done: light === 'green', doneDate: '',
+        history: i === 1 ? [{ date: iso(new Date(Date.now() - 12 * 86400000)), light: 'yellow' }, { date: iso(new Date(Date.now() - 3 * 86400000)), light: 'green' }] : [] })) } },
     routine: { done: false, wake: '07:30', sleep: '23:30', peak: 'morning', days: [0, 1, 2, 3, 4], hours: 10, block: 45, commitments: [], updated: '' },
     courses: [{ name: 'מבני נתונים', level: 3, hoursPerWeek: 0, examDate: iso(new Date(Date.now() + 12 * 86400000)), notes: '', manual: false }, { name: 'אלגברה לינארית 2', level: 2, hoursPerWeek: 0, examDate: '', notes: '', manual: false }] };
   // The demo's streak: 4 days before today were done (one kept by a freeze), so the flame waits for a block marked done today.
   const demoStreak = (p, today) => {
     const t = iso(today), back = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return iso(d); };
     const done = new Set([back(5), back(4), back(3), back(1)].concat(p.log.filter(e => e.block).map(e => e.date))), frozen = back(2), todayDone = done.has(t);
-    const current = 4 + (todayDone ? 1 : 0), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
-    const week = []; for (let i = 0; i < 7; i++) { const d = new Date(ws); d.setDate(d.getDate() + i); const di = iso(d); week.push({ date: di, state: done.has(di) ? 'done' : di === frozen ? 'frozen' : di === t ? 'today' : di > t ? 'future' : 'missed' }); }
+    const current = 4 + (todayDone ? 1 : 0);
+    const week = []; for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); const di = iso(d); week.push({ date: di, dow: d.getDay(), state: done.has(di) ? 'done' : di === frozen ? 'frozen' : di === t ? 'today' : 'missed' }); }
     return { current, best: Math.max(9, current), todayDone, atRisk: !todayDone, freezes: 1, week, next: 7, prev: 3, milestone: 0 };
   };
   // Sparks for the demo, shaped like sparksInfo in study-track.js (the real numbers come from the host).
@@ -63,8 +66,20 @@
     const blocks = {}; p.plan.blocks.forEach(b => { blocks[b.id] = demoBase(b); });
     const t = [1, 2, 3].map(k => awards.filter(a => a.tier >= k).length);
     const str = demoStreak(p, new Date()).current, tiers = [[3, 1.1], [7, 1.25], [14, 1.5], [30, 2]], mult = tiers.reduce((m, [d, x]) => (str >= d ? x : m), 1), nt = tiers.find(([d]) => d > str);
-    return { total, bonus: 0, level: lv, streak: str, mult, multNext: mult, nextTier: nt ? { days: nt[0] - str, mult: nt[1] } : null, tiers, today: done, week: { earned: 246 + done, goal: 520 }, blocks, awards,
+    return { total, bonus: 0, level: lv, streak: str, mult, multNext: mult, nextTier: nt ? { days: nt[0] - str, mult: nt[1] } : null, tiers, today: done, week: { earned: 246 + done, goal: 520, lost: 20 }, lost: { yesterday: 0, date: '', perDay: 20, total: 20 }, blocks, awards,
       count: { bronze: t[0], silver: t[1], gold: t[2], reached: t[0], all: awards.length, hidden: awards.filter(a => a.hidden && !a.tier).length } };
+  };
+  // The traffic light toward each exam, as lightsInfo in study-track.js makes it.
+  const demoLights = (p, today) => {
+    const t = iso(today), wa = iso(new Date(today.getTime() - 7 * 86400000)), rk = { green: 0, yellow: 1, red: 2 };
+    return p.courses.map(c => {
+      const tp = (p.progress[c.name] || { topics: [] }).topics, n = { green: 0, yellow: 0, red: 0, none: 0 };
+      tp.forEach(x => { n[x.light || 'none']++; });
+      const days = c.examDate && c.examDate >= t ? Math.round((new Date(c.examDate) - new Date(t)) / 86400000) : null;
+      const better = tp.filter(x => { const o = (x.history || []).filter(y => y.date <= wa).pop(); return x.light && o && rk[x.light] < rk[o.light]; }).length;
+      const stale = tp.filter(x => !x.light || !x.rated || x.rated < wa).length;
+      return Object.assign({ course: c.name, examDate: days === null ? '' : c.examDate, examDays: days, topics: tp.length, better, stale, round: days !== null && days <= 14 && tp.length > 0 && stale > 0 }, n);
+    }).sort((a, b) => (a.examDays === null ? 9999 : a.examDays) - (b.examDays === null ? 9999 : b.examDays));
   };
   const trackSnapshot = (extra) => {
     const today = new Date(), ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay());
@@ -74,7 +89,7 @@
     return Object.assign({ type: 'trackState', profile: JSON.parse(JSON.stringify(p)), today: iso(today), weekStart: wsIso, classes: 0, calendars: 1, window: { from: '08:30', to: '22:30' },
       suggested: ['פיזיקה 1', 'חשבון אינפיניטסימלי 2'].filter(n => !p.courses.some(c => c.name === n)).map(name => ({ name, where: 'מערכת השעות' })),
       sparks: demoSparks(p),
-      stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: demoStreak(p, today).current, streakInfo: demoStreak(p, today), perCourse: per } }, extra || {});
+      stats: { weekStart: wsIso, plannedMinutes: bl.reduce((n, b) => n + b.minutes, 0), plannedBlocks: bl.length, doneBlocks: bl.filter(b => b.done).length, weekMinutes: wl.reduce((n, e) => n + e.minutes, 0), totalMinutes: p.log.reduce((n, e) => n + e.minutes, 0), streak: demoStreak(p, today).current, streakInfo: demoStreak(p, today), perCourse: per, lights: demoLights(p, today) } }, extra || {});
   };
   let demoBoard = null;
   const trackDemo = (m) => {
@@ -85,7 +100,30 @@
     if (m.op === 'removeCourse') p.courses = p.courses.filter(x => x.name !== m.course);
     if (m.op === 'name') p.name = m.value;
     if (m.op === 'log' && c) p.log.push({ date: iso(new Date()), course: m.course, minutes: m.minutes, note: '', block: '' });
-    if (m.op === 'topic' && c) { const row = p.progress[m.course] || (p.progress[m.course] = { topics: [] }); if (m.act === 'add') row.topics.push({ id: 't' + row.topics.length + Date.now(), title: m.title, done: false }); const t = row.topics.find(x => x.id === m.id); if (t && m.act === 'toggle') t.done = !t.done; if (t && m.act === 'remove') row.topics = row.topics.filter(x => x !== t); }
+    if (m.op === 'topic' && c) {
+      const row = p.progress[m.course] || (p.progress[m.course] = { topics: [] }), t = row.topics.find(x => x.id === m.id), today = iso(new Date());
+      const mk = (title, lectures, source) => ({ id: 't' + row.topics.length + Date.now() + Math.random().toString(36).slice(2, 5), title, light: '', rated: '', lectures: lectures || [], history: [], source: source || 'manual', done: false, doneDate: '' });
+      if (m.act === 'add') row.topics.push(mk(m.title));
+      if (m.act === 'addMany') (m.items || []).forEach(x => { if (!row.topics.some(y => y.title === x.title)) row.topics.push(mk(x.title, x.lectures, x.source)); });
+      if (t && m.act === 'toggle') t.done = !t.done;
+      if (t && m.act === 'light') { if (t.light === m.light && !m.again) return; t.light = m.light; t.rated = m.light ? today : ''; t.done = m.light === 'green'; t.doneDate = t.done ? today : ''; if (m.light) t.history.push({ date: today, light: m.light }); }
+      if (t && m.act === 'rename' && m.title) t.title = m.title;
+      if (t && m.act === 'lectures') t.lectures = m.lectures || [];
+      if (t && m.act === 'remove') row.topics = row.topics.filter(x => x !== t);
+      if (m.act === 'merge') { const pk = row.topics.filter(x => (m.ids || []).includes(x.id)); if (pk.length > 1) { pk[0].lectures = [...new Set(pk.flatMap(x => x.lectures))].sort((a, b) => a - b); const rk = { green: 0, yellow: 1, red: 2 }; const r = pk.filter(x => x.light); if (r.length) pk[0].light = r.reduce((w, x) => rk[x.light] > rk[w] ? x.light : w, 'green'); row.topics = row.topics.filter(x => !pk.slice(1).includes(x)); } }
+    }
+    // The traffic light's suggestions in the demo: the lectures not covered, the syllabus a moment later, and one hint from a quiz.
+    if (m.op === 'topicsSuggest' && c) {
+      const topics = (p.progress[m.course] || { topics: [] }).topics, covered = new Set(topics.flatMap(t => t.lectures || []));
+      const lec = [[1, 'מבוא וסיבוכיות'], [2, 'רשימות מקושרות'], [3, 'מחסנית ותור'], [4, 'עצי חיפוש בינאריים'], [5, 'עצי AVL'], [6, 'טבלאות גיבוב']]
+        .filter(([n]) => !covered.has(n)).map(([n, title]) => ({ title, lectures: [n], source: 'lecture' })).filter(x => !topics.some(t => t.title === x.title));
+      const hints = {}, avl = topics.find(t => (t.lectures || []).includes(5));
+      if (avl && avl.light !== 'red') hints[avl.id] = { light: 'red', text: (avl.light ? 'סימנת ' + { green: 'ירוק', yellow: 'צהוב' }[avl.light] + ', אבל ' : '') + 'בבוחן האחרון על הרצאה 5 קיבלת 45%. ' + (avl.light ? 'אולי אדום?' : 'לסמן אדום?') };
+      emit({ type: 'trackTopics', course: m.course, lectures: lec, syllabus: null, hints, reading: !!m.syllabus }, 250);
+      if (m.syllabus) return emit({ type: 'trackTopics', course: m.course, lectures: lec, hints, reading: false,
+        syllabus: [{ title: 'ערימות ותור עדיפויות', lectures: [7], source: 'syllabus' }, { title: 'גרפים: BFS ו-DFS', lectures: [8, 9], source: 'syllabus' }, { title: 'מיון בזמן לינארי', lectures: [], source: 'syllabus' }].filter(x => !topics.some(t => t.title === x.title)) }, 1600);
+      return;
+    }
     if (m.op === 'done' || m.op === 'undo') { const b = p.plan.blocks.find(x => x.id === m.id); if (b) { p.log = p.log.filter(e => e.block !== b.id); b.done = m.op === 'done'; b.doneMinutes = b.done ? b.minutes : 0; if (b.done) p.log.push({ date: iso(new Date()), course: b.course, minutes: b.minutes, note: b.goal, block: b.id }); }
       // Done: the sparks it gave, and on the first one an achievement, as the host sends them.
       if (b && b.done) {

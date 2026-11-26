@@ -148,7 +148,7 @@ function sparksCard(sp) {
   nx.append('עוד ' + sparkFmt(lv.to - sp.total) + ' ניצוצות לרמה ' + (lv.level + 1) + ': ');
   const nb = document.createElement('b'); nb.textContent = lv.next; nx.append(nb);
   c.querySelector('.spark-week b').textContent = sparkFmt(sp.week.earned);
-  c.querySelector('[data-goal]').textContent = 'מתוך ' + sparkFmt(sp.week.goal);
+  c.querySelector('[data-goal]').textContent = 'מתוך ' + sparkFmt(sp.week.goal) + (sp.week.lost ? ' · ירדו ' + sparkFmt(sp.week.lost) + ' על ימים בלי פעילות' : '');
   c.querySelector('.spark-week .spark-bar i').style.width = Math.min(100, Math.round(sp.week.earned / Math.max(1, sp.week.goal) * 100)) + '%';
   const mute = c.querySelector('.spark-mute');
   const paint = () => { const on = sparkSoundOn(); mute.textContent = on ? '🔊' : '🔇'; mute.title = on ? 'כבה צלילים' : 'הפעל צלילים'; mute.setAttribute('aria-label', mute.title); };

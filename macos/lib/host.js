@@ -761,6 +761,7 @@ class Host {
       case 'driveSync': this.DriveHandle(m); break;
       case 'board': this.BoardHandle(m); break;
       case 'live': this.LiveHandle(m); break;
+      case 'news': this.NewsHandle(m); break;
       case 'getCalendars': this.SendCalendars(); this.RefreshCalendarsIfStale(); break;
       case 'addCalendar': this.AddCalendar(m); break;
       case 'importCalendarFile': this.ImportCalendarFile(); break;
@@ -906,6 +907,8 @@ class Host {
       this.RecoverSummaries();
       // Every few hours: anything new on Moodle in the courses that are set up? (Not while a course is downloading.)
       if (ms === 'ready' && this.Option('autoSync') && this.syncingCourses.size === 0 && this.progressRange.size === 0) this.BackgroundNewMaterialCheck();
+      // The lecturers' announcements (read only, so not tied to automatic downloads).
+      if (ms === 'ready' && this.syncingCourses.size === 0) this.BackgroundNewsCheck();
     } catch { }
     finally { this.polling = false; }
   }
@@ -1192,7 +1195,7 @@ function useModule(file) {
 }
 for (const f of ['ai', 'brains', 'council', 'helpers', 'moodle', 'moodle-downloads', 'new-material', 'cs24', 'lectures', 'lecture-pdf',
   'summary-queue', 'study-rendering', 'summary-book', 'course-operations', 'recordings', 'notability', 'selftest',
-  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'leaderboard', 'support', 'task-reminders', 'inst-logos', 'live-notes'])
+  'study-policy', 'summary-share', 'summary-chat', 'flashcards', 'quiz', 'reviews', 'pomodoro', 'calendars', 'coach', 'block-plan', 'study-track', 'study-export', 'calendar-sync', 'visual', 'drive-sync', 'leaderboard', 'support', 'task-reminders', 'inst-logos', 'live-notes', 'moodle-news'])
   useModule('./modules/' + f);
 
 module.exports = { Host };

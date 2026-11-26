@@ -17,6 +17,11 @@ const TRACK_TASK_IC = { homework: 'clipboard', exam: 'exam', review: 'refresh', 
 
 function trackEvent(m) {
   if (m.type === 'trackReady') { S.trackOk = true; const n = $('navTrack'); if (n) n.hidden = false; return; }
+  if (m.type === 'trackTopics') {
+    const was = S.trackTopics[m.course] || {};
+    S.trackTopics[m.course] = Object.assign(was, { lectures: m.lectures || [], hints: m.hints || {}, reading: !!m.reading }, m.syllabus ? { syllabus: m.syllabus } : {});
+    window.dispatchEvent(new CustomEvent('sumit-track-topics', { detail: { course: m.course } })); return;
+  }
   if (m.type === 'trackState') {
     const before = S.track && S.track.stats && S.track.stats.streakInfo;
     // The tasks leave out what the week already has as a goal, so a change in the blocks asks for them again.
@@ -254,6 +259,8 @@ function trackOverview(pane, t, p, st, plan) {
     if (st.streakInfo) row.append(streakCard(st.streakInfo, t.sparks));
     pane.append(row);
   } else if (st.streakInfo) pane.append(streakCard(st.streakInfo));
+  const ex = trackExamsCard(st.lights);
+  if (ex) pane.append(ex);
   pane.append(stats);
 
   const grid = h('<div class="track-grid"></div>');
@@ -385,7 +392,7 @@ function trackCoursesPane(pane, t, p) {
       <label>אנרגיה<select data-energy title="כמה ריכוז הקורס דורש: קורס שדורש הרבה נכנס לשעות שבהן יש לך הכי הרבה אנרגיה"><option value="1">נמוכה</option><option value="2">בינונית</option><option value="3">גבוהה</option></select></label>
       <label>שעות בשבוע<input type="number" data-hours min="0" max="30" step="0.5" placeholder="אוטומטי"></label>
       <label>מבחן<input type="date" data-exam></label></div>
-      <div class="row wrap track-course-acts"><button class="soft small" data-how><span data-ic="sparkles"></span>איך ללמוד את זה?</button><button class="ghost small" data-topics><span data-ic="clipboard"></span>נושאים</button><span class="grow"></span><button class="ghost small icon-only" data-del aria-label="הסר קורס" title="הסר קורס"><span data-ic="trash"></span></button></div></div>`);
+      <div class="row wrap track-course-acts"><button class="soft small" data-how><span data-ic="sparkles"></span>איך ללמוד את זה?</button><button class="ghost small" data-topics><span data-ic="clipboard"></span>רמזור נושאים</button><span class="grow"></span><button class="ghost small icon-only" data-del aria-label="הסר קורס" title="הסר קורס"><span data-ic="trash"></span></button></div></div>`);
     row.querySelector('b').textContent = c.name;
     row.querySelector('[data-level]').value = String(c.level);
     row.querySelector('[data-energy]').value = String(c.energy || 2);
@@ -400,6 +407,8 @@ function trackCoursesPane(pane, t, p) {
     row.querySelector('[data-exam]').onchange = (e) => edit({ examDate: e.target.value });
     row.querySelector('[data-how]').onclick = () => openStrategy(c.name, !!p.strategies[c.name]);
     row.querySelector('[data-topics]').onclick = () => openTopics(c.name);
+    const ctop = (p.progress[c.name] || { topics: [] }).topics;
+    if (ctop.length) row.querySelector('[data-topics]').append(trackLightBar(ctop, true).bar);
     row.querySelector('[data-del]').onclick = () => trackSend({ op: 'removeCourse', course: c.name });
     list.append(row);
   }
@@ -433,7 +442,8 @@ function trackProgressPane(pane, t, p, st) {
     const row = h('<div class="track-prow"><div class="track-prow-head"><b class="grow" dir="auto"></b><span class="muted" data-min></span><span class="chip" data-topicchip></span></div><div class="track-hbar"><i class="total"><i class="week"></i></i></div></div>');
     row.querySelector('b').textContent = c.name;
     row.querySelector('[data-min]').textContent = minLabel(s.total) + (s.week ? ' · השבוע ' + minLabel(s.week) : '');
-    const tc = row.querySelector('[data-topicchip]'); tc.hidden = !s.topics; tc.textContent = 'נושאים ' + s.topicsDone + '/' + s.topics; tc.classList.toggle('ok', s.topics > 0 && s.topicsDone === s.topics);
+    const tc = row.querySelector('[data-topicchip]'), ct = (p.progress[c.name] || { topics: [] }).topics;
+    if (ct.length) { const { bar } = trackLightBar(ct, true); tc.replaceWith(bar); bar.onclick = () => openTopics(c.name); } else tc.hidden = true;
     const tot = row.querySelector('.total'); tot.style.width = (s.total ? Math.max(2, Math.round(s.total * 100 / maxMin)) : 0) + '%';
     tot.querySelector('.week').style.width = (s.total ? Math.round(Math.min(s.week, s.total) * 100 / s.total) : 0) + '%';
     trackTip(row.querySelector('.track-hbar'), c.name + ': ' + minLabel(s.total) + ' בסך הכל, ' + minLabel(s.week) + ' השבוע');
@@ -525,34 +535,204 @@ function openStrategy(course, cached) {
   ask(false);
 }
 
-// The topics of a course, as a checklist: what the student adds and ticks is the progress inside the course.
-function openTopics(course) {
-  const dialog = h(`<dialog class="summary-options coach-dialog" dir="rtl" aria-labelledby="trackTopicsTitle">
-    <div class="row"><h2 id="trackTopicsTitle" class="grow"></h2><button class="ghost small" data-close aria-label="סגור">×</button></div>
-    <p class="muted">רשום נושאים או פרקים של הקורס, וסמן את מה שכבר שלטת בו.</p><div data-list></div>
-    <div class="row track-add"><input type="text" class="grow" data-new maxlength="100" placeholder="נושא חדש, למשל: עצי חיפוש"><button class="soft" data-add><span data-ic="plus"></span>הוסף</button></div>
-    <div class="row wrap coach-actions"><div class="grow"></div><button class="ghost" data-close>סגור</button></div></dialog>`);
-  dialog.querySelector('#trackTopicsTitle').textContent = 'נושאים: ' + course;
+// The topics of a course as a traffic light, before an exam: green known, yellow needs work, red not known. The student sets the
+// color (a click, or 1 2 3 on a focused row); the host suggests topics (one for each lecture, and the syllabus's) and a hint where
+// a quiz or the cards disagree with the color. Topics can be joined, renamed, and given the lectures they cover.
+const TRACK_LIGHTS = [['green', 'יודע', '1'], ['yellow', 'טעון שיפור', '2'], ['red', 'לא יודע', '3']];
+const trackLightEmo = { green: '🟢', yellow: '🟡', red: '🔴', '': '⚪' };
+S.trackTopics = {};   // course -> the last suggestions and hints of the host
+function trackLightBar(topics, small) {
+  const n = { green: 0, yellow: 0, red: 0, '': 0 }; topics.forEach(t => { n[t.light || '']++; });
+  const bar = h(`<div class="light-bar${small ? ' small' : ''}" role="img"></div>`);
+  const all = Math.max(1, topics.length);
+  for (const k of ['green', 'yellow', 'red', '']) if (n[k]) { const i = h(`<i class="lb-${k || 'none'}"></i>`); i.style.flexGrow = n[k] / all; bar.append(i); }
+  bar.setAttribute('aria-label', `ירוק ${n.green}, צהוב ${n.yellow}, אדום ${n.red}` + (n[''] ? `, לא דורגו ${n['']}` : ''));
+  bar.title = bar.getAttribute('aria-label');
+  return { bar, n };
+}
+// "לקראת המבחנים": each course with an exam ahead (or with topics), its colors, what got better this week, and the quick round.
+function trackExamsCard(lights) {
+  const list = (lights || []).filter(x => x.examDays !== null || x.topics).slice(0, 6);
+  if (!list.length) return null;
+  const c = h('<div class="card pad-lg track-card exams-card"><div class="track-card-head"><h3>לקראת המבחנים</h3><small class="muted">רמזור הנושאים של כל קורס</small></div><div data-rows></div></div>');
+  for (const x of list) {
+    const row = h(`<div class="exam-row${x.round ? ' due' : ''}"><div class="exam-when"><b></b><small></small></div><div class="grow exam-main"><b dir="auto"></b><div data-bar></div><small class="muted" data-sub></small></div><div class="exam-acts"></div></div>`);
+    row.querySelector('.exam-main b').textContent = x.course;
+    const when = row.querySelector('.exam-when');
+    if (x.examDays === null) { when.querySelector('b').textContent = '—'; when.querySelector('small').textContent = 'אין תאריך'; }
+    else { when.querySelector('b').textContent = x.examDays === 0 ? 'היום' : x.examDays; when.querySelector('small').textContent = x.examDays === 0 ? 'המבחן' : x.examDays === 1 ? 'יום' : 'ימים'; when.classList.toggle('near', x.examDays <= 14); }
+    const topics = ((S.track.profile.progress[x.course]) || { topics: [] }).topics;
+    const sub = row.querySelector('[data-sub]');
+    if (topics.length) {
+      row.querySelector('[data-bar]').append(trackLightBar(topics).bar);
+      setEmo(sub, `🟢 ${x.green} · 🟡 ${x.yellow} · 🔴 ${x.red}` + (x.none ? ` · ⚪ ${x.none}` : '') + (x.better ? ` · ⬆️ ${x.better === 1 ? 'נושא אחד השתפר' : x.better + ' נושאים השתפרו'} השבוע` : ''));
+    } else sub.textContent = 'עוד אין נושאים. אפשר לקבל הצעה מההרצאות ומהסילבוס.';
+    const acts = row.querySelector('.exam-acts');
+    if (x.round) { const b = h('<button class="primary small"><span data-ic="sparkles"></span>סבב רמזור</button>'); b.title = 'דרג את הנושאים, דקה אחת'; b.onclick = () => openLightRound(x.course); acts.append(b); }
+    const o = h(`<button class="ghost small">${topics.length ? 'כל הנושאים' : 'הצע נושאים'}</button>`); o.onclick = () => openTopics(x.course); acts.append(o);
+    c.querySelector('[data-rows]').append(row);
+  }
+  icons(c);
+  return c;
+}
+
+// The quick round: one topic at a time, big, rated with a click or 1 2 3; the ones not rated, then the oldest rated. About a minute.
+function openLightRound(course) {
+  const all = ((S.track.profile.progress[course]) || { topics: [] }).topics;
+  const weekAgo = trackIso(new Date(Date.now() - 7 * 86400000));
+  const queue = all.filter(t => !t.light || !t.rated || t.rated < weekAgo).sort((a, b) => (a.light ? 1 : 0) - (b.light ? 1 : 0) || String(a.rated).localeCompare(String(b.rated)));
+  if (!queue.length) { openTopics(course); return; }
+  const dialog = h(`<dialog class="summary-options coach-dialog light-round" dir="rtl" aria-labelledby="lightRoundTitle">
+    <div class="row"><h2 id="lightRoundTitle" class="grow"></h2><button class="ghost small" data-close aria-label="סגור">×</button></div>
+    <div class="round-prog"><i></i></div><div data-body></div></dialog>`);
+  dialog.querySelector('h2').textContent = 'סבב רמזור: ' + course;
   document.body.append(dialog);
+  let i = 0;
+  const done = [];
   const draw = () => {
-    const box = dialog.querySelector('[data-list]'); box.innerHTML = '';
-    const topics = ((S.track && S.track.profile.progress[course]) || { topics: [] }).topics;
-    if (!topics.length) box.append(h('<p class="muted">עוד אין נושאים.</p>'));
+    const body = dialog.querySelector('[data-body]'); body.innerHTML = '';
+    dialog.querySelector('.round-prog i').style.width = Math.round(i / queue.length * 100) + '%';
+    if (i >= queue.length) {
+      const fin = h('<div class="round-end"><p class="round-big"></p><div data-bar></div><p class="muted" data-txt></p><div class="row" style="gap:8px;justify-content:center"><button class="primary" data-close>סיימתי</button><button class="ghost" data-all>לכל הנושאים</button></div></div>');
+      setEmo(fin.querySelector('.round-big'), '✅ דירגת ' + done.length + ' נושאים');
+      const now = ((S.track.profile.progress[course]) || { topics: [] }).topics;
+      fin.querySelector('[data-bar]').append(trackLightBar(now).bar);
+      const red = done.filter(x => x === 'red').length;
+      fin.querySelector('[data-txt]').textContent = red ? 'האדומים ייכנסו לבלוקים העמוקים כשתבנה את השבוע מחדש.' : 'אין אדומים בסבב הזה. יפה!';
+      fin.querySelector('[data-all]').onclick = () => { dialog.close(); openTopics(course); };
+      fin.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => dialog.close(); });
+      body.append(fin); return;
+    }
+    const t = queue[i];
+    const card = h(`<div class="round-card"><small class="muted" data-n></small><b class="round-title" dir="auto"></b><small class="muted" data-lec></small>
+      <div class="round-btns"></div><button class="ghost small" data-skip>דלג</button><small class="muted">מקשים: 1 יודע · 2 טעון שיפור · 3 לא יודע</small></div>`);
+    card.querySelector('[data-n]').textContent = (i + 1) + ' מתוך ' + queue.length + (t.light ? ' · עכשיו ' + { green: 'ירוק', yellow: 'צהוב', red: 'אדום' }[t.light] : '');
+    card.querySelector('.round-title').textContent = t.title;
+    card.querySelector('[data-lec]').textContent = t.lectures && t.lectures.length ? (t.lectures.length === 1 ? 'הרצאה ' : 'הרצאות ') + t.lectures.join(', ') : '';
+    for (const [k, label, key] of TRACK_LIGHTS) {
+      const b = h(`<button class="round-btn rb-${k}"><i></i><span></span><kbd></kbd></button>`);
+      b.querySelector('span').textContent = label; b.querySelector('kbd').textContent = key;
+      b.onclick = () => pick(k);
+      card.querySelector('.round-btns').append(b);
+    }
+    card.querySelector('[data-skip]').onclick = () => { i++; draw(); };
+    body.append(card);
+  };
+  // The same color again is still a rating: the date moves, and the host keeps it.
+  const pick = (k) => { const t = queue[i]; trackSend({ op: 'topic', course, act: 'light', id: t.id, light: k, again: true }); done.push(k); i++; draw(); };
+  const onKey = (e) => { const k = TRACK_LIGHTS.find(x => x[2] === e.key); if (k && i < queue.length) { e.preventDefault(); pick(k[0]); } };
+  dialog.addEventListener('keydown', onKey);
+  dialog.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => dialog.close(); });
+  dialog.addEventListener('close', () => dialog.remove());
+  draw(); dialog.showModal();
+}
+
+function openTopics(course) {
+  const dialog = h(`<dialog class="summary-options coach-dialog topics-dialog" dir="rtl" aria-labelledby="trackTopicsTitle">
+    <div class="row"><h2 id="trackTopicsTitle" class="grow"></h2><button class="ghost small" data-close aria-label="סגור">×</button></div>
+    <p class="muted">סמן כל נושא לפי מה שאתה יודע: 🟢 יודע, 🟡 טעון שיפור, 🔴 לא יודע. האדומים יקבלו בלוקים עמוקים, הצהובים בלוקים קצרים.</p>
+    <div class="topics-sum" data-sum></div><div data-hints></div><div class="topics-list" data-list></div>
+    <div class="row wrap topics-tools"><button class="soft small" data-suggest><span data-ic="sparkles"></span>הצע נושאים מההרצאות ומהסילבוס</button>
+      <button class="ghost small" data-merge hidden><span data-ic="link"></span>אחד נבחרים</button></div>
+    <div data-suggestions></div>
+    <div class="row track-add"><input type="text" class="grow" data-new maxlength="100" placeholder="נושא חדש, למשל: משוואות מסדר שני"><button class="soft" data-add><span data-ic="plus"></span>הוסף</button></div>
+    <div class="row wrap coach-actions"><small class="muted grow">טיפ: עמוד על שורה והקש 1, 2 או 3.</small><button class="ghost" data-close>סגור</button></div></dialog>`);
+  dialog.querySelector('#trackTopicsTitle').textContent = 'רמזור הנושאים: ' + course;
+  document.body.append(dialog);
+  const picked = new Set();
+  let wanted = null;   // the suggestions ticked to add
+  const offered = new Set();   // the suggestions shown already (one the student unticked stays unticked)
+  const topicsOf = () => ((S.track && S.track.profile.progress[course]) || { topics: [] }).topics;
+  const setLight = (t, light) => trackSend({ op: 'topic', course, act: 'light', id: t.id, light: t.light === light ? '' : light });
+  const draw = () => {
+    const topics = topicsOf(), info = S.trackTopics[course] || {};
+    const sum = dialog.querySelector('[data-sum]'); sum.innerHTML = '';
+    if (topics.length) {
+      const { bar, n } = trackLightBar(topics);
+      const legend = h('<div class="topics-legend"></div>');
+      setEmo(legend, `🟢 ${n.green} · 🟡 ${n.yellow} · 🔴 ${n.red}` + (n[''] ? ` · ⚪ ${n['']} לא דורגו` : ''));
+      sum.append(bar, legend);
+    }
+    // The hints: where a quiz or the cards say something else than the color.
+    const hb = dialog.querySelector('[data-hints]'); hb.innerHTML = '';
     for (const t of topics) {
-      const row = h('<label class="track-topic"><input type="checkbox"><span class="grow" dir="auto"></span><button type="button" class="ghost small" aria-label="הסר">×</button></label>');
-      row.querySelector('input').checked = t.done; row.querySelector('span').textContent = t.title;
-      row.querySelector('input').onchange = () => trackSend({ op: 'topic', course, act: 'toggle', id: t.id });
-      row.querySelector('button').onclick = (e) => { e.preventDefault(); trackSend({ op: 'topic', course, act: 'remove', id: t.id }); };
+      const x = (info.hints || {})[t.id]; if (!x || x.light === t.light) continue;
+      const row = h('<div class="topic-hint"><span class="grow" dir="auto"></span><button class="soft small"></button><button class="ghost small" aria-label="התעלם">×</button></div>');
+      setEmo(row.querySelector('span'), trackLightEmo[x.light] + ' ' + t.title + ': ' + x.text);
+      const [ok, no] = row.querySelectorAll('button');
+      ok.textContent = 'סמן ' + { green: 'ירוק', yellow: 'צהוב', red: 'אדום' }[x.light];
+      ok.onclick = () => { delete info.hints[t.id]; setLight(Object.assign({}, t, { light: '' }), x.light); };
+      no.onclick = () => { delete info.hints[t.id]; draw(); };
+      hb.append(row);
+    }
+    const box = dialog.querySelector('[data-list]'); box.innerHTML = '';
+    if (!topics.length) box.append(h('<p class="muted">עוד אין נושאים. אפשר לקבל הצעה מההרצאות ומהסילבוס, או להוסיף לבד.</p>'));
+    for (const t of topics) {
+      const row = h(`<div class="topic-row light-${t.light || 'none'}" tabindex="0"><input type="checkbox" aria-label="בחר לאיחוד"><div class="topic-lights" role="radiogroup"></div>
+        <div class="grow topic-main"><span class="topic-title" dir="auto"></span><small class="muted" data-lec></small></div>
+        <button type="button" class="ghost small icon-only" data-edit aria-label="ערוך"><span data-ic="edit"></span></button><button type="button" class="ghost small" data-remove aria-label="הסר">×</button></div>`);
+      row.querySelector('.topic-title').textContent = t.title;
+      row.querySelector('[data-lec]').textContent = t.lectures && t.lectures.length ? (t.lectures.length === 1 ? 'הרצאה ' : 'הרצאות ') + t.lectures.join(', ') : '';
+      const lights = row.querySelector('.topic-lights');
+      lights.setAttribute('aria-label', 'הצבע של ' + t.title);
+      for (const [k, label, key] of TRACK_LIGHTS) {
+        const b = h(`<button type="button" class="topic-light lt-${k}" role="radio"></button>`);
+        b.setAttribute('aria-checked', String(t.light === k)); b.title = label + ' (' + key + ')'; b.setAttribute('aria-label', label);
+        b.onclick = () => setLight(t, k);
+        lights.append(b);
+      }
+      row.onkeydown = (e) => { const k = TRACK_LIGHTS.find(x => x[2] === e.key); if (k && e.target === row) { e.preventDefault(); setLight(t, k[0]); } };
+      const cb = row.querySelector('input'); cb.checked = picked.has(t.id);
+      cb.onchange = () => { cb.checked ? picked.add(t.id) : picked.delete(t.id); dialog.querySelector('[data-merge]').hidden = picked.size < 2; };
+      row.querySelector('[data-remove]').onclick = () => trackSend({ op: 'topic', course, act: 'remove', id: t.id });
+      row.querySelector('[data-edit]').onclick = () => {
+        const title = prompt('שם הנושא:', t.title); if (title === null) return;
+        const lec = prompt('ההרצאות שהנושא מכסה (מספרים, מופרדים בפסיק):', (t.lectures || []).join(', ')); if (lec === null) return;
+        if (title.trim() && title.trim() !== t.title) trackSend({ op: 'topic', course, act: 'rename', id: t.id, title: title.trim() });
+        trackSend({ op: 'topic', course, act: 'lectures', id: t.id, lectures: lec.split(/[^\d]+/).filter(Boolean).map(Number) });
+      };
       box.append(row);
     }
+    dialog.querySelector('[data-merge]').hidden = picked.size < 2;
+    // The suggestions of the host, ticked by default; only the ones not added yet.
+    const sg = dialog.querySelector('[data-suggestions]'); sg.innerHTML = '';
+    const have = new Set(topics.map(t => t.title));
+    const items = [...(info.lectures || []), ...(info.syllabus || [])].filter(x => !have.has(x.title));
+    if (info.reading) sg.append(h('<p class="muted topics-reading">קורא את הסילבוס...</p>'));
+    if (items.length) {
+      if (!wanted) wanted = new Set();
+      for (const x of items) if (!offered.has(x.title)) { offered.add(x.title); wanted.add(x.title); }   // a new suggestion comes ticked
+      const card = h('<div class="topics-suggest"><b>הצעות</b><div data-items></div><div class="row" style="gap:8px"><button class="primary small" data-addsel></button><button class="ghost small" data-dismiss>לא עכשיו</button></div></div>');
+      for (const x of items) {
+        const r = h('<label class="topic-sugg"><input type="checkbox"><span class="grow" dir="auto"></span><small class="muted"></small></label>');
+        r.querySelector('input').checked = wanted.has(x.title);
+        r.querySelector('input').onchange = (e) => { e.target.checked ? wanted.add(x.title) : wanted.delete(x.title); upd(); };
+        r.querySelector('span').textContent = x.title;
+        r.querySelector('small').textContent = (x.source === 'syllabus' ? 'מהסילבוס' : 'מההרצאות') + (x.lectures && x.lectures.length ? ' · ' + x.lectures.join(', ') : '');
+        card.querySelector('[data-items]').append(r);
+      }
+      const btn = card.querySelector('[data-addsel]'), upd = () => { btn.textContent = 'הוסף ' + wanted.size + ' נושאים'; btn.disabled = !wanted.size; };
+      upd();
+      btn.onclick = () => { trackSend({ op: 'topic', course, act: 'addMany', items: items.filter(x => wanted.has(x.title)) }); info.lectures = []; info.syllabus = []; wanted = null; };
+      card.querySelector('[data-dismiss]').onclick = () => { info.lectures = []; info.syllabus = []; wanted = null; draw(); };
+      sg.append(card);
+    } else if (info.asked && !info.reading) sg.append(h('<p class="muted">אין הצעות חדשות: כל ההרצאות כבר מכוסות בנושאים.</p>'));
+    icons(dialog);
   };
+  dialog.querySelector('[data-suggest]').onclick = () => { S.trackTopics[course] = Object.assign(S.trackTopics[course] || {}, { asked: true, reading: true }); wanted = null; offered.clear(); trackSend({ op: 'topicsSuggest', course, syllabus: true }); draw(); };
+  dialog.querySelector('[data-merge]').onclick = () => { trackSend({ op: 'topic', course, act: 'merge', ids: topicsOf().filter(t => picked.has(t.id)).map(t => t.id) }); picked.clear(); };
   const add = () => { const i = dialog.querySelector('[data-new]'), v = i.value.trim(); if (v) { trackSend({ op: 'topic', course, act: 'add', title: v }); i.value = ''; } };
   dialog.querySelector('[data-add]').onclick = add;
   dialog.querySelector('[data-new]').onkeydown = (e) => { if (e.key === 'Enter') add(); };
   dialog.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => dialog.close(); });
-  dialog.addEventListener('close', () => { window.removeEventListener('sumit-track', draw); dialog.remove(); });
+  const onTopics = (e) => { if (e.detail && e.detail.course === course) draw(); };
+  dialog.addEventListener('close', () => { window.removeEventListener('sumit-track', draw); window.removeEventListener('sumit-track-topics', onTopics); dialog.remove(); });
   window.addEventListener('sumit-track', draw);
-  draw(); icons(dialog); dialog.showModal();
+  window.addEventListener('sumit-track-topics', onTopics);
+  // The hints come with the first answer, without reading the syllabus (that waits for the button).
+  S.trackTopics[course] = Object.assign(S.trackTopics[course] || {}, { reading: false });
+  trackSend({ op: 'topicsSuggest', course, syllabus: false });
+  draw(); dialog.showModal();
 }
 
 // One block made or changed by hand. The day is the one the student clicked on, and can be changed here.
@@ -638,18 +818,27 @@ function streakCard(si, sp) {
   c.querySelector('.streak-big b').textContent = si.current;
   c.querySelector('h3').textContent = si.current ? 'רצף של ' + streakDays(si.current) : 'מתחילים רצף';
   setEmo(c.querySelector('p'), si.todayDone ? 'כל הכבוד! היום כבר נספר. נתראה מחר 👋'
-    : si.atRisk ? 'הרצף בסכנה: סיים היום בלוק לימוד או סמן נושא שהשלמת.' + (si.freezes ? ' אם לא, 🧊 אחד ישמור עליו.' : '')
+    : si.atRisk ? 'הרצף בסכנה: סיים היום בלוק לימוד או סמן נושא שהשלמת.' + (si.freezes ? ' אם לא, 🧊 אחד ישמור עליו.' : sp && sp.lost ? ' אם לא, יירדו ' + sp.lost.perDay + ' ✨.' : '')
     : 'סיים בלוק לימוד או סמן נושא שהשלמת, והלהבה נדלקת.');
+  // Sparks lost yesterday, a day with nothing done that no freeze covered.
+  if (sp && sp.lost && sp.lost.yesterday) {
+    const l = h('<p class="streak-lost" role="status"></p>');
+    setEmo(l, '−' + sp.lost.yesterday + ' ✨ אתמול לא נעשתה פעילות, ולא הייתה הקפאה שתשמור על הרצף.');
+    c.querySelector('.streak-text').append(l);
+  }
   const fz = c.querySelector('[data-freeze]');
   fz.innerHTML = emo('🧊') + ' ' + si.freezes; fz.title = 'הקפאות רצף: כל 7 ימים ברצף נותנים אחת (עד 2). הקפאה שומרת על הרצף ביום שפספסת.';
   fz.classList.toggle('none', !si.freezes);
+  fz.classList.toggle('used', si.week.some(d => d.state === 'frozen'));
   c.querySelector('[data-best]').textContent = 'שיא: ' + streakDays(si.best);
   const week = c.querySelector('.streak-week');
   si.week.forEach((d, i) => {
     const cell = h('<div class="streak-day"><small></small><span></span></div>');
-    cell.classList.add(d.state);
-    cell.querySelector('small').textContent = STREAK_LETTERS[i];
-    cell.querySelector('span').innerHTML = { done: '✓', frozen: emo('🧊'), missed: '', today: '', future: '' }[d.state];
+    const isToday = d.date === S.track.today;
+    cell.classList.add(d.state); cell.classList.toggle('is-today', isToday);
+    cell.style.setProperty('--i', i);
+    cell.querySelector('small').textContent = isToday ? 'היום' : STREAK_LETTERS[d.dow !== undefined ? d.dow : i];
+    cell.querySelector('span').innerHTML = isToday && d.state === 'done' ? emo('🔥') : { done: '✓', frozen: emo('🧊'), missed: '', today: '', future: '' }[d.state];
     cell.title = trackDM(d.date) + ' · ' + { done: 'נספר', frozen: 'נשמר בהקפאה', missed: 'לא נספר', today: 'היום: עוד לא', future: '' }[d.state];
     week.append(cell);
   });
